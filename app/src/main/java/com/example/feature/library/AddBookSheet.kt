@@ -74,7 +74,7 @@ import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.copyMediaTypeLabel
 import com.example.core.designsystem.components.editionFormatLabel
 import com.example.core.designsystem.components.readingStatusLabel
-import com.example.core.designsystem.components.rememberCoverSourcePickerState
+import com.example.core.designsystem.components.rememberDirectGalleryCoverPicker
 import com.example.core.model.CopyMediaType
 import com.example.core.model.EditionFormat
 import com.example.core.model.ReadingProgressMath
@@ -157,15 +157,10 @@ fun AddBookSheet(
   // while the keyboard is open; once closed, Back guards unsaved input.
   BackHandler(onBack = requestSafeClose)
 
-  val coverPickerState =
-    rememberCoverSourcePickerState(
-      hasCover = pickedCoverUri != null,
+  val launchGalleryPicker =
+    rememberDirectGalleryCoverPicker(
       onUriPicked = { uri ->
         pickedCoverUri = uri
-        coverErrorRes = null
-      },
-      onRemoveCover = {
-        pickedCoverUri = null
         coverErrorRes = null
       },
       onPickerUnavailable = {
@@ -252,12 +247,12 @@ fun AddBookSheet(
               modifier =
                 Modifier.width(136.dp)
                   .clip(MaterialTheme.shapes.small)
-                  .clickable(onClick = { coverPickerState.openChooser() })
+                  .clickable(onClick = launchGalleryPicker)
                   .testTag("add_book_pick_cover_button"),
             )
 
             Surface(
-              onClick = { coverPickerState.openChooser() },
+              onClick = launchGalleryPicker,
               shape = CircleShape,
               color = MaterialTheme.colorScheme.surfaceContainerLowest,
               shadowElevation = 4.dp,

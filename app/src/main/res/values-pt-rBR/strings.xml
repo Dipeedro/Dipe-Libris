@@ -33,10 +33,7 @@
     <string name="cover_change_photo">Trocar capa</string>
     <string name="cover_remove_photo">Usar capa tipográfica</string>
     <string name="cover_import_error">Não foi possível carregar a imagem selecionada.</string>
-    <string name="cover_source_title">Foto da capa</string>
-    <string name="cover_source_gallery">Galeria de fotos</string>
-    <string name="cover_source_files">Seletor de arquivos</string>
-    <string name="cover_picker_unavailable">Nenhum seletor de fotos ou arquivos disponível neste aparelho.</string>
+    <string name="cover_picker_unavailable">Não foi possível abrir a galeria neste aparelho.</string>
     <string name="cd_cover_badge_action">Escolher ou trocar foto da capa</string>
     <string name="cd_close">Fechar</string>
 

@@ -253,11 +253,20 @@ class Phase2UiFlowsTest {
   }
 
   @Test
-  fun addBookSheetHeroCoverOpensDualSourceChooserAndGuardsDraftOnClose() {
+  fun addBookSheetHeroCoverLaunchesGalleryDirectlyAndGuardsDraftOnClose() {
     var dismissed = false
 
     composeTestRule.setContent {
-      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+      val baseContext = androidx.compose.ui.platform.LocalContext.current
+      val localizedContext =
+        com.example.core.localization.LocaleManager.createLocalizedContext(
+          baseContext,
+          AppLanguage.PORTUGUESE_BR,
+        )
+      CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalContext provides localizedContext,
+        LocalAppLanguage provides AppLanguage.PORTUGUESE_BR,
+      ) {
         DipeLibrisTheme {
           AddBookSheet(
             onDismiss = { dismissed = true },
@@ -270,11 +279,12 @@ class Phase2UiFlowsTest {
     // Save button is visible immediately without scrolling
     composeTestRule.onNodeWithTag("add_book_save_button").assertIsDisplayed()
 
-    // Tapping cover badge opens Gallery + File picker chooser
+    // Tapping cover badge launches the gallery directly without any chooser dialog or registry error
     composeTestRule.onNodeWithTag("add_book_cover_badge").performClick()
-    composeTestRule.onNodeWithTag("cover_source_gallery_option").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("cover_source_files_option").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("cover_source_cancel_button").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("cover_source_gallery_option").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("cover_source_files_option").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("add_book_cover_error").assertDoesNotExist()
 
     // Typing unsaved text triggers discard confirmation on close button
     composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Vidas Secas")

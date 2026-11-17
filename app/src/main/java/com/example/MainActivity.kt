@@ -2,6 +2,8 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -16,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -87,6 +90,9 @@ class MainActivity : ComponentActivity() {
             LocalContext provides localizedContext,
             LocalConfiguration provides localizedConfig,
             LocalAppLanguage provides prefs.language,
+            LocalActivityResultRegistryOwner provides this@MainActivity,
+            LocalOnBackPressedDispatcherOwner provides this@MainActivity,
+            LocalLifecycleOwner provides this@MainActivity,
           ) {
             DipeLibrisTheme(
               themeMode = prefs.themeMode,

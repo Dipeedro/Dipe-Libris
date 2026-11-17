@@ -33,10 +33,7 @@
     <string name="cover_change_photo">Change cover</string>
     <string name="cover_remove_photo">Use typographic cover</string>
     <string name="cover_import_error">Could not load the selected image.</string>
-    <string name="cover_source_title">Cover photo</string>
-    <string name="cover_source_gallery">Photo gallery</string>
-    <string name="cover_source_files">File picker</string>
-    <string name="cover_picker_unavailable">No photo or file picker available on this device.</string>
+    <string name="cover_picker_unavailable">Could not open the gallery on this device.</string>
     <string name="cd_cover_badge_action">Choose or change cover photo</string>
     <string name="cd_close">Close</string>
 

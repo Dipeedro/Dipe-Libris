@@ -55,7 +55,7 @@ import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.copyMediaTypeLabel
 import com.example.core.designsystem.components.editionFormatLabel
-import com.example.core.designsystem.components.rememberCoverSourcePickerState
+import com.example.core.designsystem.components.rememberDirectGalleryCoverPicker
 import com.example.core.model.CopyMediaType
 import com.example.core.model.Edition
 import com.example.core.model.EditionFormat
@@ -116,17 +116,11 @@ fun EditionEditorSheet(
       else -> initialEdition?.coverUri
     }
 
-  val coverPickerState =
-    rememberCoverSourcePickerState(
-      hasCover = previewCoverUri != null,
+  val launchGalleryPicker =
+    rememberDirectGalleryCoverPicker(
       onUriPicked = { uri ->
         pickedCoverUri = uri
         removeExistingCover = false
-        coverErrorRes = null
-      },
-      onRemoveCover = {
-        pickedCoverUri = null
-        removeExistingCover = true
         coverErrorRes = null
       },
       onPickerUnavailable = {
@@ -194,7 +188,7 @@ fun EditionEditorSheet(
           verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
         ) {
           OutlinedButton(
-            onClick = { coverPickerState.openChooser() },
+            onClick = launchGalleryPicker,
             shape = CircleShape,
             contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
             modifier =
