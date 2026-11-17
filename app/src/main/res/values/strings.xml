@@ -91,10 +91,11 @@
     <string name="book_detail_not_found_body">This book is no longer in the catalog.</string>
     <string name="book_detail_not_found_action">Return to library</string>
     <string name="book_detail_notes_section">Diary notes</string>
-    <string name="book_detail_no_notes">No notes linked to this book.</string>
+    <string name="book_detail_open_diary">Open book diary</string>
+    <string name="book_detail_no_notes">No notes for this book yet.</string>
     <string name="book_detail_delete">Remove from library</string>
     <string name="book_delete_confirm_title">Remove from library?</string>
-    <string name="book_delete_confirm_message">This permanently deletes the book and its edition details. Linked diary entries will be kept as personal notes.</string>
+    <string name="book_delete_confirm_message">This permanently deletes the book, its edition details, and all linked diary notes.</string>
     <string name="book_delete_confirm_action">Remove</string>
     <string name="book_detail_status_label">Reading status</string>
     <string name="book_detail_pages_label">Pages</string>
@@ -105,17 +106,14 @@
     <!-- Diary -->
     <string name="diary_new_entry">New note</string>
     <string name="diary_empty_title">No diary notes</string>
-    <string name="diary_empty_body">Record passages or reading reflections, optionally linked to a book.</string>
+    <string name="diary_empty_body">Record passages or reading reflections for this book.</string>
     <string name="diary_sheet_title">New diary note</string>
     <string name="diary_field_content">Reflection</string>
-    <string name="diary_field_book_optional">Book (optional)</string>
-    <string name="diary_no_book_linked">No linked book</string>
     <string name="diary_save_action">Save</string>
     <string name="diary_delete_entry">Delete note</string>
     <string name="diary_delete_confirm_title">Delete diary note?</string>
     <string name="diary_delete_confirm_message">This reflection will be permanently removed from your diary.</string>
     <string name="diary_delete_confirm_action">Delete</string>
-    <string name="diary_general_note_tag">Personal note</string>
     <plurals name="diary_entries_count">
         <item quantity="one">%1$d note</item>
         <item quantity="other">%1$d notes</item>

@@ -106,14 +106,14 @@ data class BookShelfCrossRef(
       entity = WorkEntity::class,
       parentColumns = ["id"],
       childColumns = ["workId"],
-      onDelete = ForeignKey.SET_NULL,
+      onDelete = ForeignKey.CASCADE,
     )
   ],
   indices = [Index(value = ["workId"])],
 )
 data class DiaryEntryEntity(
   @PrimaryKey(autoGenerate = true) val id: Long = 0,
-  val workId: Long? = null,
+  val workId: Long,
   val content: String,
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
 )

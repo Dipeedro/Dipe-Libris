@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Room database for Dipe Libris.
@@ -27,7 +28,7 @@ import androidx.room.migration.Migration
     DiaryEntryEntity::class,
     ReadingSessionEntity::class,
   ],
-  version = 1,
+  version = 2,
   exportSchema = true,
 )
 @TypeConverters(DipeConverters::class)
@@ -41,11 +42,41 @@ abstract class DipeLibrisDatabase : RoomDatabase() {
   companion object {
     const val DATABASE_NAME = "dipe_libris.db"
 
+    val MIGRATION_1_2: Migration =
+      object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+          db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `diary_entries_new` (
+              `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+              `workId` INTEGER NOT NULL,
+              `content` TEXT NOT NULL,
+              `createdAtEpochMillis` INTEGER NOT NULL,
+              FOREIGN KEY(`workId`) REFERENCES `works`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+          )
+          db.execSQL(
+            """
+            INSERT INTO `diary_entries_new` (`id`, `workId`, `content`, `createdAtEpochMillis`)
+            SELECT d.`id`, d.`workId`, d.`content`, d.`createdAtEpochMillis`
+            FROM `diary_entries` d
+            INNER JOIN `works` w ON d.`workId` = w.`id`
+            WHERE d.`workId` IS NOT NULL
+            """.trimIndent()
+          )
+          db.execSQL("DROP TABLE `diary_entries`")
+          db.execSQL("ALTER TABLE `diary_entries_new` RENAME TO `diary_entries`")
+          db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_diary_entries_workId` ON `diary_entries` (`workId`)"
+          )
+        }
+      }
+
     /**
-     * Ordered list of explicit schema migrations for future database versions.
-     * Example for Phase 2: `Migration(1, 2) { db -> ... }`.
+     * Ordered list of explicit schema migrations for database versions.
      */
-    val MIGRATIONS: Array<Migration> = emptyArray()
+    val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
 
     fun build(context: Context): DipeLibrisDatabase =
       Room.databaseBuilder(

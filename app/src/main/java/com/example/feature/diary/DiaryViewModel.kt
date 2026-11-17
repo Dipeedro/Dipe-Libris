@@ -16,34 +16,46 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @Immutable
-data class DiaryUiState(
-  val entries: List<DiaryEntry> = emptyList(),
-  val availableBooks: List<CatalogBook> = emptyList(),
-)
+sealed interface DiaryUiState {
+  @Immutable data object Loading : DiaryUiState
+
+  @Immutable
+  data class Loaded(
+    val book: CatalogBook,
+    val entries: List<DiaryEntry>,
+  ) : DiaryUiState
+
+  @Immutable data object NotFound : DiaryUiState
+}
 
 class DiaryViewModel(
+  private val workId: Long,
   private val diaryRepository: DiaryRepository,
   libraryRepository: LibraryRepository,
 ) : ViewModel() {
 
   val uiState: StateFlow<DiaryUiState> =
     combine(
-        diaryRepository.observeAllEntries(),
-        libraryRepository.observeAllBooks(),
-      ) { entries, books ->
-        DiaryUiState(
-          entries = entries,
-          availableBooks = books,
-        )
+        libraryRepository.observeBook(workId),
+        diaryRepository.observeEntriesForWork(workId),
+      ) { book, entries ->
+        if (book == null) {
+          DiaryUiState.NotFound
+        } else {
+          DiaryUiState.Loaded(
+            book = book,
+            entries = entries,
+          )
+        }
       }
       .flowOn(Dispatchers.Default)
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = DiaryUiState(),
+        initialValue = DiaryUiState.Loading,
       )
 
-  fun addEntry(content: String, workId: Long?, onSaved: () -> Unit = {}) {
+  fun addEntry(content: String, onSaved: () -> Unit = {}) {
     if (content.isBlank()) return
     viewModelScope.launch {
       diaryRepository.addEntry(content = content, workId = workId)

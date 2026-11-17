@@ -88,10 +88,6 @@ fun DipeNavigationShell(
           LibraryViewModel(it.libraryRepository, it.diaryRepository, it.preferencesRepository)
         }
     )
-  val diaryViewModel: DiaryViewModel =
-    viewModel(
-      factory = dipeFactory(container) { DiaryViewModel(it.diaryRepository, it.libraryRepository) }
-    )
   val statisticsViewModel: StatisticsViewModel =
     viewModel(factory = dipeFactory(container) { StatisticsViewModel(it.statisticsRepository) })
   val profileViewModel: ProfileViewModel =
@@ -101,7 +97,6 @@ fun DipeNavigationShell(
     )
 
   var showAddBookSheet by remember { mutableStateOf(false) }
-  var showNewDiarySheet by remember { mutableStateOf(false) }
   var showEditProfileSheet by remember { mutableStateOf(false) }
 
   val isTopLevel =
@@ -251,15 +246,43 @@ fun DipeNavigationShell(
               )
             }
 
-            composable<DiaryRoute> {
+            composable<BookDiaryRoute> { backStackEntry ->
+              val route = backStackEntry.toRoute<BookDiaryRoute>()
+              val diaryViewModel: DiaryViewModel =
+                viewModel(
+                  key = "book_diary_${route.workId}",
+                  factory =
+                    dipeFactory(container) {
+                      DiaryViewModel(
+                        workId = route.workId,
+                        diaryRepository = it.diaryRepository,
+                        libraryRepository = it.libraryRepository,
+                      )
+                    },
+                )
               val diaryState by diaryViewModel.uiState.collectAsStateWithLifecycle()
+              var showNewDiarySheet by remember { mutableStateOf(false) }
+
               DiaryScreen(
                 uiState = diaryState,
                 widthClass = widthClass,
                 onOpenNewEntry = { showNewDiarySheet = true },
                 onDeleteEntry = diaryViewModel::deleteEntry,
-                onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
+                onNavigateBack = { navController.popBackStack() },
               )
+
+              val loadedBookTitle = (diaryState as? com.example.feature.diary.DiaryUiState.Loaded)?.book?.title
+              if (showNewDiarySheet && loadedBookTitle != null) {
+                NewDiaryEntrySheet(
+                  bookTitle = loadedBookTitle,
+                  onDismiss = { showNewDiarySheet = false },
+                  onSave = { content ->
+                    diaryViewModel.addEntry(content = content) {
+                      showNewDiarySheet = false
+                    }
+                  },
+                )
+              }
             }
 
             composable<StatisticsRoute> {
@@ -319,6 +342,7 @@ fun DipeNavigationShell(
                 widthClass = widthClass,
                 onToggleFavorite = bookDetailViewModel::toggleFavorite,
                 onUpdateStatus = bookDetailViewModel::updateStatus,
+                onOpenDiary = { navController.navigate(BookDiaryRoute(route.workId)) },
                 onConfirmDelete = {
                   bookDetailViewModel.deleteBook { navController.popBackStack() }
                 },
@@ -349,18 +373,7 @@ fun DipeNavigationShell(
     )
   }
 
-  if (showNewDiarySheet) {
-    val diaryState by diaryViewModel.uiState.collectAsStateWithLifecycle()
-    NewDiaryEntrySheet(
-      availableBooks = diaryState.availableBooks,
-      onDismiss = { showNewDiarySheet = false },
-      onSave = { content, workId ->
-        diaryViewModel.addEntry(content = content, workId = workId) {
-          showNewDiarySheet = false
-        }
-      },
-    )
-  }
+
 
   if (showEditProfileSheet) {
     val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()

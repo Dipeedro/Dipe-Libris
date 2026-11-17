@@ -58,7 +58,7 @@ data class CatalogBook(
 @Immutable
 data class DiaryEntry(
   val id: Long = 0,
-  val workId: Long? = null,
+  val workId: Long,
   val linkedBookTitle: String? = null,
   val linkedBookAuthor: String? = null,
   val content: String,

@@ -78,7 +78,7 @@ interface DiaryDao {
     """
     SELECT d.*, w.title AS linkedBookTitle, w.author AS linkedBookAuthor
     FROM diary_entries d
-    LEFT JOIN works w ON d.workId = w.id
+    INNER JOIN works w ON d.workId = w.id
     ORDER BY d.createdAtEpochMillis DESC
     """
   )
@@ -88,7 +88,7 @@ interface DiaryDao {
     """
     SELECT d.*, w.title AS linkedBookTitle, w.author AS linkedBookAuthor
     FROM diary_entries d
-    LEFT JOIN works w ON d.workId = w.id
+    INNER JOIN works w ON d.workId = w.id
     WHERE d.workId = :workId
     ORDER BY d.createdAtEpochMillis DESC
     """

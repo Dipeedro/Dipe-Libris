@@ -3,10 +3,12 @@ package com.example
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.room.Room
@@ -35,19 +37,15 @@ class DipeLibrisAppTest {
   fun navigateBetweenAllMainAreasAndSettings() {
     composeTestRule.waitForIdle()
 
-    // Home is initial destination without redundant settings/shortcut buttons
+    // Home is initial destination without redundant settings/shortcut buttons, and Diary tab is removed
     composeTestRule.onNodeWithTag("home_lazy_column").assertIsDisplayed()
     composeTestRule.onNodeWithTag("home_settings_button").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("nav_tab_diary").assertDoesNotExist()
 
     // Navigate to Library
     composeTestRule.onNodeWithTag("nav_tab_library").performClick()
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("library_add_book_button").assertIsDisplayed()
-
-    // Navigate to Diary
-    composeTestRule.onNodeWithTag("nav_tab_diary").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("diary_new_entry_button").assertIsDisplayed()
 
     // Navigate to Statistics
     composeTestRule.onNodeWithTag("nav_tab_statistics").performClick()
@@ -123,7 +121,7 @@ class DipeLibrisAppTest {
   }
 
   @Test
-  fun addBookThroughUiSheetDisplaysInLibrary() {
+  fun addBookThroughUiSheetDisplaysInLibraryAndOpensBookDiary() {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("nav_tab_library").performClick()
     composeTestRule.waitForIdle()
@@ -133,9 +131,39 @@ class DipeLibrisAppTest {
 
     composeTestRule.onNodeWithTag("add_book_title_input").performTextInput("Dom Casmurro")
     composeTestRule.onNodeWithTag("add_book_author_input").performTextInput("Machado de Assis")
-    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
-    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("add_book_save_button").performScrollTo().performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("add_book_save_button")).fetchSemanticsNodes().isEmpty() &&
+        composeTestRule.onAllNodes(hasTestTag("library_grid_book_1")).fetchSemanticsNodes().isNotEmpty()
+    }
 
-    composeTestRule.onNodeWithText("Dom Casmurro").assertIsDisplayed()
+    composeTestRule
+      .onNodeWithTag("library_grid")
+      .performScrollToNode(hasTestTag("library_grid_book_1"))
+    composeTestRule.onNodeWithTag("library_grid_book_1").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("book_detail_lazy_column")).fetchSemanticsNodes().isNotEmpty()
+    }
+
+    composeTestRule
+      .onNodeWithTag("book_detail_lazy_column")
+      .performScrollToNode(hasTestTag("book_detail_open_diary_button"))
+    composeTestRule.onNodeWithTag("book_detail_open_diary_button").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("diary_new_entry_button")).fetchSemanticsNodes().isNotEmpty()
+    }
+
+    composeTestRule.onNodeWithTag("diary_new_entry_button").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("diary_entry_content_input")).fetchSemanticsNodes().isNotEmpty()
+    }
+    composeTestRule.onNodeWithTag("diary_entry_content_input").performTextInput("Olhos de ressaca.")
+    composeTestRule.onNodeWithTag("diary_save_button").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("diary_save_button")).fetchSemanticsNodes().isEmpty() &&
+        composeTestRule.onAllNodes(hasText("Olhos de ressaca.")).fetchSemanticsNodes().isNotEmpty()
+    }
+
+    composeTestRule.onNodeWithText("Olhos de ressaca.").assertIsDisplayed()
   }
 }

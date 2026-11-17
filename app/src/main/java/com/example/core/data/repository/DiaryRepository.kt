@@ -15,7 +15,7 @@ interface DiaryRepository {
 
   fun observeEntriesForWork(workId: Long): Flow<List<DiaryEntry>>
 
-  suspend fun addEntry(content: String, workId: Long?): Long
+  suspend fun addEntry(content: String, workId: Long): Long
 
   suspend fun deleteEntry(entryId: Long)
 }
@@ -36,7 +36,7 @@ class RoomDiaryRepository(private val diaryDao: DiaryDao) : DiaryRepository {
       .map { rows -> rows.map { it.toDomain() } }
       .flowOn(Dispatchers.Default)
 
-  override suspend fun addEntry(content: String, workId: Long?): Long =
+  override suspend fun addEntry(content: String, workId: Long): Long =
     diaryDao.insertEntry(
       DiaryEntryEntity(
         workId = workId,

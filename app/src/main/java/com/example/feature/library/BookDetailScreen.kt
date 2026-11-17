@@ -27,7 +27,10 @@ import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -49,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
@@ -73,6 +77,7 @@ fun BookDetailScreen(
   widthClass: WindowWidthClass,
   onToggleFavorite: (Boolean) -> Unit,
   onUpdateStatus: (ReadingStatus) -> Unit,
+  onOpenDiary: () -> Unit,
   onConfirmDelete: () -> Unit,
   onNavigateBack: () -> Unit,
   modifier: Modifier = Modifier,
@@ -298,21 +303,17 @@ fun BookDetailScreen(
 
             if (diaryNotes.isEmpty()) {
               item(key = "detail_no_notes", contentType = "empty_notes") {
-                EditorialSurfaceCard(
+                Text(
+                  text = stringResource(R.string.book_detail_no_notes),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                   modifier = Modifier.padding(horizontal = horizontalPadding),
-                  containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
-                  contentPadding = PaddingValues(DipeSpacing.lg),
-                ) {
-                  Text(
-                    text = stringResource(R.string.book_detail_no_notes),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
+                )
               }
             } else {
+              val previewNotes = diaryNotes.take(3)
               items(
-                items = diaryNotes,
+                items = previewNotes,
                 key = { it.id },
                 contentType = { "detail_note" },
               ) { note ->
@@ -350,9 +351,41 @@ fun BookDetailScreen(
                         text = note.content,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
                       )
                     }
                   }
+                }
+              }
+            }
+
+            item(key = "detail_open_diary_action", contentType = "diary_action") {
+              Box(modifier = Modifier.padding(horizontal = horizontalPadding)) {
+                Button(
+                  onClick = onOpenDiary,
+                  shape = CircleShape,
+                  colors =
+                    ButtonDefaults.buttonColors(
+                      containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                  contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = 10.dp),
+                  modifier =
+                    Modifier.minimumInteractiveComponentSize()
+                      .testTag("book_detail_open_diary_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.EditNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(18.dp),
+                  )
+                  Spacer(modifier = Modifier.width(DipeSpacing.sm))
+                  Text(
+                    text = stringResource(R.string.book_detail_open_diary),
+                    style = MaterialTheme.typography.labelLarge,
+                  )
                 }
               }
             }

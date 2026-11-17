@@ -9,14 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -31,29 +27,28 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.model.CatalogBook
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewDiaryEntrySheet(
-  availableBooks: List<CatalogBook>,
+  bookTitle: String,
   onDismiss: () -> Unit,
-  onSave: (content: String, workId: Long?) -> Unit,
+  onSave: (content: String) -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var content by remember { mutableStateOf("") }
-  var selectedWorkId by remember { mutableStateOf<Long?>(null) }
 
   val textFieldColors =
     OutlinedTextFieldDefaults.colors(
       focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
-      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.7f),
+      unfocusedBorderColor = Color.Transparent,
       focusedBorderColor = MaterialTheme.colorScheme.secondary,
     )
 
@@ -67,11 +62,20 @@ fun NewDiaryEntrySheet(
         Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Text(
-        text = stringResource(R.string.diary_sheet_title),
-        style = MaterialTheme.typography.headlineLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
+        Text(
+          text = stringResource(R.string.diary_sheet_title),
+          style = MaterialTheme.typography.headlineLarge,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+          text = bookTitle,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
 
       OutlinedTextField(
         value = content,
@@ -83,62 +87,6 @@ fun NewDiaryEntrySheet(
         colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("diary_entry_content_input"),
       )
-
-      if (availableBooks.isNotEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-          Text(
-            text = stringResource(R.string.diary_field_book_optional),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          val chipColors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = MaterialTheme.colorScheme.primary,
-              selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-              labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-            item(key = "no_book_linked", contentType = "book_chip") {
-              FilterChip(
-                selected = selectedWorkId == null,
-                onClick = { selectedWorkId = null },
-                shape = CircleShape,
-                colors = chipColors,
-                border =
-                  FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selectedWorkId == null,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                    borderWidth = 0.5.dp,
-                  ),
-                label = { Text(stringResource(R.string.diary_no_book_linked)) },
-              )
-            }
-            items(
-              items = availableBooks,
-              key = { it.id },
-              contentType = { "book_chip" },
-            ) { book ->
-              val selected = selectedWorkId == book.id
-              FilterChip(
-                selected = selected,
-                onClick = { selectedWorkId = book.id },
-                shape = CircleShape,
-                colors = chipColors,
-                border =
-                  FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selected,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                    borderWidth = 0.5.dp,
-                  ),
-                label = { Text(book.title) },
-              )
-            }
-          }
-        }
-      }
 
       Spacer(modifier = Modifier.height(DipeSpacing.xs))
 
@@ -156,7 +104,7 @@ fun NewDiaryEntrySheet(
         Button(
           onClick = {
             if (content.isNotBlank()) {
-              onSave(content.trim(), selectedWorkId)
+              onSave(content.trim())
             }
           },
           enabled = content.isNotBlank(),

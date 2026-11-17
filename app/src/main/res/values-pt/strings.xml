@@ -91,10 +91,11 @@
     <string name="book_detail_not_found_body">Esta obra não está mais no catálogo.</string>
     <string name="book_detail_not_found_action">Voltar à biblioteca</string>
     <string name="book_detail_notes_section">Notas do diário</string>
+    <string name="book_detail_open_diary">Abrir diário do livro</string>
     <string name="book_detail_no_notes">Nenhuma nota associada a este livro.</string>
     <string name="book_detail_delete">Remover da biblioteca</string>
     <string name="book_delete_confirm_title">Remover da biblioteca?</string>
-    <string name="book_delete_confirm_message">Esta ação exclui permanentemente a obra e os dados da edição. As anotações do diário associadas serão preservadas como notas pessoais.</string>
+    <string name="book_delete_confirm_message">Esta ação exclui permanentemente a obra, os dados da edição e todas as notas do diário associadas a ela.</string>
     <string name="book_delete_confirm_action">Remover</string>
     <string name="book_detail_status_label">Situação</string>
     <string name="book_detail_pages_label">Páginas</string>
@@ -105,17 +106,14 @@
     <!-- Diary -->
     <string name="diary_new_entry">Nova nota</string>
     <string name="diary_empty_title">Nenhuma nota registrada</string>
-    <string name="diary_empty_body">Anote trechos ou impressões de leitura, vinculando a um livro quando desejar.</string>
+    <string name="diary_empty_body">Registre trechos ou reflexões de leitura sobre este livro.</string>
     <string name="diary_sheet_title">Nova nota no diário</string>
     <string name="diary_field_content">Reflexão</string>
-    <string name="diary_field_book_optional">Livro (opcional)</string>
-    <string name="diary_no_book_linked">Sem livro associado</string>
     <string name="diary_save_action">Salvar</string>
     <string name="diary_delete_entry">Excluir nota</string>
     <string name="diary_delete_confirm_title">Excluir nota do diário?</string>
     <string name="diary_delete_confirm_message">Esta reflexão será removida permanentemente do seu diário.</string>
     <string name="diary_delete_confirm_action">Excluir</string>
-    <string name="diary_general_note_tag">Nota pessoal</string>
     <plurals name="diary_entries_count">
         <item quantity="one">%1$d nota</item>
         <item quantity="other">%1$d notas</item>

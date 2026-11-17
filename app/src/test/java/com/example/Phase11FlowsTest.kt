@@ -229,11 +229,17 @@ class Phase11FlowsTest {
           widthClass = WindowWidthClass.COMPACT,
           onToggleFavorite = {},
           onUpdateStatus = {},
+          onOpenDiary = {},
           onConfirmDelete = { deleted = true },
           onNavigateBack = {},
         )
       }
     }
+
+    composeTestRule
+      .onNodeWithTag("book_detail_lazy_column")
+      .performScrollToNode(hasTestTag("book_detail_open_diary_button"))
+    composeTestRule.onNodeWithTag("book_detail_open_diary_button").assertIsDisplayed()
 
     // Scroll to delete button and click it
     composeTestRule
@@ -261,8 +267,25 @@ class Phase11FlowsTest {
   }
 
   @Test
-  fun diaryDeletionRequiresConfirmationAndHomeLinkedNoteNavigatesToBook() {
+  fun bookDiaryDeletionRequiresConfirmationAndBackNavigates() {
     var deletedId: Long? = null
+    var navigatedBack = false
+    val book =
+      CatalogBook(
+        work =
+          Work(
+            id = 55L,
+            title = "Os Sertões",
+            author = "Euclides da Cunha",
+            status = ReadingStatus.READING,
+            isFavorite = false,
+            typographyPresetOverride = null,
+            createdAtEpochMillis = 5_000L,
+            updatedAtEpochMillis = 5_000L,
+          ),
+        primaryEdition = null,
+        primaryCopy = null,
+      )
     val entry =
       DiaryEntry(
         id = 77L,
@@ -276,11 +299,11 @@ class Phase11FlowsTest {
     composeTestRule.setContent {
       DipeLibrisTheme {
         DiaryScreen(
-          uiState = DiaryUiState(entries = listOf(entry)),
+          uiState = DiaryUiState.Loaded(book = book, entries = listOf(entry)),
           widthClass = WindowWidthClass.COMPACT,
           onOpenNewEntry = {},
           onDeleteEntry = { deletedId = it },
-          onOpenBook = {},
+          onNavigateBack = { navigatedBack = true },
         )
       }
     }
@@ -293,6 +316,9 @@ class Phase11FlowsTest {
     composeTestRule.onNodeWithTag("diary_delete_77").performClick()
     composeTestRule.onNodeWithTag("diary_delete_confirm_button").performClick()
     assertEquals(77L, deletedId)
+
+    composeTestRule.onNodeWithTag("diary_back_button").performClick()
+    assertTrue(navigatedBack)
   }
 
   @Test

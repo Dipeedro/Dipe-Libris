@@ -3,12 +3,10 @@ package com.example.navigation
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Person
@@ -20,8 +18,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object LibraryRoute
 
-@Serializable data object DiaryRoute
-
 @Serializable data object StatisticsRoute
 
 @Serializable data object ProfileRoute
@@ -29,6 +25,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object SettingsRoute
 
 @Serializable data class BookDetailRoute(val workId: Long)
+
+@Serializable data class BookDiaryRoute(val workId: Long)
 
 enum class TopLevelDestination(
   val route: Any,
@@ -50,13 +48,6 @@ enum class TopLevelDestination(
     labelRes = R.string.nav_library,
     selectedIcon = Icons.Filled.LibraryBooks,
     unselectedIcon = Icons.Outlined.LibraryBooks,
-  ),
-  DIARY(
-    route = DiaryRoute,
-    routeKey = "diary",
-    labelRes = R.string.nav_diary,
-    selectedIcon = Icons.Filled.Book,
-    unselectedIcon = Icons.Outlined.Book,
   ),
   STATISTICS(
     route = StatisticsRoute,
