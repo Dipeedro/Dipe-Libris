@@ -82,7 +82,7 @@ fun DipeLibrisTheme(
     LocalDipeTypography provides typographyExtensions,
     LocalDipeMotion provides motionConfig,
     LocalDipeBrandTokens provides brandTokens,
-    LocalDipeCoverTokens provides DipeCoverTokens(),
+    LocalDipeCoverTokens provides DefaultCoverTokens,
   ) {
     MaterialTheme(
       colorScheme = colorScheme,

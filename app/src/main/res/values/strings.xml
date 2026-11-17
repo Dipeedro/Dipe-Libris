@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Dipe Libris</string>
-    <string name="brand_wordmark" translatable="false">DIPE LIBRIS</string>
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
@@ -21,28 +20,16 @@
     <string name="status_abandoned">Set aside</string>
 
     <!-- Home -->
-    <string name="home_editorial_kicker">PERSONAL ARCHIVE</string>
-    <string name="home_subtitle">Private literary collection and reading notes</string>
     <string name="home_section_currently_reading">Currently reading</string>
     <string name="home_section_recent_activity">Recent activity</string>
-    <string name="home_section_featured_shelves">Featured shelves</string>
-    <string name="home_section_reading_calendar">Reading calendar</string>
-    <string name="home_section_shortcuts">Library shortcuts</string>
-    <string name="home_section_reading_notes">Reading overview</string>
-    <string name="home_empty_reading_title">No volume currently open</string>
-    <string name="home_empty_reading_body">Register a book in your library or mark an existing edition as reading to follow it here.</string>
-    <string name="home_empty_activity_title">Your journal is quiet</string>
-    <string name="home_empty_activity_body">Diary reflections and newly cataloged works will appear here chronologically.</string>
-    <string name="home_empty_shelves_title">Shelves prepared for curation</string>
-    <string name="home_empty_shelves_body">Custom and smart shelves will be organized here as your archive grows.</string>
-    <string name="home_calendar_planned_title">Chronological reading calendar</string>
-    <string name="home_calendar_planned_body">Daily reading logs, rereads, and timeline views are planned for a later phase.</string>
-    <string name="home_shortcut_open_library">Open catalog</string>
-    <string name="home_shortcut_add_volume">Catalog volume</string>
-    <string name="home_shortcut_write_entry">Write diary entry</string>
-    <string name="home_overview_volumes_count">%1$d cataloged works</string>
-    <string name="home_overview_entries_count">%1$d diary notes</string>
-    <string name="home_overview_reading_count">%1$d in progress</string>
+    <string name="home_empty_reading_title">No books in progress</string>
+    <string name="home_empty_reading_body">Mark a book as reading or add a new volume to follow it here.</string>
+    <string name="home_empty_activity_title">No recent activity</string>
+    <string name="home_empty_activity_body">Cataloged books and diary notes will appear here chronologically.</string>
+    <string name="home_shortcut_open_library">Open library</string>
+    <string name="home_shortcut_add_volume">Catalog book</string>
+    <string name="home_shortcut_write_entry">New diary note</string>
+    <string name="home_open_book">Open volume</string>
     <plurals name="home_overview_works_label">
         <item quantity="one">cataloged work</item>
         <item quantity="other">cataloged works</item>
@@ -57,8 +44,6 @@
     </plurals>
 
     <!-- Library -->
-    <string name="library_title">Library</string>
-    <string name="library_subtitle">Catalog of works and editions</string>
     <string name="library_search_placeholder">Search title or author</string>
     <string name="library_clear_search">Clear search</string>
     <string name="library_add_book">Catalog book</string>
@@ -71,132 +56,115 @@
     <string name="library_sort_title">Title (A–Z)</string>
     <string name="library_sort_author">Author (A–Z)</string>
     <string name="library_sort_label">Sort</string>
-    <string name="library_shelves_label">Custom shelves</string>
-    <string name="library_shelves_planned_note">Custom shelving, ISBN scanning, and external catalog lookup are prepared in the data model for upcoming phases.</string>
-    <string name="library_empty_title">Your shelves await the first volume</string>
-    <string name="library_empty_body">Begin your private collection by cataloging a work. Everything stays stored locally on your device.</string>
+    <string name="library_empty_title">Your shelves are empty</string>
+    <string name="library_empty_body">Catalog your first book to begin.</string>
     <string name="library_empty_filtered_title">No matching volumes</string>
-    <string name="library_empty_filtered_body">Adjust your search or status filter to view other works in your catalog.</string>
-    <string name="library_pages_format">%1$d pages</string>
+    <string name="library_empty_filtered_body">Adjust the search or status filter.</string>
     <plurals name="pages_count">
         <item quantity="one">%1$d page</item>
         <item quantity="other">%1$d pages</item>
     </plurals>
-    <string name="library_favorite_badge">Favorite</string>
+    <plurals name="volumes_count">
+        <item quantity="one">%1$d volume</item>
+        <item quantity="other">%1$d volumes</item>
+    </plurals>
     <string name="cd_toggle_favorite">Toggle favorite</string>
     <string name="cd_book_cover">Cover for %1$s</string>
 
     <!-- Add / Detail Book -->
-    <string name="book_add_sheet_title">Catalog a volume</string>
-    <string name="book_field_title">Work title</string>
+    <string name="book_add_sheet_title">Catalog book</string>
+    <string name="book_field_title">Title</string>
     <string name="book_field_author">Author</string>
-    <string name="book_field_pages">Total pages (optional)</string>
-    <string name="book_field_year">Publication year (optional)</string>
-    <string name="book_field_edition_note">Edition or publisher note (optional)</string>
+    <string name="book_field_pages">Pages (optional)</string>
+    <string name="book_field_year">Year (optional)</string>
+    <string name="book_field_edition_note">Edition or publisher (optional)</string>
     <string name="book_field_status">Reading status</string>
-    <string name="book_save_action">Save to library</string>
+    <string name="book_save_action">Save</string>
     <string name="book_cancel_action">Cancel</string>
     <string name="book_validation_required">Title and author are required.</string>
     <string name="book_validation_pages">Enter a valid page count between 1 and 50,000.</string>
     <string name="book_validation_year">Enter a valid publication year between 1 and 2100.</string>
-    <string name="book_detail_kicker">CATALOG SHEET</string>
-    <string name="book_detail_loading">Opening catalog sheet…</string>
+    <string name="book_detail_loading">Loading…</string>
     <string name="book_detail_not_found_title">Volume unavailable</string>
-    <string name="book_detail_not_found_body">This work is no longer in your catalog or has been removed.</string>
-    <string name="book_detail_not_found_action">Return to catalog</string>
-    <string name="book_detail_edition_section">Edition &amp; copy foundation</string>
-    <string name="book_detail_typography_note">Individual typographic pairing per book sheet is prepared in the theme architecture for a future phase.</string>
-    <string name="book_detail_notes_section">Linked diary notes</string>
-    <string name="book_detail_no_notes">No diary notes linked to this work yet.</string>
-    <string name="book_detail_delete">Remove from catalog</string>
-    <string name="book_delete_confirm_title">Remove from catalog?</string>
-    <string name="book_delete_confirm_message">This permanently deletes the work and its edition details from your library. Any linked diary entries will be kept as personal notes.</string>
-    <string name="book_delete_confirm_action">Remove book</string>
+    <string name="book_detail_not_found_body">This book is no longer in the catalog.</string>
+    <string name="book_detail_not_found_action">Return to library</string>
+    <string name="book_detail_notes_section">Diary notes</string>
+    <string name="book_detail_no_notes">No notes linked to this book.</string>
+    <string name="book_detail_delete">Remove from library</string>
+    <string name="book_delete_confirm_title">Remove from library?</string>
+    <string name="book_delete_confirm_message">This permanently deletes the book and its edition details. Linked diary entries will be kept as personal notes.</string>
+    <string name="book_delete_confirm_action">Remove</string>
     <string name="book_detail_status_label">Reading status</string>
     <string name="book_detail_pages_label">Pages</string>
     <string name="book_detail_year_label">Year</string>
+    <string name="book_detail_edition_label">Edition</string>
     <string name="book_detail_unspecified">—</string>
 
     <!-- Diary -->
-    <string name="diary_title">Diary</string>
-    <string name="diary_subtitle">Quiet reflections and marginalia</string>
-    <string name="diary_new_entry">New entry</string>
-    <string name="diary_empty_title">No entries recorded</string>
-    <string name="diary_empty_body">Capture reading impressions, brief passages, or solitary thoughts linked optionally to any cataloged book.</string>
-    <string name="diary_sheet_title">New diary entry</string>
-    <string name="diary_field_content">Write your reflection</string>
-    <string name="diary_field_book_optional">Associate with a book (optional)</string>
-    <string name="diary_no_book_linked">General note (no book linked)</string>
-    <string name="diary_save_action">Record entry</string>
-    <string name="diary_delete_entry">Delete entry</string>
-    <string name="diary_delete_confirm_title">Delete diary entry?</string>
-    <string name="diary_delete_confirm_message">This reflection will be permanently removed from your reading diary.</string>
-    <string name="diary_delete_confirm_action">Delete entry</string>
+    <string name="diary_new_entry">New note</string>
+    <string name="diary_empty_title">No diary notes</string>
+    <string name="diary_empty_body">Record passages or reading reflections, optionally linked to a book.</string>
+    <string name="diary_sheet_title">New diary note</string>
+    <string name="diary_field_content">Reflection</string>
+    <string name="diary_field_book_optional">Book (optional)</string>
+    <string name="diary_no_book_linked">No linked book</string>
+    <string name="diary_save_action">Save</string>
+    <string name="diary_delete_entry">Delete note</string>
+    <string name="diary_delete_confirm_title">Delete diary note?</string>
+    <string name="diary_delete_confirm_message">This reflection will be permanently removed from your diary.</string>
+    <string name="diary_delete_confirm_action">Delete</string>
     <string name="diary_general_note_tag">Personal note</string>
+    <plurals name="diary_entries_count">
+        <item quantity="one">%1$d note</item>
+        <item quantity="other">%1$d notes</item>
+    </plurals>
 
     <!-- Statistics -->
-    <string name="statistics_title">Statistics</string>
-    <string name="statistics_subtitle">Archive overview</string>
-    <string name="statistics_collection_summary">Catalog snapshot</string>
+    <string name="statistics_collection_summary">Reading figures</string>
     <string name="statistics_metric_works">Cataloged works</string>
-    <string name="statistics_metric_reading">Currently reading</string>
-    <string name="statistics_metric_finished">Finished works</string>
-    <string name="statistics_metric_diary">Diary entries</string>
-    <string name="statistics_empty_notice">Statistics will reflect only real records from your catalog and reading log—never simulated figures.</string>
-    <string name="statistics_planned_section">Prepared analytical modules</string>
-    <string name="statistics_planned_cadence_title">Reading cadence &amp; history</string>
-    <string name="statistics_planned_cadence_body">Monthly timelines, reread tracking, and page-progress distributions are planned for a future phase.</string>
-    <string name="statistics_planned_authors_title">Authors, editions &amp; genres</string>
-    <string name="statistics_planned_authors_body">Distribution by author, format, language, and personal shelves will expand here once cataloging matures.</string>
+    <string name="statistics_metric_reading">In progress</string>
+    <string name="statistics_metric_finished">Finished</string>
+    <string name="statistics_metric_diary">Diary notes</string>
+    <string name="statistics_completion_label">Completion rate</string>
+    <string name="statistics_status_distribution">Collection by status</string>
 
     <!-- Profile -->
-    <string name="profile_title">Profile</string>
-    <string name="profile_subtitle">Personal reader identity</string>
-    <string name="profile_default_name">Private Reader</string>
-    <string name="profile_default_bio">A quiet personal archive of works, editions, and reading reflections.</string>
-    <string name="profile_edit_identity">Edit identity</string>
-    <string name="profile_avatar_banner_note">Custom avatar and editorial banner upload are planned for a later customization phase.</string>
-    <string name="profile_section_favorites">Favorite books</string>
-    <string name="profile_empty_favorites">Mark any book in your library as a favorite to curate it here.</string>
-    <string name="profile_section_authors">Favorite authors</string>
-    <string name="profile_empty_authors">Favorite authors derived from your curated works will appear here.</string>
-    <string name="profile_section_shelves">Featured shelves</string>
-    <string name="profile_empty_shelves">Shelf curation and pinned collections are planned for an upcoming phase.</string>
-    <string name="profile_section_visual">Visual preferences</string>
-    <string name="profile_open_settings">Language, themes &amp; typography</string>
-    <string name="profile_edit_sheet_title">Edit reader identity</string>
-    <string name="profile_field_name">Display name</string>
-    <string name="profile_field_bio">Short reader note or epigraph</string>
-    <string name="profile_save_identity">Save identity</string>
+    <string name="profile_default_name">Reader</string>
+    <string name="profile_default_bio">No personal note yet.</string>
+    <string name="profile_edit_identity">Edit</string>
+    <string name="profile_section_favorites">Favorites</string>
+    <string name="profile_empty_favorites">Favorite books will appear here.</string>
+    <string name="profile_section_authors">Authors</string>
+    <string name="profile_empty_authors">Authors from your favorite books will appear here.</string>
+    <string name="profile_section_visual">Appearance &amp; language</string>
+    <string name="profile_open_settings">Settings</string>
+    <string name="profile_edit_sheet_title">Reader profile</string>
+    <string name="profile_field_name">Name</string>
+    <string name="profile_field_bio">Short note</string>
+    <string name="profile_save_identity">Save</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="settings_subtitle">Language, aesthetics, and archive preferences</string>
     <string name="settings_section_language">Language</string>
-    <string name="settings_language_description">Applies immediately across menus, dates, and messages without altering your book titles or notes.</string>
     <string name="settings_lang_pt_br">Português (Brasil)</string>
     <string name="settings_lang_en">English</string>
-    <string name="settings_section_theme">Editorial theme</string>
+    <string name="settings_section_theme">Theme</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_paper">Paper</string>
     <string name="settings_theme_ink">Ink</string>
     <string name="settings_theme_sepia">Sepia</string>
-    <string name="settings_section_typography">Typography preset</string>
-    <string name="settings_typography_description">Curated pairings applied globally. Per-book typographic overrides will arrive in a later phase.</string>
+    <string name="settings_section_typography">Typography</string>
     <string name="settings_typo_classic">Classic Editorial</string>
     <string name="settings_typo_classic_desc">Playfair Display + Inter + JetBrains Mono</string>
     <string name="settings_typo_literary">Literary Press</string>
     <string name="settings_typo_literary_desc">Cormorant Garamond + Lora + JetBrains Mono</string>
     <string name="settings_typo_modern">Modern Archive</string>
     <string name="settings_typo_modern_desc">Lora + Inter + JetBrains Mono</string>
-    <string name="settings_section_general">General preferences</string>
+    <string name="settings_section_general">General</string>
     <string name="settings_default_library_view">Default library layout</string>
-    <string name="settings_reduce_motion">Reduce interface motion</string>
-    <string name="settings_reduce_motion_desc">Minimizes transitions in addition to system accessibility settings.</string>
-    <string name="settings_section_about">About Dipe Libris</string>
-    <string name="settings_about_phase">Phase 1 — Native Editorial Foundation</string>
+    <string name="settings_reduce_motion">Reduce motion</string>
+    <string name="settings_reduce_motion_desc">Minimizes screen transitions.</string>
+    <string name="settings_section_app_info">Application</string>
     <string name="settings_about_version">Version %1$s</string>
-    <string name="settings_about_privacy">All data remains strictly offline on this device. No account, tracking, or external servers are used.</string>
-    <string name="settings_future_modules_title">Planned for upcoming phases</string>
-    <string name="settings_future_modules_body">Works/editions/copies hierarchy, reread history, page progress, quotes, ISBN scanner, backup &amp; restore.</string>
+    <string name="settings_about_privacy">Offline storage on device.</string>
 </resources>

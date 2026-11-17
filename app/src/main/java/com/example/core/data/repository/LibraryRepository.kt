@@ -1,8 +1,6 @@
 package com.example.core.data.repository
 
-import com.example.core.data.local.db.BookCopyEntity
 import com.example.core.data.local.db.BookDao
-import com.example.core.data.local.db.EditionEntity
 import com.example.core.data.local.db.ShelfDao
 import com.example.core.data.local.db.WorkEntity
 import com.example.core.data.local.db.WorkWithEditions
@@ -12,7 +10,10 @@ import com.example.core.model.Edition
 import com.example.core.model.ReadingStatus
 import com.example.core.model.Shelf
 import com.example.core.model.Work
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 interface LibraryRepository {
@@ -48,29 +49,49 @@ class RoomLibraryRepository(
 ) : LibraryRepository {
 
   override fun observeAllBooks(): Flow<List<CatalogBook>> =
-    bookDao.observeAllCatalogBooks().map { list -> list.map { it.toDomain() } }
+    bookDao
+      .observeAllCatalogBooks()
+      .distinctUntilChanged()
+      .map { list -> list.map { it.toDomain() } }
+      .flowOn(Dispatchers.Default)
 
   override fun observeCurrentlyReading(): Flow<List<CatalogBook>> =
-    bookDao.observeBooksByStatus(ReadingStatus.READING).map { list -> list.map { it.toDomain() } }
+    bookDao
+      .observeBooksByStatus(ReadingStatus.READING)
+      .distinctUntilChanged()
+      .map { list -> list.map { it.toDomain() } }
+      .flowOn(Dispatchers.Default)
 
   override fun observeFavoriteBooks(): Flow<List<CatalogBook>> =
-    bookDao.observeFavoriteBooks().map { list -> list.map { it.toDomain() } }
+    bookDao
+      .observeFavoriteBooks()
+      .distinctUntilChanged()
+      .map { list -> list.map { it.toDomain() } }
+      .flowOn(Dispatchers.Default)
 
   override fun observeBook(workId: Long): Flow<CatalogBook?> =
-    bookDao.observeCatalogBook(workId).map { it?.toDomain() }
+    bookDao
+      .observeCatalogBook(workId)
+      .distinctUntilChanged()
+      .map { it?.toDomain() }
+      .flowOn(Dispatchers.Default)
 
   override fun observeShelves(): Flow<List<Shelf>> =
-    shelfDao.observeAllShelves().map { list ->
-      list.map { entity ->
-        Shelf(
-          id = entity.id,
-          name = entity.name,
-          description = entity.description,
-          type = entity.type,
-          isFeatured = entity.isFeatured,
-        )
+    shelfDao
+      .observeAllShelves()
+      .distinctUntilChanged()
+      .map { list ->
+        list.map { entity ->
+          Shelf(
+            id = entity.id,
+            name = entity.name,
+            description = entity.description,
+            type = entity.type,
+            isFeatured = entity.isFeatured,
+          )
+        }
       }
-    }
+      .flowOn(Dispatchers.Default)
 
   override suspend fun addBook(
     title: String,

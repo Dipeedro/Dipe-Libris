@@ -1,9 +1,12 @@
 package com.example.core.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * Core domain models structured around Work -> Edition -> Copy to allow progressive expansion
  * in future phases without restructuring the database or UI contracts.
  */
+@Immutable
 data class Work(
   val id: Long = 0,
   val title: String,
@@ -15,6 +18,7 @@ data class Work(
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
 )
 
+@Immutable
 data class Edition(
   val id: Long = 0,
   val workId: Long,
@@ -25,6 +29,7 @@ data class Edition(
   val coverUri: String? = null,
 )
 
+@Immutable
 data class BookCopy(
   val id: Long = 0,
   val editionId: Long,
@@ -33,6 +38,7 @@ data class BookCopy(
   val personalNote: String? = null,
 )
 
+@Immutable
 data class CatalogBook(
   val work: Work,
   val primaryEdition: Edition?,
@@ -49,6 +55,7 @@ data class CatalogBook(
   val typographyPresetOverride: TypographyPreset? get() = work.typographyPresetOverride
 }
 
+@Immutable
 data class DiaryEntry(
   val id: Long = 0,
   val workId: Long? = null,
@@ -58,6 +65,7 @@ data class DiaryEntry(
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
 )
 
+@Immutable
 data class Shelf(
   val id: Long = 0,
   val name: String,
@@ -66,9 +74,13 @@ data class Shelf(
   val isFeatured: Boolean = false,
 )
 
+@Immutable
 data class ArchiveSnapshot(
   val totalWorks: Int = 0,
   val readingCount: Int = 0,
   val finishedCount: Int = 0,
+  val unreadCount: Int = 0,
+  val pausedCount: Int = 0,
+  val abandonedCount: Int = 0,
   val diaryEntriesCount: Int = 0,
 )

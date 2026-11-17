@@ -4,7 +4,10 @@ import com.example.core.data.local.db.DiaryDao
 import com.example.core.data.local.db.DiaryEntryEntity
 import com.example.core.data.local.db.DiaryEntryWithBookRow
 import com.example.core.model.DiaryEntry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 interface DiaryRepository {
@@ -20,10 +23,18 @@ interface DiaryRepository {
 class RoomDiaryRepository(private val diaryDao: DiaryDao) : DiaryRepository {
 
   override fun observeAllEntries(): Flow<List<DiaryEntry>> =
-    diaryDao.observeAllEntriesWithBook().map { rows -> rows.map { it.toDomain() } }
+    diaryDao
+      .observeAllEntriesWithBook()
+      .distinctUntilChanged()
+      .map { rows -> rows.map { it.toDomain() } }
+      .flowOn(Dispatchers.Default)
 
   override fun observeEntriesForWork(workId: Long): Flow<List<DiaryEntry>> =
-    diaryDao.observeEntriesForWork(workId).map { rows -> rows.map { it.toDomain() } }
+    diaryDao
+      .observeEntriesForWork(workId)
+      .distinctUntilChanged()
+      .map { rows -> rows.map { it.toDomain() } }
+      .flowOn(Dispatchers.Default)
 
   override suspend fun addEntry(content: String, workId: Long?): Long =
     diaryDao.insertEntry(

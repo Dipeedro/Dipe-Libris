@@ -1,5 +1,6 @@
 package com.example.feature.library
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.data.repository.DiaryRepository
@@ -7,23 +8,27 @@ import com.example.core.data.repository.LibraryRepository
 import com.example.core.model.CatalogBook
 import com.example.core.model.DiaryEntry
 import com.example.core.model.ReadingStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@Immutable
 sealed interface BookDetailUiState {
-  data object Loading : BookDetailUiState
+  @Immutable data object Loading : BookDetailUiState
 
+  @Immutable
   data class Loaded(
     val book: CatalogBook,
     val diaryNotes: List<DiaryEntry>,
     val isDeleting: Boolean = false,
   ) : BookDetailUiState
 
-  data object NotFound : BookDetailUiState
+  @Immutable data object NotFound : BookDetailUiState
 }
 
 class BookDetailViewModel(
@@ -36,20 +41,21 @@ class BookDetailViewModel(
 
   val uiState: StateFlow<BookDetailUiState> =
     combine(
-      libraryRepository.observeBook(workId),
-      diaryRepository.observeEntriesForWork(workId),
-      isDeleting,
-    ) { book, notes, deleting ->
-      if (book == null) {
-        BookDetailUiState.NotFound
-      } else {
-        BookDetailUiState.Loaded(
-          book = book,
-          diaryNotes = notes,
-          isDeleting = deleting,
-        )
+        libraryRepository.observeBook(workId),
+        diaryRepository.observeEntriesForWork(workId),
+        isDeleting,
+      ) { book, notes, deleting ->
+        if (book == null) {
+          BookDetailUiState.NotFound
+        } else {
+          BookDetailUiState.Loaded(
+            book = book,
+            diaryNotes = notes,
+            isDeleting = deleting,
+          )
+        }
       }
-    }
+      .flowOn(Dispatchers.Default)
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -57,15 +63,11 @@ class BookDetailViewModel(
       )
 
   fun toggleFavorite(currentFavorite: Boolean) {
-    viewModelScope.launch {
-      libraryRepository.toggleFavorite(workId, currentFavorite)
-    }
+    viewModelScope.launch { libraryRepository.toggleFavorite(workId, currentFavorite) }
   }
 
   fun updateStatus(status: ReadingStatus) {
-    viewModelScope.launch {
-      libraryRepository.updateReadingStatus(workId, status)
-    }
+    viewModelScope.launch { libraryRepository.updateReadingStatus(workId, status) }
   }
 
   fun deleteBook(onDeleted: () -> Unit) {

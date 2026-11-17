@@ -5,9 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +22,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.core.data.local.preferences.PreferencesRepository
 import com.example.core.data.local.preferences.UserPreferences
 import com.example.core.designsystem.DipeLibrisTheme
+import com.example.core.designsystem.InkColorScheme
+import com.example.core.designsystem.PaperColorScheme
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.ui.dipeFactory
@@ -65,11 +67,9 @@ class MainActivity : ComponentActivity() {
 
       when (val state = uiState) {
         MainUiState.Loading -> {
-          DipeLibrisTheme {
-            Box(
-              modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-            )
-          }
+          val loadingBg =
+            if (isSystemInDarkTheme()) InkColorScheme.background else PaperColorScheme.background
+          Box(modifier = Modifier.fillMaxSize().background(loadingBg))
         }
         is MainUiState.Ready -> {
           val prefs = state.preferences

@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -26,6 +27,7 @@ import com.example.core.model.DiaryEntry
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.ReadingStatus
 import com.example.core.model.Work
+import com.example.core.data.local.preferences.UserPreferences
 import com.example.feature.diary.DiaryScreen
 import com.example.feature.diary.DiaryUiState
 import com.example.feature.home.HomeScreen
@@ -36,6 +38,7 @@ import com.example.feature.library.BookDetailScreen
 import com.example.feature.library.BookDetailUiState
 import com.example.feature.library.LibraryScreen
 import com.example.feature.library.LibraryUiState
+import com.example.feature.settings.SettingsScreen
 import com.example.navigation.DipeNavigationShell
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -98,7 +101,7 @@ class Phase11FlowsTest {
     }
 
     composeTestRule
-      .onNodeWithTag("library_lazy_column")
+      .onNodeWithTag("library_grid")
       .performScrollToNode(hasTestTag("library_grid_book_1"))
     composeTestRule.onNodeWithTag("library_grid_book_1").assertIsDisplayed()
 
@@ -294,7 +297,7 @@ class Phase11FlowsTest {
   }
 
   @Test
-  fun homeLinkedDiaryEntryNavigatesToBookDetailAndInkBadgeIsDisplayed() {
+  fun homeLinkedDiaryEntryNavigatesToBookDetailWithoutBrandClutter() {
     var navigatedBookId: Long? = null
     val linkedEntry =
       DiaryEntry(
@@ -323,12 +326,46 @@ class Phase11FlowsTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("home_brand_badge").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("home_settings_button").assertIsDisplayed()
+    composeTestRule.onNodeWithText("DL", ignoreCase = true).assertDoesNotExist()
+    composeTestRule.onNodeWithText("Dipe Libris", ignoreCase = true).assertDoesNotExist()
+    composeTestRule.onNodeWithText("PERSONAL ARCHIVE", ignoreCase = true).assertDoesNotExist()
+    composeTestRule.onNodeWithText("ACERVO PESSOAL", ignoreCase = true).assertDoesNotExist()
+
     composeTestRule
       .onNodeWithTag("home_lazy_column")
       .performScrollToNode(hasTestTag("home_diary_entry_11"))
     composeTestRule.onNodeWithTag("home_diary_entry_11").performClick()
     assertEquals(88L, navigatedBookId)
+  }
+
+  @Test
+  fun appVersionIs12AndDisplayedInSettings() {
+    assertEquals("1.2", BuildConfig.VERSION_NAME)
+    assertEquals(3, BuildConfig.VERSION_CODE)
+
+    var language by mutableStateOf(AppLanguage.ENGLISH)
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides language) {
+        DipeLibrisTheme {
+          SettingsScreen(
+            preferences = UserPreferences(language = language),
+            widthClass = WindowWidthClass.COMPACT,
+            onSelectLanguage = { language = it },
+            onSelectTheme = {},
+            onSelectTypography = {},
+            onSelectDefaultLibraryView = {},
+            onToggleReduceMotion = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule
+      .onNodeWithTag("settings_lazy_column")
+      .performScrollToNode(hasTestTag("settings_app_version"))
+    composeTestRule.onNodeWithText("Version 1.2").assertIsDisplayed()
   }
 
   @Test

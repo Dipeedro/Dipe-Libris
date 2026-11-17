@@ -1,10 +1,12 @@
 package com.example.core.data.local.preferences
 
+import androidx.compose.runtime.Immutable
 import com.example.core.model.AppLanguage
 import com.example.core.model.AppThemeMode
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.TypographyPreset
 
+@Immutable
 data class UserPreferences(
   val language: AppLanguage = AppLanguage.fromTag(null),
   val themeMode: AppThemeMode = AppThemeMode.PAPER,

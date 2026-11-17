@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -27,8 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.model.CatalogBook
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,20 +47,30 @@ fun NewDiaryEntrySheet(
   var content by remember { mutableStateOf("") }
   var selectedWorkId by remember { mutableStateOf<Long?>(null) }
 
+  val textFieldColors =
+    OutlinedTextFieldDefaults.colors(
+      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+      focusedBorderColor = MaterialTheme.colorScheme.primary,
+    )
+
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
     containerColor = MaterialTheme.colorScheme.surface,
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
+      modifier =
+        Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Text(
-        text = stringResource(R.string.diary_sheet_title),
-        style = MaterialTheme.typography.headlineMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+        Text(
+          text = stringResource(R.string.diary_sheet_title),
+          style = MaterialTheme.typography.headlineMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+        HairlineDivider()
+      }
 
       OutlinedTextField(
         value = content,
@@ -63,6 +78,8 @@ fun NewDiaryEntrySheet(
         label = { Text(stringResource(R.string.diary_field_content)) },
         minLines = 4,
         maxLines = 8,
+        shape = MaterialTheme.shapes.small,
+        colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("diary_entry_content_input"),
       )
 
@@ -73,24 +90,56 @@ fun NewDiaryEntrySheet(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          val chipColors =
+            FilterChipDefaults.filterChipColors(
+              selectedContainerColor = MaterialTheme.colorScheme.primary,
+              selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+              containerColor = MaterialTheme.colorScheme.surface,
+              labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-            item {
+            item(key = "no_book_linked", contentType = "book_chip") {
               FilterChip(
                 selected = selectedWorkId == null,
                 onClick = { selectedWorkId = null },
+                shape = CircleShape,
+                colors = chipColors,
+                border =
+                  FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = selectedWorkId == null,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                    borderWidth = 0.75.dp,
+                  ),
                 label = { Text(stringResource(R.string.diary_no_book_linked)) },
               )
             }
-            items(availableBooks, key = { it.id }) { book ->
+            items(
+              items = availableBooks,
+              key = { it.id },
+              contentType = { "book_chip" },
+            ) { book ->
+              val selected = selectedWorkId == book.id
               FilterChip(
-                selected = selectedWorkId == book.id,
+                selected = selected,
                 onClick = { selectedWorkId = book.id },
+                shape = CircleShape,
+                colors = chipColors,
+                border =
+                  FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = selected,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                    borderWidth = 0.75.dp,
+                  ),
                 label = { Text(book.title) },
               )
             }
           }
         }
       }
+
+      HairlineDivider()
 
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -109,7 +158,7 @@ fun NewDiaryEntrySheet(
             }
           },
           enabled = content.isNotBlank(),
-          shape = MaterialTheme.shapes.small,
+          shape = CircleShape,
           modifier = Modifier.minimumInteractiveComponentSize().testTag("diary_save_button"),
         ) {
           Text(stringResource(R.string.diary_save_action))

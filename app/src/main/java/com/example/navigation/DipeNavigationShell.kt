@@ -111,13 +111,19 @@ fun DipeNavigationShell(
       TopLevelDestination.entries.any { top -> dest.hasRoute(top.route::class) }
     } ?: true
 
-  fun navigateToTopLevel(destination: TopLevelDestination) {
-    navController.navigate(destination.route) {
-      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-      launchSingleTop = true
-      restoreState = true
+  val navigateToTopLevel: (TopLevelDestination) -> Unit =
+    remember(navController) {
+      { destination ->
+        navController.navigate(destination.route) {
+          popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+          launchSingleTop = true
+          restoreState = true
+        }
+      }
     }
-  }
+
+  val enterSpec = remember(motion) { motion.standardTween<Float>(160) }
+  val exitSpec = remember(motion) { motion.standardTween<Float>(140) }
 
   BoxWithConstraints(modifier = modifier.fillMaxSize()) {
     val widthClass = WindowWidthClass.fromWidth(maxWidth)
@@ -156,11 +162,11 @@ fun DipeNavigationShell(
                   },
                   colors =
                     NavigationBarItemDefaults.colors(
-                      selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                      selectedIconColor = MaterialTheme.colorScheme.secondary,
                       selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                      indicatorColor = MaterialTheme.colorScheme.surfaceContainer,
-                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                      indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                     ),
                   modifier = Modifier.testTag("nav_tab_${dest.routeKey}"),
                 )
@@ -199,11 +205,11 @@ fun DipeNavigationShell(
                 },
                 colors =
                   NavigationRailItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                    selectedIconColor = MaterialTheme.colorScheme.secondary,
                     selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = MaterialTheme.colorScheme.surfaceContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                   ),
                 modifier =
                   Modifier.padding(vertical = DipeSpacing.xs).testTag("nav_rail_${dest.routeKey}"),
@@ -214,9 +220,6 @@ fun DipeNavigationShell(
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-          val enterSpec = motion.standardTween<Float>(180)
-          val exitSpec = motion.standardTween<Float>(160)
-
           NavHost(
             navController = navController,
             startDestination = HomeRoute,

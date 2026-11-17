@@ -10,14 +10,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -31,8 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.model.ReadingStatus
 
@@ -54,6 +59,12 @@ fun AddBookSheet(
   var pagesError by remember { mutableStateOf(false) }
   var yearError by remember { mutableStateOf(false) }
 
+  val textFieldColors =
+    OutlinedTextFieldDefaults.colors(
+      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+      focusedBorderColor = MaterialTheme.colorScheme.primary,
+    )
+
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
@@ -66,11 +77,14 @@ fun AddBookSheet(
           .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Text(
-        text = stringResource(R.string.book_add_sheet_title),
-        style = MaterialTheme.typography.headlineMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+        Text(
+          text = stringResource(R.string.book_add_sheet_title),
+          style = MaterialTheme.typography.headlineMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+        HairlineDivider()
+      }
 
       OutlinedTextField(
         value = title,
@@ -82,6 +96,8 @@ fun AddBookSheet(
         label = { Text(stringResource(R.string.book_field_title)) },
         isError = titleAuthorError && title.isBlank(),
         singleLine = true,
+        shape = MaterialTheme.shapes.small,
+        colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("add_book_title_input"),
       )
 
@@ -95,6 +111,8 @@ fun AddBookSheet(
         label = { Text(stringResource(R.string.book_field_author)) },
         isError = titleAuthorError && author.isBlank(),
         singleLine = true,
+        shape = MaterialTheme.shapes.small,
+        colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("add_book_author_input"),
       )
 
@@ -112,6 +130,8 @@ fun AddBookSheet(
           label = { Text(stringResource(R.string.book_field_pages)) },
           isError = pagesError,
           singleLine = true,
+          shape = MaterialTheme.shapes.small,
+          colors = textFieldColors,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           modifier = Modifier.weight(1f).testTag("add_book_pages_input"),
         )
@@ -125,6 +145,8 @@ fun AddBookSheet(
           label = { Text(stringResource(R.string.book_field_year)) },
           isError = yearError,
           singleLine = true,
+          shape = MaterialTheme.shapes.small,
+          colors = textFieldColors,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           modifier = Modifier.weight(1f).testTag("add_book_year_input"),
         )
@@ -135,6 +157,8 @@ fun AddBookSheet(
         onValueChange = { editionNote = it },
         label = { Text(stringResource(R.string.book_field_edition_note)) },
         singleLine = true,
+        shape = MaterialTheme.shapes.small,
+        colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("add_book_edition_input"),
       )
 
@@ -148,11 +172,28 @@ fun AddBookSheet(
           horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
           verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
         ) {
+          val chipColors =
+            FilterChipDefaults.filterChipColors(
+              selectedContainerColor = MaterialTheme.colorScheme.primary,
+              selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+              containerColor = MaterialTheme.colorScheme.surface,
+              labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           ReadingStatus.entries.forEach { status ->
+            val selected = selectedStatus == status
             FilterChip(
-              selected = selectedStatus == status,
+              selected = selected,
               onClick = { selectedStatus = status },
               label = { Text(readingStatusLabel(status)) },
+              shape = CircleShape,
+              colors = chipColors,
+              border =
+                FilterChipDefaults.filterChipBorder(
+                  enabled = true,
+                  selected = selected,
+                  borderColor = MaterialTheme.colorScheme.outlineVariant,
+                  borderWidth = 0.75.dp,
+                ),
               modifier = Modifier.testTag("add_book_status_${status.name.lowercase()}"),
             )
           }
@@ -167,6 +208,8 @@ fun AddBookSheet(
           modifier = Modifier.testTag("add_book_validation_error"),
         )
       }
+
+      HairlineDivider()
 
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -210,7 +253,7 @@ fun AddBookSheet(
               }
             }
           },
-          shape = MaterialTheme.shapes.small,
+          shape = CircleShape,
           modifier = Modifier.minimumInteractiveComponentSize().testTag("add_book_save_button"),
         ) {
           Text(stringResource(R.string.book_save_action))
