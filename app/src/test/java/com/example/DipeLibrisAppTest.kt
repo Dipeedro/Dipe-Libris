@@ -2,10 +2,12 @@ package com.example
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -33,8 +35,9 @@ class DipeLibrisAppTest {
   fun navigateBetweenAllMainAreasAndSettings() {
     composeTestRule.waitForIdle()
 
-    // Home is initial destination
-    composeTestRule.onNodeWithTag("home_settings_button").assertIsDisplayed()
+    // Home is initial destination without redundant settings/shortcut buttons
+    composeTestRule.onNodeWithTag("home_lazy_column").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("home_settings_button").assertDoesNotExist()
 
     // Navigate to Library
     composeTestRule.onNodeWithTag("nav_tab_library").performClick()
@@ -54,6 +57,9 @@ class DipeLibrisAppTest {
     // Navigate to Profile -> Settings -> Switch to Portuguese (Brazil)
     composeTestRule.onNodeWithTag("nav_tab_profile").performClick()
     composeTestRule.waitForIdle()
+    composeTestRule
+      .onNodeWithTag("profile_lazy_column")
+      .performScrollToNode(hasTestTag("profile_settings_button"))
     composeTestRule.onNodeWithTag("profile_settings_button").performClick()
     composeTestRule.waitForIdle()
 
@@ -73,6 +79,9 @@ class DipeLibrisAppTest {
     // Back to Profile
     composeTestRule.onNodeWithTag("settings_back_button").performClick()
     composeTestRule.waitForIdle()
+    composeTestRule
+      .onNodeWithTag("profile_lazy_column")
+      .performScrollToNode(hasTestTag("profile_edit_button"))
     composeTestRule.onNodeWithTag("profile_edit_button").assertIsDisplayed()
   }
 

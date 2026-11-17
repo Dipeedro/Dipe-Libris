@@ -32,7 +32,6 @@ import com.example.feature.diary.DiaryScreen
 import com.example.feature.diary.DiaryUiState
 import com.example.feature.home.HomeScreen
 import com.example.feature.home.HomeUiState
-import com.example.feature.home.RecentActivityItem
 import com.example.feature.library.AddBookSheet
 import com.example.feature.library.BookDetailScreen
 import com.example.feature.library.BookDetailUiState
@@ -297,36 +296,38 @@ class Phase11FlowsTest {
   }
 
   @Test
-  fun homeLinkedDiaryEntryNavigatesToBookDetailWithoutBrandClutter() {
+  fun homeFeaturedBookNavigatesToBookDetailWithoutBrandOrButtonClutter() {
     var navigatedBookId: Long? = null
-    val linkedEntry =
-      DiaryEntry(
-        id = 11L,
-        workId = 88L,
-        content = "Passagem marcante.",
-        createdAtEpochMillis = 20_000L,
-        linkedBookTitle = "Dom Casmurro",
-        linkedBookAuthor = "Machado de Assis",
+    val featuredBook =
+      CatalogBook(
+        work =
+          Work(
+            id = 88L,
+            title = "Dom Casmurro",
+            author = "Machado de Assis",
+            status = ReadingStatus.READING,
+            isFavorite = true,
+            typographyPresetOverride = null,
+            createdAtEpochMillis = 20_000L,
+            updatedAtEpochMillis = 20_000L,
+          ),
+        primaryEdition = null,
+        primaryCopy = null,
       )
 
     composeTestRule.setContent {
       CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH) {
         DipeLibrisTheme(themeMode = AppThemeMode.INK) {
           HomeScreen(
-            uiState =
-              HomeUiState(recentActivity = listOf(RecentActivityItem.DiaryRecorded(linkedEntry))),
+            uiState = HomeUiState(currentlyReading = listOf(featuredBook)),
             widthClass = WindowWidthClass.COMPACT,
-            onOpenSettings = {},
-            onOpenLibrary = {},
-            onCatalogVolume = {},
-            onWriteDiaryEntry = {},
             onOpenBook = { navigatedBookId = it },
           )
         }
       }
     }
 
-    composeTestRule.onNodeWithTag("home_settings_button").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("home_settings_button").assertDoesNotExist()
     composeTestRule.onNodeWithText("DL", ignoreCase = true).assertDoesNotExist()
     composeTestRule.onNodeWithText("Dipe Libris", ignoreCase = true).assertDoesNotExist()
     composeTestRule.onNodeWithText("PERSONAL ARCHIVE", ignoreCase = true).assertDoesNotExist()
@@ -334,8 +335,8 @@ class Phase11FlowsTest {
 
     composeTestRule
       .onNodeWithTag("home_lazy_column")
-      .performScrollToNode(hasTestTag("home_diary_entry_11"))
-    composeTestRule.onNodeWithTag("home_diary_entry_11").performClick()
+      .performScrollToNode(hasTestTag("home_reading_book_88"))
+    composeTestRule.onNodeWithTag("home_reading_book_88").performClick()
     assertEquals(88L, navigatedBookId)
   }
 

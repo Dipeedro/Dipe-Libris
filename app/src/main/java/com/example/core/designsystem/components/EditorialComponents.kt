@@ -69,7 +69,7 @@ fun EditorialMasthead(
   trailingContent: @Composable (RowScope.() -> Unit)? = null,
 ) {
   Row(
-    modifier = modifier.fillMaxWidth().padding(top = DipeSpacing.sm, bottom = DipeSpacing.xs),
+    modifier = modifier.fillMaxWidth().padding(top = DipeSpacing.md, bottom = DipeSpacing.xs),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.Top,
   ) {
@@ -105,14 +105,14 @@ fun EditorialMasthead(
 }
 
 /**
- * Tonal surface card that creates depth and separation through subtle color stepping
- * and generous internal padding rather than heavy borders or stacked divider lines.
+ * Borderless tonal surface card that creates depth through subtle color stepping
+ * and generous internal padding rather than boxed outlines.
  */
 @Composable
 fun EditorialSurfaceCard(
   modifier: Modifier = Modifier,
   containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
-  borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+  border: BorderStroke? = null,
   shape: Shape = MaterialTheme.shapes.large,
   contentPadding: PaddingValues = PaddingValues(DipeSpacing.lg),
   onClick: (() -> Unit)? = null,
@@ -125,7 +125,7 @@ fun EditorialSurfaceCard(
       },
     shape = shape,
     color = containerColor,
-    border = BorderStroke(0.5.dp, borderColor),
+    border = border,
   ) {
     Column(
       modifier = Modifier.padding(contentPadding),
@@ -158,8 +158,7 @@ fun EditorialSubscreenTopBar(
           Surface(
             onClick = onNavigateBack,
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.9f),
-            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
             modifier = Modifier.size(44.dp).minimumInteractiveComponentSize().testTag(backButtonTag),
           ) {
             Box(contentAlignment = Alignment.Center) {

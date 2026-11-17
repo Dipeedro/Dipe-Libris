@@ -44,7 +44,6 @@ import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.EditorialMasthead
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.readingStatusAccentColor
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.localization.LocalAppLanguage
@@ -243,8 +242,8 @@ fun StatisticsScreen(
                 }
               }
 
-              Column {
-                statusItems.forEachIndexed { index, (status, count) ->
+              Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+                statusItems.forEach { (status, count) ->
                   val share =
                     if (snapshot.totalWorks > 0) {
                       ((count.toFloat() / snapshot.totalWorks.toFloat()) * 100f).roundToInt()
@@ -257,9 +256,6 @@ fun StatisticsScreen(
                     percent = "${LocaleManager.formatInteger(share, language)}%",
                     dotColor = readingStatusAccentColor(status),
                   )
-                  if (index < statusItems.lastIndex) {
-                    HairlineDivider()
-                  }
                 }
               }
             }

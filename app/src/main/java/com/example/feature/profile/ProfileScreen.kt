@@ -2,7 +2,6 @@ package com.example.feature.profile
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,10 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -48,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.LocalDipeBrandTokens
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.EditorialMasthead
@@ -65,7 +61,6 @@ fun ProfileScreen(
   onOpenBook: (Long) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val brand = LocalDipeBrandTokens.current
   val listState = rememberLazyListState()
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val customName = uiState.preferences.readerName.trim()
@@ -89,32 +84,7 @@ fun ProfileScreen(
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
     ) {
       item(key = "profile_masthead", contentType = "masthead") {
-        EditorialMasthead(
-          title = stringResource(R.string.nav_profile),
-          trailingContent = {
-            Surface(
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surfaceContainerLow,
-              border =
-                BorderStroke(
-                  0.5.dp,
-                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                ),
-            ) {
-              IconButton(
-                onClick = onOpenSettings,
-                modifier =
-                  Modifier.minimumInteractiveComponentSize().testTag("profile_settings_button"),
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Settings,
-                  contentDescription = stringResource(R.string.cd_open_settings),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            }
-          },
-        )
+        EditorialMasthead(title = stringResource(R.string.nav_profile))
       }
 
       item(key = "profile_identity", contentType = "identity_header") {
@@ -135,8 +105,7 @@ fun ProfileScreen(
                 modifier =
                   Modifier.size(64.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                    .border(0.75.dp, brand.badgeBorder, CircleShape),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center,
               ) {
                 if (initialLetter != null) {
@@ -196,16 +165,11 @@ fun ProfileScreen(
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.profile_section_favorites))
           if (uiState.favoriteBooks.isEmpty()) {
-            EditorialSurfaceCard(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
-              contentPadding = PaddingValues(DipeSpacing.lg),
-            ) {
-              Text(
-                text = stringResource(R.string.profile_empty_favorites),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
+            Text(
+              text = stringResource(R.string.profile_empty_favorites),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
               items(
@@ -247,16 +211,11 @@ fun ProfileScreen(
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.profile_section_authors))
           if (uiState.favoriteAuthors.isEmpty()) {
-            EditorialSurfaceCard(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
-              contentPadding = PaddingValues(DipeSpacing.lg),
-            ) {
-              Text(
-                text = stringResource(R.string.profile_empty_authors),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
+            Text(
+              text = stringResource(R.string.profile_empty_authors),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           } else {
             FlowRow(
               horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
@@ -264,13 +223,8 @@ fun ProfileScreen(
             ) {
               uiState.favoriteAuthors.forEach { author ->
                 Surface(
-                  color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                  color = MaterialTheme.colorScheme.surfaceContainerLow,
                   shape = CircleShape,
-                  border =
-                    BorderStroke(
-                      0.5.dp,
-                      MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                    ),
                 ) {
                   Text(
                     text = author,
@@ -292,7 +246,7 @@ fun ProfileScreen(
           EditorialSurfaceCard(
             modifier =
               Modifier.defaultMinSize(minHeight = 64.dp)
-                .testTag("profile_visual_preferences_row"),
+                .testTag("profile_settings_button"),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             shape = MaterialTheme.shapes.medium,
             contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),

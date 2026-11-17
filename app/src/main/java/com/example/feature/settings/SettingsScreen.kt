@@ -55,7 +55,6 @@ import com.example.core.designsystem.bodyFontFamilyFor
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSubscreenTopBar
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.displayFontFamilyFor
 import com.example.core.model.AppLanguage
 import com.example.core.model.AppThemeMode
@@ -127,13 +126,7 @@ fun SettingsScreen(
                   onClick = { onSelectLanguage(language) },
                   shape = CircleShape,
                   colors = chipColors,
-                  border =
-                    FilterChipDefaults.filterChipBorder(
-                      enabled = true,
-                      selected = selected,
-                      borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                      borderWidth = 0.5.dp,
-                    ),
+                  border = null,
                   leadingIcon =
                     if (selected) {
                       {
@@ -230,12 +223,8 @@ fun SettingsScreen(
                   if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
                   else MaterialTheme.colorScheme.surfaceContainerLowest,
                 border =
-                  BorderStroke(
-                    width = if (selected) 1.25.dp else 0.5.dp,
-                    color =
-                      if (selected) MaterialTheme.colorScheme.secondary
-                      else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                  ),
+                  if (selected) BorderStroke(1.25.dp, MaterialTheme.colorScheme.secondary)
+                  else null,
                 modifier =
                   Modifier.fillMaxWidth()
                     .testTag("settings_typography_${preset.name.lowercase()}"),
@@ -284,7 +273,7 @@ fun SettingsScreen(
                     }
                   }
 
-                  HairlineDivider()
+                  Spacer(modifier = Modifier.height(DipeSpacing.xxs))
 
                   // Live multi-line specimen in the actual preset fonts
                   Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -335,13 +324,7 @@ fun SettingsScreen(
                     onClick = { onSelectDefaultLibraryView(mode) },
                     shape = CircleShape,
                     colors = chipColors,
-                    border =
-                      FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = selected,
-                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                        borderWidth = 0.5.dp,
-                      ),
+                    border = null,
                     label = {
                       Text(
                         when (mode) {
@@ -357,7 +340,7 @@ fun SettingsScreen(
                 }
               }
 
-              HairlineDivider()
+              Spacer(modifier = Modifier.height(DipeSpacing.xs))
 
               Row(
                 modifier =
@@ -447,12 +430,8 @@ private fun ThemeSwatchCard(
       if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
       else MaterialTheme.colorScheme.surfaceContainerLowest,
     border =
-      BorderStroke(
-        width = if (selected) 1.25.dp else 0.5.dp,
-        color =
-          if (selected) MaterialTheme.colorScheme.secondary
-          else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-      ),
+      if (selected) BorderStroke(1.25.dp, MaterialTheme.colorScheme.secondary)
+      else null,
     modifier = modifier.defaultMinSize(minHeight = 72.dp),
   ) {
     Row(

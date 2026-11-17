@@ -61,7 +61,6 @@ import com.example.core.designsystem.components.EditorialMetadataStrip
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSubscreenTopBar
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
@@ -198,12 +197,7 @@ fun BookDetailScreen(
                       Surface(
                         onClick = { onToggleFavorite(currentBook.isFavorite) },
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.9f),
-                        border =
-                          BorderStroke(
-                            0.5.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                          ),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
                         modifier =
                           Modifier.size(44.dp)
                             .minimumInteractiveComponentSize()
@@ -266,7 +260,6 @@ fun BookDetailScreen(
 
                   Spacer(modifier = Modifier.height(DipeSpacing.md))
                 }
-                HairlineDivider()
               }
             }
 
@@ -288,13 +281,7 @@ fun BookDetailScreen(
                       label = { Text(readingStatusLabel(status)) },
                       shape = CircleShape,
                       colors = chipColors,
-                      border =
-                        FilterChipDefaults.filterChipBorder(
-                          enabled = true,
-                          selected = selected,
-                          borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                          borderWidth = 0.5.dp,
-                        ),
+                      border = null,
                       modifier = Modifier.testTag("book_detail_status_${status.name.lowercase()}"),
                     )
                   }

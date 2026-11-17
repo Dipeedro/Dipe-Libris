@@ -24,7 +24,7 @@ object DipeSpacing {
   val xxl: Dp = 48.dp
 
   fun horizontalMargin(widthClass: WindowWidthClass): Dp =
-    if (widthClass == WindowWidthClass.COMPACT) 20.dp else 36.dp
+    if (widthClass == WindowWidthClass.COMPACT) 24.dp else 40.dp
 }
 
 object DipeRadii {

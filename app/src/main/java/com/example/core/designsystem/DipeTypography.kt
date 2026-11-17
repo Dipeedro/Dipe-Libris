@@ -231,9 +231,9 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 31.sp,
-          lineHeight = 36.sp,
-          letterSpacing = (-0.5).sp,
+          fontSize = 34.sp,
+          lineHeight = 40.sp,
+          letterSpacing = (-0.6).sp,
         ),
       navBarLabel =
         TextStyle(

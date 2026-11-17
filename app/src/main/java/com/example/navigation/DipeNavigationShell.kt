@@ -4,7 +4,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -45,7 +44,6 @@ import androidx.navigation.toRoute
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeMotion
 import com.example.core.designsystem.WindowWidthClass
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.di.AppContainer
 import com.example.core.ui.dipeFactory
 import com.example.feature.diary.DiaryScreen
@@ -134,45 +132,42 @@ fun DipeNavigationShell(
       contentWindowInsets = WindowInsets.safeDrawing,
       bottomBar = {
         if (isTopLevel && !useRail) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            HairlineDivider()
-            NavigationBar(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-              tonalElevation = 0.dp,
-            ) {
-              val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
-              TopLevelDestination.entries.forEach { dest ->
-                val selected = currentDestination?.hasRoute(dest.route::class) == true
-                val label = stringResource(dest.labelRes)
-                NavigationBarItem(
-                  selected = selected,
-                  onClick = { navigateToTopLevel(dest) },
-                  icon = {
-                    Icon(
-                      imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                      contentDescription = label,
-                    )
-                  },
-                  label = {
-                    Text(
-                      text = label,
-                      style = navLabelStyle,
-                      maxLines = 1,
-                      softWrap = false,
-                      overflow = TextOverflow.Clip,
-                    )
-                  },
-                  colors =
-                    NavigationBarItemDefaults.colors(
-                      selectedIconColor = MaterialTheme.colorScheme.secondary,
-                      selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                      indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
-                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                    ),
-                  modifier = Modifier.testTag("nav_tab_${dest.routeKey}"),
-                )
-              }
+          NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 0.dp,
+          ) {
+            val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
+            TopLevelDestination.entries.forEach { dest ->
+              val selected = currentDestination?.hasRoute(dest.route::class) == true
+              val label = stringResource(dest.labelRes)
+              NavigationBarItem(
+                selected = selected,
+                onClick = { navigateToTopLevel(dest) },
+                icon = {
+                  Icon(
+                    imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                    contentDescription = label,
+                  )
+                },
+                label = {
+                  Text(
+                    text = label,
+                    style = navLabelStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                  )
+                },
+                colors =
+                  NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.secondary,
+                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                  ),
+                modifier = Modifier.testTag("nav_tab_${dest.routeKey}"),
+              )
             }
           }
         }
@@ -181,7 +176,7 @@ fun DipeNavigationShell(
       Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (isTopLevel && useRail) {
           NavigationRail(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             windowInsets = WindowInsets(0, 0, 0, 0),
             modifier = Modifier.fillMaxHeight().testTag("dipe_navigation_rail"),
           ) {
@@ -211,16 +206,16 @@ fun DipeNavigationShell(
                   NavigationRailItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.secondary,
                     selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                   ),
                 modifier =
                   Modifier.padding(vertical = DipeSpacing.xs).testTag("nav_rail_${dest.routeKey}"),
               )
             }
           }
-          VerticalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+          VerticalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -237,10 +232,6 @@ fun DipeNavigationShell(
               HomeScreen(
                 uiState = homeState,
                 widthClass = widthClass,
-                onOpenSettings = { navController.navigate(SettingsRoute) },
-                onOpenLibrary = { navigateToTopLevel(TopLevelDestination.LIBRARY) },
-                onCatalogVolume = { showAddBookSheet = true },
-                onWriteDiaryEntry = { showNewDiarySheet = true },
                 onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
               )
             }

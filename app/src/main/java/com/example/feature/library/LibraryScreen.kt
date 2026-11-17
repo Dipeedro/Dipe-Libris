@@ -1,6 +1,5 @@
 package com.example.feature.library
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -360,7 +360,7 @@ private fun LibraryControlsBlock(
         OutlinedTextFieldDefaults.colors(
           focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
           unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+          unfocusedBorderColor = Color.Transparent,
           focusedBorderColor = MaterialTheme.colorScheme.secondary,
         ),
       modifier = Modifier.fillMaxWidth().testTag("library_search_input"),
@@ -436,13 +436,7 @@ private fun LibraryControlsBlock(
           label = { Text(stringResource(R.string.library_filter_all)) },
           shape = CircleShape,
           colors = chipColors,
-          border =
-            FilterChipDefaults.filterChipBorder(
-              enabled = true,
-              selected = statusFilter == null,
-              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-              borderWidth = 0.5.dp,
-            ),
+          border = null,
           modifier = Modifier.testTag("library_filter_all"),
         )
       }
@@ -454,13 +448,7 @@ private fun LibraryControlsBlock(
           label = { Text(readingStatusLabel(status)) },
           shape = CircleShape,
           colors = chipColors,
-          border =
-            FilterChipDefaults.filterChipBorder(
-              enabled = true,
-              selected = selected,
-              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-              borderWidth = 0.5.dp,
-            ),
+          border = null,
           modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
         )
       }
