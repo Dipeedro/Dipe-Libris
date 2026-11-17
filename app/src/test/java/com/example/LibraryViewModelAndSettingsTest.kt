@@ -87,7 +87,15 @@ class LibraryViewModelAndSettingsTest {
       Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java)
         .allowMainThreadQueries()
         .build()
-    libraryRepo = RoomLibraryRepository(db.bookDao(), db.shelfDao())
+    libraryRepo =
+      RoomLibraryRepository(
+        bookDao = db.bookDao(),
+        shelfDao = db.shelfDao(),
+        editionDao = db.editionDao(),
+        copyDao = db.copyDao(),
+        readingJourneyDao = db.readingJourneyDao(),
+        database = db,
+      )
     diaryRepo = RoomDiaryRepository(db.diaryDao())
     fakePrefs = FakePreferencesRepository()
   }
@@ -100,7 +108,7 @@ class LibraryViewModelAndSettingsTest {
 
   @Test
   fun settingsDefaultViewModeUpdatesLibraryEvenAfterManualOverride() = runTest {
-    val viewModel = LibraryViewModel(libraryRepo, diaryRepo, fakePrefs)
+    val viewModel = LibraryViewModel(libraryRepo, fakePrefs)
     val collector = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
 
     // Wait for initial Room query emission to populate combine()
@@ -133,7 +141,7 @@ class LibraryViewModelAndSettingsTest {
     libraryRepo.addBook("Borges e os Outros", "Alfonso Reyes", 150, 1960, null, ReadingStatus.UNREAD)
     libraryRepo.addBook("Amado", "Érico Veríssimo", 88, 1977, null, ReadingStatus.UNREAD)
 
-    val viewModel = LibraryViewModel(libraryRepo, diaryRepo, fakePrefs)
+    val viewModel = LibraryViewModel(libraryRepo, fakePrefs)
     val collector = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
 
     viewModel.setSortOrder(LibrarySortOrder.TITLE_ASC)

@@ -19,6 +19,21 @@
     <string name="status_finished">Concluído</string>
     <string name="status_abandoned">Interrompido</string>
 
+    <!-- Copy Media & Edition Formats -->
+    <string name="copy_media_physical">Físico</string>
+    <string name="copy_media_digital">Digital</string>
+    <string name="edition_format_hardcover">Capa dura</string>
+    <string name="edition_format_paperback">Brochura</string>
+    <string name="edition_format_pocket">Bolso</string>
+    <string name="edition_format_ebook">eBook</string>
+    <string name="edition_format_other">Outro</string>
+
+    <!-- Cover Photo Picker -->
+    <string name="cover_pick_photo">Escolher foto da capa</string>
+    <string name="cover_change_photo">Trocar capa</string>
+    <string name="cover_remove_photo">Usar capa tipográfica</string>
+    <string name="cover_import_error">Não foi possível carregar a imagem selecionada.</string>
+
     <!-- Home -->
     <string name="home_masthead_title">Leitura</string>
     <string name="home_masthead_empty_subtitle">Sua mesa de leitura</string>
@@ -70,22 +85,40 @@
         <item quantity="one">%1$d livro</item>
         <item quantity="other">%1$d livros</item>
     </plurals>
+    <plurals name="editions_short_count">
+        <item quantity="one">%1$d ed.</item>
+        <item quantity="other">%1$d ed.</item>
+    </plurals>
+    <plurals name="copies_short_count">
+        <item quantity="one">%1$d ex.</item>
+        <item quantity="other">%1$d ex.</item>
+    </plurals>
     <string name="cd_toggle_favorite">Alternar favorito</string>
     <string name="cd_book_cover">Capa de %1$s</string>
 
-    <!-- Add / Detail Book -->
+    <!-- Add / Edit / Detail Book -->
     <string name="book_add_sheet_title">Catalogar livro</string>
+    <string name="work_edit_sheet_title">Editar obra</string>
     <string name="book_field_title">Título</string>
     <string name="book_field_author">Autor</string>
     <string name="book_field_pages">Páginas (opcional)</string>
     <string name="book_field_year">Ano (opcional)</string>
-    <string name="book_field_edition_note">Edição ou editora (opcional)</string>
+    <string name="book_field_edition_note">Editora ou nota da edição (opcional)</string>
     <string name="book_field_status">Situação de leitura</string>
+    <string name="book_more_edition_details">Detalhes da edição e exemplar</string>
+    <string name="book_field_isbn">ISBN (opcional)</string>
+    <string name="book_field_language">Idioma (opcional)</string>
+    <string name="book_field_format">Formato</string>
+    <string name="book_field_translator">Tradução (opcional)</string>
+    <string name="book_field_copy_type">Tipo do exemplar</string>
+    <string name="book_field_copy_label">Identificação do exemplar (opcional)</string>
+    <string name="book_field_copy_location">Estante ou dispositivo (opcional)</string>
     <string name="book_save_action">Salvar</string>
     <string name="book_cancel_action">Cancelar</string>
     <string name="book_validation_required">Título e autor são obrigatórios.</string>
     <string name="book_validation_pages">Informe um número válido de páginas entre 1 e 50.000.</string>
     <string name="book_validation_year">Informe um ano de publicação válido entre 1 e 2100.</string>
+    <string name="book_validation_isbn">Informe um ISBN-10 ou ISBN-13 válido.</string>
     <string name="book_detail_loading">Carregando…</string>
     <string name="book_detail_not_found_title">Livro indisponível</string>
     <string name="book_detail_not_found_body">Esta obra não está mais no catálogo.</string>
@@ -95,13 +128,95 @@
     <string name="book_detail_no_notes">Nenhuma nota associada a este livro.</string>
     <string name="book_detail_delete">Remover da biblioteca</string>
     <string name="book_delete_confirm_title">Remover da biblioteca?</string>
-    <string name="book_delete_confirm_message">Esta ação exclui permanentemente a obra, os dados da edição e todas as notas do diário associadas a ela.</string>
+    <string name="book_delete_confirm_message">Esta ação exclui permanentemente a obra, suas edições, exemplares, histórico de leituras e notas do diário.</string>
     <string name="book_delete_confirm_action">Remover</string>
     <string name="book_detail_status_label">Situação</string>
     <string name="book_detail_pages_label">Páginas</string>
     <string name="book_detail_year_label">Ano</string>
     <string name="book_detail_edition_label">Edição</string>
+    <string name="book_detail_language_label">Idioma</string>
+    <string name="book_detail_format_label">Formato</string>
+    <string name="book_detail_isbn_label">ISBN</string>
+    <string name="book_detail_translator_label">Tradução</string>
     <string name="book_detail_unspecified">—</string>
+    <string name="book_detail_edit_work">Editar obra</string>
+
+    <!-- Editions Carousel & Comparison -->
+    <string name="book_detail_editions_pager_indicator">Edição %1$d de %2$d</string>
+    <string name="book_detail_primary_edition_badge">Principal</string>
+    <string name="book_detail_add_edition">Nova edição</string>
+    <string name="book_detail_edit_edition">Editar edição</string>
+    <string name="book_detail_set_primary_edition">Definir principal</string>
+    <string name="book_detail_delete_edition">Remover edição</string>
+    <string name="book_detail_delete_edition_confirm_title">Remover esta edição?</string>
+    <string name="book_detail_delete_edition_confirm_message">Esta ação exclui permanentemente a edição e os exemplares vinculados a ela.</string>
+    <string name="book_detail_compare_editions">Comparar</string>
+    <string name="book_detail_jump_to_reading_edition">Ir para edição em leitura</string>
+    <string name="edition_add_title">Nova edição</string>
+    <string name="edition_edit_title">Editar edição</string>
+    <string name="edition_set_primary_toggle">Edição principal no catálogo</string>
+    <string name="edition_compare_title">Comparar edições</string>
+    <string name="edition_compare_copies">Exemplares</string>
+
+    <!-- Book Copies -->
+    <string name="book_detail_copies_section">Exemplares desta edição</string>
+    <string name="book_detail_add_copy">Novo exemplar</string>
+    <string name="book_detail_no_copies">Nenhum exemplar cadastrado para esta edição.</string>
+    <string name="copy_active_reading_badge">Em leitura</string>
+    <string name="copy_set_active_reading">Ler neste exemplar</string>
+    <string name="copy_add_title">Novo exemplar</string>
+    <string name="copy_edit_title">Editar exemplar</string>
+    <string name="copy_field_note">Nota pessoal (opcional)</string>
+    <string name="copy_field_active_toggle">Usar como exemplar em leitura</string>
+    <string name="copy_delete_action">Remover exemplar</string>
+    <string name="copy_delete_confirm_title">Remover exemplar?</string>
+    <string name="copy_delete_confirm_message">As jornadas de leitura anteriores ligadas a este exemplar permanecem preservadas no histórico.</string>
+    <string name="copy_archived_fallback">Exemplar arquivado</string>
+
+    <!-- Reading Progress & Rereads -->
+    <string name="journey_section_current">Leitura atual</string>
+    <string name="journey_section_history">Histórico e releituras</string>
+    <string name="journey_start_reading">Iniciar leitura</string>
+    <string name="journey_start_reread">Nova releitura</string>
+    <string name="journey_update_progress">Atualizar progresso</string>
+    <string name="journey_pause">Pausar</string>
+    <string name="journey_resume">Retomar</string>
+    <string name="journey_finish">Concluir</string>
+    <string name="journey_abandon">Interromper</string>
+    <string name="journey_reread_label">%1$dª leitura</string>
+    <string name="journey_page_of_total">p. %1$s de %2$s</string>
+    <string name="journey_page_only">p. %1$s</string>
+    <string name="journey_other_edition_notice">Lendo em outra edição (%1$s)</string>
+    <string name="journey_no_history">Nenhuma jornada de leitura registrada ainda.</string>
+    <string name="journey_started_on">Iniciada em %1$s</string>
+    <string name="journey_finished_span">%1$s – %2$s</string>
+    <string name="progress_sheet_title">Progresso de leitura</string>
+    <string name="progress_mode_page">Página</string>
+    <string name="progress_mode_percent">Percentual</string>
+    <string name="progress_field_page">Página atual</string>
+    <string name="progress_field_percent">Percentual (%)</string>
+    <string name="progress_field_note">Observação curta (opcional)</string>
+    <string name="progress_complete_action">Concluir leitura (100%)</string>
+    <string name="progress_validation_page_negative">Informe uma página igual ou maior que 0.</string>
+    <string name="progress_validation_page_exceeds">A página não pode ultrapassar %1$s nesta edição.</string>
+    <string name="progress_validation_percent">Informe um percentual entre 0 e 100.</string>
+    <string name="start_journey_sheet_title">Iniciar leitura</string>
+    <string name="start_reread_sheet_title">Iniciar releitura</string>
+    <string name="start_journey_choose_copy">Escolha qual exemplar ler</string>
+    <string name="start_journey_action">Começar</string>
+    <string name="duration_less_than_hour">&lt; 1 hora</string>
+    <plurals name="duration_days">
+        <item quantity="one">%1$d dia</item>
+        <item quantity="other">%1$d dias</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%1$d hora</item>
+        <item quantity="other">%1$d horas</item>
+    </plurals>
+    <plurals name="progress_updates_count">
+        <item quantity="one">%1$d registro</item>
+        <item quantity="other">%1$d registros</item>
+    </plurals>
 
     <!-- Diary -->
     <string name="diary_new_entry">Nova nota</string>
@@ -126,6 +241,11 @@
     <string name="statistics_metric_reading">Em andamento</string>
     <string name="statistics_metric_finished">Concluídas</string>
     <string name="statistics_metric_diary">Notas no diário</string>
+    <string name="statistics_metric_pages_read">Páginas lidas</string>
+    <string name="statistics_metric_completed_journeys">Leituras concluídas</string>
+    <string name="statistics_metric_rereads">Releituras</string>
+    <string name="statistics_metric_editions">Edições</string>
+    <string name="statistics_metric_copies">Exemplares</string>
     <string name="statistics_completion_label">Taxa de conclusão</string>
     <string name="statistics_completion_detail">%1$s de %2$s concluídas</string>
     <string name="statistics_status_distribution">Acervo por situação</string>

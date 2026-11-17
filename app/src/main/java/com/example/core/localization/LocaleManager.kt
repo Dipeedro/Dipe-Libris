@@ -2,13 +2,16 @@ package com.example.core.localization
 
 import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.example.R
 import com.example.core.model.AppLanguage
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 import java.util.EnumMap
 import java.util.Locale
+import kotlin.math.roundToInt
 
 val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.ENGLISH }
 
@@ -56,5 +59,28 @@ object LocaleManager {
         NumberFormat.getIntegerInstance(language.toLocale())
       }
     return formatter.format(value)
+  }
+
+  fun formatPercent(percent: Float, language: AppLanguage): String {
+    val rounded = percent.coerceIn(0f, 100f).roundToInt()
+    return "${formatInteger(rounded, language)}%"
+  }
+
+  fun formatDuration(durationMillis: Long, resources: Resources): String {
+    val safeMillis = durationMillis.coerceAtLeast(0L)
+    val totalMinutes = safeMillis / 60_000L
+    val totalHours = totalMinutes / 60L
+    val totalDays = totalHours / 24L
+    return when {
+      totalDays >= 1L -> {
+        val days = totalDays.toInt().coerceAtLeast(1)
+        resources.getQuantityString(R.plurals.duration_days, days, days)
+      }
+      totalHours >= 1L -> {
+        val hours = totalHours.toInt().coerceAtLeast(1)
+        resources.getQuantityString(R.plurals.duration_hours, hours, hours)
+      }
+      else -> resources.getString(R.string.duration_less_than_hour)
+    }
   }
 }

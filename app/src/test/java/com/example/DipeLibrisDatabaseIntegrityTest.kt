@@ -310,13 +310,165 @@ class DipeLibrisDatabaseIntegrityTest {
   }
 
   @Test
+  fun migration2To3PreservesCatalogSeedsJourneysAndSetsPrimaryEdition() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val dbName = "migration_v2_v3_test.db"
+    context.deleteDatabase(dbName)
+
+    val dbFile = context.getDatabasePath(dbName)
+    dbFile.parentFile?.mkdirs()
+    val rawV2 = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+    try {
+      rawV2.execSQL(
+        """
+        CREATE TABLE works (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          title TEXT NOT NULL,
+          author TEXT NOT NULL,
+          status TEXT NOT NULL,
+          isFavorite INTEGER NOT NULL,
+          typographyPresetOverride TEXT,
+          createdAtEpochMillis INTEGER NOT NULL,
+          updatedAtEpochMillis INTEGER NOT NULL
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL(
+        """
+        CREATE TABLE editions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          publisherOrNote TEXT,
+          publicationYear INTEGER,
+          totalPages INTEGER,
+          isbn TEXT,
+          coverUri TEXT,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL("CREATE INDEX index_editions_workId ON editions (workId)")
+      rawV2.execSQL(
+        """
+        CREATE TABLE book_copies (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          editionId INTEGER NOT NULL,
+          currentPage INTEGER NOT NULL,
+          physicalFormat TEXT,
+          personalNote TEXT,
+          FOREIGN KEY(editionId) REFERENCES editions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL("CREATE INDEX index_book_copies_editionId ON book_copies (editionId)")
+      rawV2.execSQL(
+        """
+        CREATE TABLE shelves (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          type TEXT NOT NULL,
+          isFeatured INTEGER NOT NULL,
+          createdAtEpochMillis INTEGER NOT NULL
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL(
+        """
+        CREATE TABLE book_shelf_cross_ref (
+          workId INTEGER NOT NULL,
+          shelfId INTEGER NOT NULL,
+          PRIMARY KEY(workId, shelfId),
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+          FOREIGN KEY(shelfId) REFERENCES shelves(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL("CREATE INDEX index_book_shelf_cross_ref_shelfId ON book_shelf_cross_ref (shelfId)")
+      rawV2.execSQL(
+        """
+        CREATE TABLE diary_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          createdAtEpochMillis INTEGER NOT NULL,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL("CREATE INDEX index_diary_entries_workId ON diary_entries (workId)")
+      rawV2.execSQL(
+        """
+        CREATE TABLE reading_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          startEpochMillis INTEGER NOT NULL,
+          endEpochMillis INTEGER,
+          rereadNumber INTEGER NOT NULL,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV2.execSQL("CREATE INDEX index_reading_sessions_workId ON reading_sessions (workId)")
+
+      rawV2.execSQL(
+        "INSERT INTO works (id, title, author, status, isFavorite, createdAtEpochMillis, updatedAtEpochMillis) VALUES (1, 'A Hora da Estrela', 'Clarice Lispector', 'READING', 1, 1000, 2000)"
+      )
+      rawV2.execSQL(
+        "INSERT INTO editions (id, workId, publisherOrNote, publicationYear, totalPages, isbn, coverUri) VALUES (10, 1, 'Rocco', 1998, 100, NULL, NULL)"
+      )
+      rawV2.execSQL(
+        "INSERT INTO editions (id, workId, publisherOrNote, publicationYear, totalPages, isbn, coverUri) VALUES (11, 1, 'Edição Bolso', 2010, 120, NULL, NULL)"
+      )
+      rawV2.execSQL(
+        "INSERT INTO book_copies (id, editionId, currentPage, physicalFormat, personalNote) VALUES (20, 10, 45, 'Brochura', 'Exemplar antigo')"
+      )
+      rawV2.version = 2
+    } finally {
+      rawV2.close()
+    }
+
+    val migratedDb =
+      Room.databaseBuilder(context, DipeLibrisDatabase::class.java, dbName)
+        .addMigrations(*DipeLibrisDatabase.MIGRATIONS)
+        .allowMainThreadQueries()
+        .build()
+    try {
+      val repo =
+        RoomLibraryRepository(
+          bookDao = migratedDb.bookDao(),
+          shelfDao = migratedDb.shelfDao(),
+          editionDao = migratedDb.editionDao(),
+          copyDao = migratedDb.copyDao(),
+          readingJourneyDao = migratedDb.readingJourneyDao(),
+          database = migratedDb,
+        )
+      val detail = repo.observeBookDetail(1L).first()!!
+      assertEquals("A Hora da Estrela", detail.work.title)
+      assertEquals(2, detail.editions.size)
+      assertTrue(detail.editions.first { it.edition.id == 10L }.edition.isPrimary)
+      assertNotNull(detail.activeJourney)
+      assertEquals(45, detail.activeJourney!!.session.currentPage)
+      assertEquals(45f, detail.activeJourney!!.session.progressPercent, 0.5f)
+      assertEquals(20L, detail.activeJourney!!.session.copyId)
+
+      // Deleting last edition is blocked, deleting second succeeds
+      assertTrue(repo.deleteEdition(1L, 11L))
+      assertEquals(false, repo.deleteEdition(1L, 10L))
+    } finally {
+      migratedDb.close()
+      context.deleteDatabase(dbName)
+    }
+  }
+
+  @Test
   fun productionDatabaseBuilderOpensWithoutDestructiveMigration() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val builtDb = DipeLibrisDatabase.build(context)
     try {
       val writable = builtDb.openHelper.writableDatabase
       assertTrue(writable.isOpen)
-      assertEquals(2, writable.version)
+      assertEquals(3, writable.version)
     } finally {
       builtDb.close()
       context.deleteDatabase(DipeLibrisDatabase.DATABASE_NAME)

@@ -184,7 +184,7 @@ class Phase11FlowsTest {
       DipeLibrisTheme {
         AddBookSheet(
           onDismiss = {},
-          onSave = { _, _, _, _, _, _ -> saved = true },
+          onSave = { _ -> saved = true },
         )
       }
     }

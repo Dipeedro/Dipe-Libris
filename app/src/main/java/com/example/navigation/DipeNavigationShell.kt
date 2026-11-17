@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Icon
@@ -78,14 +77,22 @@ fun DipeNavigationShell(
     viewModel(
       factory =
         dipeFactory(container) {
-          HomeViewModel(it.libraryRepository, it.diaryRepository, it.statisticsRepository)
+          HomeViewModel(
+            libraryRepository = it.libraryRepository,
+            statisticsRepository = it.statisticsRepository,
+            readingJourneyRepository = it.readingJourneyRepository,
+          )
         }
     )
   val libraryViewModel: LibraryViewModel =
     viewModel(
       factory =
         dipeFactory(container) {
-          LibraryViewModel(it.libraryRepository, it.diaryRepository, it.preferencesRepository)
+          LibraryViewModel(
+            libraryRepository = it.libraryRepository,
+            preferencesRepository = it.preferencesRepository,
+            coverStorageManager = it.coverStorageManager,
+          )
         }
     )
   val statisticsViewModel: StatisticsViewModel =
@@ -228,6 +235,13 @@ fun DipeNavigationShell(
                 uiState = homeState,
                 widthClass = widthClass,
                 onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
+                onUpdateProgressByPage = { book, page, note ->
+                  homeViewModel.updateProgressByPage(book = book, page = page, note = note)
+                },
+                onUpdateProgressByPercent = { book, percent, note ->
+                  homeViewModel.updateProgressByPercent(book = book, percent = percent, note = note)
+                },
+                onCompleteReading = { book -> homeViewModel.completeReading(book) },
               )
             }
 
@@ -271,7 +285,8 @@ fun DipeNavigationShell(
                 onNavigateBack = { navController.popBackStack() },
               )
 
-              val loadedBookTitle = (diaryState as? com.example.feature.diary.DiaryUiState.Loaded)?.book?.title
+              val loadedBookTitle =
+                (diaryState as? com.example.feature.diary.DiaryUiState.Loaded)?.book?.title
               if (showNewDiarySheet && loadedBookTitle != null) {
                 NewDiaryEntrySheet(
                   bookTitle = loadedBookTitle,
@@ -333,6 +348,8 @@ fun DipeNavigationShell(
                         workId = route.workId,
                         libraryRepository = it.libraryRepository,
                         diaryRepository = it.diaryRepository,
+                        readingJourneyRepository = it.readingJourneyRepository,
+                        coverStorageManager = it.coverStorageManager,
                       )
                     },
                 )
@@ -347,6 +364,74 @@ fun DipeNavigationShell(
                   bookDetailViewModel.deleteBook { navController.popBackStack() }
                 },
                 onNavigateBack = { navController.popBackStack() },
+                onSelectEdition = bookDetailViewModel::selectEdition,
+                onUpdateWorkMetadata = { newTitle, newAuthor ->
+                  bookDetailViewModel.updateWorkMetadata(title = newTitle, author = newAuthor)
+                },
+                onAddEdition = { sub ->
+                  bookDetailViewModel.addEdition(
+                    publisherOrNote = sub.publisherOrNote,
+                    publicationYear = sub.publicationYear,
+                    totalPages = sub.totalPages,
+                    isbn = sub.isbn,
+                    pickedCoverUri = sub.pickedCoverUri,
+                    language = sub.language,
+                    format = sub.format,
+                    translator = sub.translator,
+                    setAsPrimary = sub.isPrimary,
+                    alsoCreateCopy = true,
+                    copyMediaType = sub.initialCopyMediaType,
+                    copyLabel = sub.initialCopyLabel,
+                  )
+                },
+                onUpdateEdition = { edition, pickedCoverUri, removeCover ->
+                  bookDetailViewModel.updateEdition(
+                    edition = edition,
+                    pickedCoverUri = pickedCoverUri,
+                    removeCover = removeCover,
+                  )
+                },
+                onSetPrimaryEdition = bookDetailViewModel::setPrimaryEdition,
+                onDeleteEdition = { editionId -> bookDetailViewModel.deleteEdition(editionId) },
+                onAddCopy = { editionId, sub ->
+                  bookDetailViewModel.addCopy(
+                    editionId = editionId,
+                    mediaType = sub.mediaType,
+                    label = sub.label,
+                    physicalFormat = sub.physicalFormat,
+                    locationOrPlatform = sub.locationOrPlatform,
+                    personalNote = sub.personalNote,
+                    setAsActiveReadingCopy = sub.setAsActiveReadingCopy,
+                  )
+                },
+                onUpdateCopy = { copy, setAsActive ->
+                  bookDetailViewModel.updateCopy(copy = copy, setAsActiveReadingCopy = setAsActive)
+                },
+                onDeleteCopy = { copyId -> bookDetailViewModel.deleteCopy(copyId) },
+                onStartJourney = { copyId, note ->
+                  bookDetailViewModel.startJourney(copyId = copyId, notes = note)
+                },
+                onStartReread = { copyId, note ->
+                  bookDetailViewModel.startReread(copyId = copyId, notes = note)
+                },
+                onUpdateProgressByPage = { sessionId, page, note ->
+                  bookDetailViewModel.updateProgressByPage(
+                    sessionId = sessionId,
+                    page = page,
+                    note = note,
+                  )
+                },
+                onUpdateProgressByPercent = { sessionId, percent, note ->
+                  bookDetailViewModel.updateProgressByPercent(
+                    sessionId = sessionId,
+                    percent = percent,
+                    note = note,
+                  )
+                },
+                onPauseJourney = bookDetailViewModel::pauseJourney,
+                onResumeJourney = bookDetailViewModel::resumeJourney,
+                onCompleteJourney = bookDetailViewModel::completeJourney,
+                onSwitchActiveCopy = bookDetailViewModel::switchActiveCopy,
               )
             }
           }
@@ -358,22 +443,28 @@ fun DipeNavigationShell(
   if (showAddBookSheet) {
     AddBookSheet(
       onDismiss = { showAddBookSheet = false },
-      onSave = { title, author, pages, year, editionNote, status ->
+      onSave = { submission ->
         libraryViewModel.addBook(
-          title = title,
-          author = author,
-          totalPages = pages,
-          publicationYear = year,
-          editionNote = editionNote,
-          status = status,
+          title = submission.title,
+          author = submission.author,
+          totalPages = submission.totalPages,
+          publicationYear = submission.publicationYear,
+          editionNote = submission.editionNote,
+          status = submission.status,
+          isbn = submission.isbn,
+          pickedCoverUri = submission.pickedCoverUri,
+          language = submission.language,
+          format = submission.format,
+          translator = submission.translator,
+          copyMediaType = submission.copyMediaType,
+          copyLabel = submission.copyLabel,
+          copyLocation = submission.copyLocation,
         ) {
           showAddBookSheet = false
         }
       },
     )
   }
-
-
 
   if (showEditProfileSheet) {
     val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()

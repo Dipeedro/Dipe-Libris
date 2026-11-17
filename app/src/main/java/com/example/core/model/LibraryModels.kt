@@ -3,8 +3,7 @@ package com.example.core.model
 import androidx.compose.runtime.Immutable
 
 /**
- * Core domain models structured around Work -> Edition -> Copy to allow progressive expansion
- * in future phases without restructuring the database or UI contracts.
+ * Core domain models structured around Work -> Edition -> Copy -> ReadingSession.
  */
 @Immutable
 data class Work(
@@ -27,6 +26,11 @@ data class Edition(
   val totalPages: Int? = null,
   val isbn: String? = null,
   val coverUri: String? = null,
+  val language: String? = null,
+  val format: EditionFormat? = null,
+  val translator: String? = null,
+  val isPrimary: Boolean = false,
+  val createdAtEpochMillis: Long = 0L,
 )
 
 @Immutable
@@ -36,20 +40,91 @@ data class BookCopy(
   val currentPage: Int = 0,
   val physicalFormat: String? = null,
   val personalNote: String? = null,
+  val label: String? = null,
+  val mediaType: CopyMediaType = CopyMediaType.PHYSICAL,
+  val locationOrPlatform: String? = null,
+  val acquisitionEpochMillis: Long? = null,
+  val createdAtEpochMillis: Long = 0L,
 )
+
+@Immutable
+data class ReadingSession(
+  val id: Long = 0,
+  val workId: Long,
+  val copyId: Long? = null,
+  val rereadNumber: Int = 1,
+  val status: ReadingStatus = ReadingStatus.READING,
+  val currentPage: Int = 0,
+  val totalPagesSnapshot: Int? = null,
+  val progressPercent: Float = 0f,
+  val startEpochMillis: Long,
+  val endEpochMillis: Long? = null,
+  val pausedAtEpochMillis: Long? = null,
+  val accumulatedPausedMillis: Long = 0L,
+  val notes: String? = null,
+) {
+  val isActive: Boolean
+    get() = status == ReadingStatus.READING || status == ReadingStatus.PAUSED
+}
+
+@Immutable
+data class ReadingProgressLog(
+  val id: Long = 0,
+  val sessionId: Long,
+  val recordedAtEpochMillis: Long,
+  val pageNumber: Int? = null,
+  val progressPercent: Float,
+  val deltaPages: Int = 0,
+  val note: String? = null,
+)
+
+@Immutable
+data class EditionWithBookCopies(
+  val edition: Edition,
+  val copies: List<BookCopy>,
+)
+
+@Immutable
+data class ReadingJourneySummary(
+  val session: ReadingSession,
+  val copy: BookCopy?,
+  val edition: Edition?,
+  val logs: List<ReadingProgressLog>,
+)
+
+@Immutable
+data class BookDetailAggregate(
+  val work: Work,
+  val editions: List<EditionWithBookCopies>,
+  val activeJourney: ReadingJourneySummary?,
+  val journeys: List<ReadingJourneySummary>,
+) {
+  val totalCopiesCount: Int
+    get() = editions.sumOf { it.copies.size }
+}
 
 @Immutable
 data class CatalogBook(
   val work: Work,
   val primaryEdition: Edition?,
   val primaryCopy: BookCopy?,
+  val editionCount: Int = 1,
+  val copyCount: Int = 1,
+  val activeSessionId: Long? = null,
+  val activeProgressPercent: Float? = null,
+  val activeCurrentPage: Int? = null,
+  val activeTotalPages: Int? = null,
+  val activeRereadNumber: Int? = null,
+  val activeCopyMediaType: CopyMediaType? = null,
+  val activeCopyLabel: String? = null,
 ) {
   val id: Long get() = work.id
   val title: String get() = work.title
   val author: String get() = work.author
   val status: ReadingStatus get() = work.status
   val isFavorite: Boolean get() = work.isFavorite
-  val totalPages: Int? get() = primaryEdition?.totalPages
+  val coverUri: String? get() = primaryEdition?.coverUri
+  val totalPages: Int? get() = activeTotalPages ?: primaryEdition?.totalPages
   val publicationYear: Int? get() = primaryEdition?.publicationYear
   val editionNote: String? get() = primaryEdition?.publisherOrNote
   val typographyPresetOverride: TypographyPreset? get() = work.typographyPresetOverride
@@ -83,4 +158,9 @@ data class ArchiveSnapshot(
   val pausedCount: Int = 0,
   val abandonedCount: Int = 0,
   val diaryEntriesCount: Int = 0,
+  val editionsCount: Int = 0,
+  val copiesCount: Int = 0,
+  val completedJourneysCount: Int = 0,
+  val rereadsCount: Int = 0,
+  val totalPagesRead: Int = 0,
 )

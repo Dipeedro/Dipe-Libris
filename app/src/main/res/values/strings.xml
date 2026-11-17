@@ -19,6 +19,21 @@
     <string name="status_finished">Finished</string>
     <string name="status_abandoned">Set aside</string>
 
+    <!-- Copy Media & Edition Formats -->
+    <string name="copy_media_physical">Physical</string>
+    <string name="copy_media_digital">Digital</string>
+    <string name="edition_format_hardcover">Hardcover</string>
+    <string name="edition_format_paperback">Paperback</string>
+    <string name="edition_format_pocket">Pocket</string>
+    <string name="edition_format_ebook">eBook</string>
+    <string name="edition_format_other">Other</string>
+
+    <!-- Cover Photo Picker -->
+    <string name="cover_pick_photo">Choose cover photo</string>
+    <string name="cover_change_photo">Change cover</string>
+    <string name="cover_remove_photo">Use typographic cover</string>
+    <string name="cover_import_error">Could not load the selected image.</string>
+
     <!-- Home -->
     <string name="home_masthead_title">Reading</string>
     <string name="home_masthead_empty_subtitle">Your quiet reading desk</string>
@@ -70,22 +85,40 @@
         <item quantity="one">%1$d volume</item>
         <item quantity="other">%1$d volumes</item>
     </plurals>
+    <plurals name="editions_short_count">
+        <item quantity="one">%1$d ed.</item>
+        <item quantity="other">%1$d ed.</item>
+    </plurals>
+    <plurals name="copies_short_count">
+        <item quantity="one">%1$d copy</item>
+        <item quantity="other">%1$d copies</item>
+    </plurals>
     <string name="cd_toggle_favorite">Toggle favorite</string>
     <string name="cd_book_cover">Cover for %1$s</string>
 
-    <!-- Add / Detail Book -->
+    <!-- Add / Edit / Detail Book -->
     <string name="book_add_sheet_title">Catalog book</string>
+    <string name="work_edit_sheet_title">Edit work</string>
     <string name="book_field_title">Title</string>
     <string name="book_field_author">Author</string>
     <string name="book_field_pages">Pages (optional)</string>
     <string name="book_field_year">Year (optional)</string>
-    <string name="book_field_edition_note">Edition or publisher (optional)</string>
+    <string name="book_field_edition_note">Publisher or edition note (optional)</string>
     <string name="book_field_status">Reading status</string>
+    <string name="book_more_edition_details">Edition &amp; copy details</string>
+    <string name="book_field_isbn">ISBN (optional)</string>
+    <string name="book_field_language">Language (optional)</string>
+    <string name="book_field_format">Format</string>
+    <string name="book_field_translator">Translator (optional)</string>
+    <string name="book_field_copy_type">Copy type</string>
+    <string name="book_field_copy_label">Copy label (optional)</string>
+    <string name="book_field_copy_location">Shelf or device (optional)</string>
     <string name="book_save_action">Save</string>
     <string name="book_cancel_action">Cancel</string>
     <string name="book_validation_required">Title and author are required.</string>
     <string name="book_validation_pages">Enter a valid page count between 1 and 50,000.</string>
     <string name="book_validation_year">Enter a valid publication year between 1 and 2100.</string>
+    <string name="book_validation_isbn">Enter a valid ISBN-10 or ISBN-13.</string>
     <string name="book_detail_loading">Loading…</string>
     <string name="book_detail_not_found_title">Volume unavailable</string>
     <string name="book_detail_not_found_body">This book is no longer in the catalog.</string>
@@ -95,13 +128,95 @@
     <string name="book_detail_no_notes">No notes for this book yet.</string>
     <string name="book_detail_delete">Remove from library</string>
     <string name="book_delete_confirm_title">Remove from library?</string>
-    <string name="book_delete_confirm_message">This permanently deletes the book, its edition details, and all linked diary notes.</string>
+    <string name="book_delete_confirm_message">This permanently deletes the work, all editions, copies, reading history, and linked diary notes.</string>
     <string name="book_delete_confirm_action">Remove</string>
     <string name="book_detail_status_label">Reading status</string>
     <string name="book_detail_pages_label">Pages</string>
     <string name="book_detail_year_label">Year</string>
     <string name="book_detail_edition_label">Edition</string>
+    <string name="book_detail_language_label">Language</string>
+    <string name="book_detail_format_label">Format</string>
+    <string name="book_detail_isbn_label">ISBN</string>
+    <string name="book_detail_translator_label">Translator</string>
     <string name="book_detail_unspecified">—</string>
+    <string name="book_detail_edit_work">Edit work</string>
+
+    <!-- Editions Carousel & Comparison -->
+    <string name="book_detail_editions_pager_indicator">Edition %1$d of %2$d</string>
+    <string name="book_detail_primary_edition_badge">Primary</string>
+    <string name="book_detail_add_edition">Add edition</string>
+    <string name="book_detail_edit_edition">Edit edition</string>
+    <string name="book_detail_set_primary_edition">Set primary</string>
+    <string name="book_detail_delete_edition">Remove edition</string>
+    <string name="book_detail_delete_edition_confirm_title">Remove this edition?</string>
+    <string name="book_detail_delete_edition_confirm_message">This permanently removes the edition and its linked copies.</string>
+    <string name="book_detail_compare_editions">Compare</string>
+    <string name="book_detail_jump_to_reading_edition">Go to reading edition</string>
+    <string name="edition_add_title">New edition</string>
+    <string name="edition_edit_title">Edit edition</string>
+    <string name="edition_set_primary_toggle">Primary catalog edition</string>
+    <string name="edition_compare_title">Compare editions</string>
+    <string name="edition_compare_copies">Copies</string>
+
+    <!-- Book Copies -->
+    <string name="book_detail_copies_section">Copies of this edition</string>
+    <string name="book_detail_add_copy">Add copy</string>
+    <string name="book_detail_no_copies">No copies recorded for this edition yet.</string>
+    <string name="copy_active_reading_badge">Reading</string>
+    <string name="copy_set_active_reading">Read this copy</string>
+    <string name="copy_add_title">New copy</string>
+    <string name="copy_edit_title">Edit copy</string>
+    <string name="copy_field_note">Personal note (optional)</string>
+    <string name="copy_field_active_toggle">Use as active reading copy</string>
+    <string name="copy_delete_action">Remove copy</string>
+    <string name="copy_delete_confirm_title">Remove this copy?</string>
+    <string name="copy_delete_confirm_message">Past reading journeys linked to this copy remain preserved in your history.</string>
+    <string name="copy_archived_fallback">Archived copy</string>
+
+    <!-- Reading Progress & Rereads -->
+    <string name="journey_section_current">Current reading</string>
+    <string name="journey_section_history">Reading history &amp; rereads</string>
+    <string name="journey_start_reading">Start reading</string>
+    <string name="journey_start_reread">Start reread</string>
+    <string name="journey_update_progress">Update progress</string>
+    <string name="journey_pause">Pause</string>
+    <string name="journey_resume">Resume</string>
+    <string name="journey_finish">Finish</string>
+    <string name="journey_abandon">Set aside</string>
+    <string name="journey_reread_label">Reading #%1$d</string>
+    <string name="journey_page_of_total">p. %1$s of %2$s</string>
+    <string name="journey_page_only">p. %1$s</string>
+    <string name="journey_other_edition_notice">Reading another edition (%1$s)</string>
+    <string name="journey_no_history">No reading journeys recorded yet.</string>
+    <string name="journey_started_on">Started %1$s</string>
+    <string name="journey_finished_span">%1$s – %2$s</string>
+    <string name="progress_sheet_title">Reading progress</string>
+    <string name="progress_mode_page">Page</string>
+    <string name="progress_mode_percent">Percent</string>
+    <string name="progress_field_page">Current page</string>
+    <string name="progress_field_percent">Completion (%)</string>
+    <string name="progress_field_note">Milestone note (optional)</string>
+    <string name="progress_complete_action">Mark as finished (100%)</string>
+    <string name="progress_validation_page_negative">Enter page 0 or higher.</string>
+    <string name="progress_validation_page_exceeds">Page cannot exceed %1$s pages in this edition.</string>
+    <string name="progress_validation_percent">Enter a percentage between 0 and 100.</string>
+    <string name="start_journey_sheet_title">Start reading</string>
+    <string name="start_reread_sheet_title">Start a reread</string>
+    <string name="start_journey_choose_copy">Choose copy to read</string>
+    <string name="start_journey_action">Begin</string>
+    <string name="duration_less_than_hour">&lt; 1 hour</string>
+    <plurals name="duration_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="progress_updates_count">
+        <item quantity="one">%1$d progress update</item>
+        <item quantity="other">%1$d progress updates</item>
+    </plurals>
 
     <!-- Diary -->
     <string name="diary_new_entry">New note</string>
@@ -126,6 +241,11 @@
     <string name="statistics_metric_reading">In progress</string>
     <string name="statistics_metric_finished">Finished</string>
     <string name="statistics_metric_diary">Diary notes</string>
+    <string name="statistics_metric_pages_read">Pages read</string>
+    <string name="statistics_metric_completed_journeys">Completed reads</string>
+    <string name="statistics_metric_rereads">Rereads</string>
+    <string name="statistics_metric_editions">Editions</string>
+    <string name="statistics_metric_copies">Copies</string>
     <string name="statistics_completion_label">Completion rate</string>
     <string name="statistics_completion_detail">%1$s of %2$s finished</string>
     <string name="statistics_status_distribution">Collection by status</string>

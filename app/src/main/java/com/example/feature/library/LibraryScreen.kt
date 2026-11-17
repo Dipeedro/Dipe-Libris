@@ -78,6 +78,7 @@ import com.example.core.designsystem.components.BookSpineTile
 import com.example.core.designsystem.components.EditorialEmptyState
 import com.example.core.designsystem.components.EditorialMasthead
 import com.example.core.designsystem.components.EditorialMetadataStrip
+import com.example.core.designsystem.components.EditorialProgressBar
 import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.readingStatusAccentColor
 import com.example.core.designsystem.components.readingStatusLabel
@@ -512,22 +513,31 @@ private fun LibraryGridCard(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val language = LocalAppLanguage.current
   val statusColor = readingStatusAccentColor(book.status)
+  val showActiveProgress =
+    (book.status == ReadingStatus.READING || book.status == ReadingStatus.PAUSED) &&
+      book.activeProgressPercent != null
+
   Column(
     modifier =
       modifier
         .clip(MaterialTheme.shapes.medium)
         .clickable(onClick = onClick)
         .testTag("library_grid_book_${book.id}"),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     BookCoverArtwork(
       title = book.title,
       author = book.author,
       isFavorite = book.isFavorite,
+      coverUri = book.coverUri,
       elevated = true,
       modifier = Modifier.fillMaxWidth(),
     )
+    if (showActiveProgress) {
+      EditorialProgressBar(progressPercent = book.activeProgressPercent!!, height = 2.dp)
+    }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
       Text(
         text = book.title,
@@ -544,13 +554,28 @@ private fun LibraryGridCard(
         overflow = TextOverflow.Ellipsis,
       )
       Spacer(modifier = Modifier.height(DipeSpacing.xxs))
+      val editionsTag =
+        if (book.editionCount > 1) {
+          pluralStringResource(R.plurals.editions_short_count, book.editionCount, book.editionCount)
+        } else {
+          null
+        }
+      val statusMeta =
+        buildList {
+          add(readingStatusLabel(book.status))
+          if (showActiveProgress) {
+            add(LocaleManager.formatPercent(book.activeProgressPercent!!, language))
+          }
+          editionsTag?.let { add(it) }
+        }.joinToString(" · ")
+
       Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
         Text(
-          text = readingStatusLabel(book.status),
+          text = statusMeta,
           style = LocalDipeTypography.current.monoMetadata,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
@@ -567,7 +592,12 @@ private fun LibraryListRow(
   onClick: () -> Unit,
   onToggleFavorite: () -> Unit,
 ) {
+  val language = LocalAppLanguage.current
   val statusColor = readingStatusAccentColor(book.status)
+  val showActiveProgress =
+    (book.status == ReadingStatus.READING || book.status == ReadingStatus.PAUSED) &&
+      book.activeProgressPercent != null
+
   EditorialSurfaceCard(
     modifier = Modifier.testTag("library_list_book_${book.id}"),
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -575,78 +605,112 @@ private fun LibraryListRow(
     contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),
     onClick = onClick,
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      BookCoverArtwork(
-        title = book.title,
-        author = book.author,
-        isFavorite = book.isFavorite,
-        compact = true,
-        elevated = true,
-        modifier = Modifier.width(52.dp),
-      )
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+    Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text(
-          text = book.title,
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
+        BookCoverArtwork(
+          title = book.title,
+          author = book.author,
+          isFavorite = book.isFavorite,
+          coverUri = book.coverUri,
+          compact = true,
+          elevated = true,
+          modifier = Modifier.width(52.dp),
         )
-        Text(
-          text = book.author,
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalAlignment = Alignment.CenterVertically,
+        Column(
+          modifier = Modifier.weight(1f),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
         ) {
-          Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
           Text(
-            text = readingStatusLabel(book.status),
-            style = LocalDipeTypography.current.monoMetadata,
-            color = statusColor,
+            text = book.title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
-          book.totalPages?.let { pages ->
+          Text(
+            text = book.author,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          val extraParts =
+            buildList {
+              book.totalPages?.let { pages ->
+                add(
+                  pluralStringResource(
+                    R.plurals.pages_count,
+                    if (pages == 1) 1 else 2,
+                    pages,
+                  )
+                )
+              }
+              if (showActiveProgress) {
+                add(LocaleManager.formatPercent(book.activeProgressPercent!!, language))
+              }
+              if (book.editionCount > 1) {
+                add(
+                  pluralStringResource(
+                    R.plurals.editions_short_count,
+                    book.editionCount,
+                    book.editionCount,
+                  )
+                )
+              }
+              if (book.copyCount > 1) {
+                add(
+                  pluralStringResource(
+                    R.plurals.copies_short_count,
+                    book.copyCount,
+                    book.copyCount,
+                  )
+                )
+              }
+            }
+
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
             Text(
-              text = "·",
+              text = readingStatusLabel(book.status),
               style = LocalDipeTypography.current.monoMetadata,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = statusColor,
             )
-            Text(
-              text =
-                pluralStringResource(
-                  R.plurals.pages_count,
-                  if (pages == 1) 1 else 2,
-                  pages,
-                ),
-              style = LocalDipeTypography.current.monoMetadata,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (extraParts.isNotEmpty()) {
+              Text(
+                text = "· ${extraParts.joinToString(" · ")}",
+                style = LocalDipeTypography.current.monoMetadata,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
         }
+        IconButton(
+          onClick = onToggleFavorite,
+          modifier =
+            Modifier.minimumInteractiveComponentSize().testTag("library_favorite_${book.id}"),
+        ) {
+          Icon(
+            imageVector =
+              if (book.isFavorite) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+            contentDescription = stringResource(R.string.cd_toggle_favorite),
+            tint =
+              if (book.isFavorite) MaterialTheme.colorScheme.secondary
+              else MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
-      IconButton(
-        onClick = onToggleFavorite,
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("library_favorite_${book.id}"),
-      ) {
-        Icon(
-          imageVector =
-            if (book.isFavorite) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-          contentDescription = stringResource(R.string.cd_toggle_favorite),
-          tint =
-            if (book.isFavorite) MaterialTheme.colorScheme.secondary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+
+      if (showActiveProgress) {
+        EditorialProgressBar(progressPercent = book.activeProgressPercent!!, height = 2.dp)
       }
     }
   }
@@ -674,6 +738,8 @@ private fun LibraryShelfRow(
           author = book.author,
           isFavorite = book.isFavorite,
           height = spineHeight,
+          hasActiveReading = book.status == ReadingStatus.READING,
+          hasMultipleCopies = book.copyCount > 1,
           modifier =
             Modifier.clickable(onClick = onBookClick)
               .testTag("library_shelf_book_${book.id}"),
@@ -706,6 +772,9 @@ private fun LibraryGalleryItem(
       ?: stringResource(R.string.book_detail_unspecified)
   val yearValue = book.publicationYear?.toString() ?: stringResource(R.string.book_detail_unspecified)
   val statusValue = readingStatusLabel(book.status)
+  val showActiveProgress =
+    (book.status == ReadingStatus.READING || book.status == ReadingStatus.PAUSED) &&
+      book.activeProgressPercent != null
 
   EditorialSurfaceCard(
     modifier = Modifier.testTag("library_gallery_book_${book.id}"),
@@ -722,6 +791,7 @@ private fun LibraryGalleryItem(
         title = book.title,
         author = book.author,
         isFavorite = book.isFavorite,
+        coverUri = book.coverUri,
         elevated = true,
         modifier = Modifier.width(196.dp),
       )
@@ -741,7 +811,35 @@ private fun LibraryGalleryItem(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           textAlign = TextAlign.Center,
         )
+        if (book.editionCount > 1) {
+          Text(
+            text =
+              pluralStringResource(
+                R.plurals.editions_short_count,
+                book.editionCount,
+                book.editionCount,
+              ),
+            style = LocalDipeTypography.current.monoMetadata,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
+
+      if (showActiveProgress) {
+        Column(
+          modifier = Modifier.widthIn(max = 260.dp).fillMaxWidth(),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        ) {
+          EditorialProgressBar(progressPercent = book.activeProgressPercent!!, height = 3.dp)
+          Text(
+            text = LocaleManager.formatPercent(book.activeProgressPercent!!, language),
+            style = LocalDipeTypography.current.monoMetadata,
+            color = MaterialTheme.colorScheme.secondary,
+          )
+        }
+      }
+
       EditorialMetadataStrip(
         items =
           listOf(

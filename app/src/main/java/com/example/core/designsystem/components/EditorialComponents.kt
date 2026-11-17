@@ -389,3 +389,88 @@ fun readingStatusAccentColor(status: ReadingStatus): Color =
     ReadingStatus.UNREAD -> MaterialTheme.colorScheme.onSurfaceVariant
     ReadingStatus.ABANDONED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
   }
+
+@Composable
+fun EditorialProgressBar(
+  progressPercent: Float,
+  modifier: Modifier = Modifier,
+  height: androidx.compose.ui.unit.Dp = 3.dp,
+  fillColor: Color = MaterialTheme.colorScheme.secondary,
+  trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+) {
+  val fraction = (progressPercent / 100f).coerceIn(0f, 1f)
+  Box(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(height)
+        .clip(CircleShape)
+        .background(trackColor),
+  ) {
+    if (fraction > 0f) {
+      Box(
+        modifier =
+          Modifier.fillMaxWidth(fraction)
+            .fillMaxHeight()
+            .clip(CircleShape)
+            .background(fillColor),
+      )
+    }
+  }
+}
+
+@Composable
+fun editionFormatLabel(format: com.example.core.model.EditionFormat): String =
+  when (format) {
+    com.example.core.model.EditionFormat.HARDCOVER -> stringResource(R.string.edition_format_hardcover)
+    com.example.core.model.EditionFormat.PAPERBACK -> stringResource(R.string.edition_format_paperback)
+    com.example.core.model.EditionFormat.POCKET -> stringResource(R.string.edition_format_pocket)
+    com.example.core.model.EditionFormat.EBOOK -> stringResource(R.string.edition_format_ebook)
+    com.example.core.model.EditionFormat.OTHER -> stringResource(R.string.edition_format_other)
+  }
+
+@Composable
+fun copyMediaTypeLabel(mediaType: com.example.core.model.CopyMediaType): String =
+  when (mediaType) {
+    com.example.core.model.CopyMediaType.PHYSICAL -> stringResource(R.string.copy_media_physical)
+    com.example.core.model.CopyMediaType.DIGITAL -> stringResource(R.string.copy_media_digital)
+  }
+
+@Composable
+fun rememberSafeCoverPicker(onUriPicked: (android.net.Uri) -> Unit): () -> Unit {
+  val context = androidx.compose.ui.platform.LocalContext.current
+  val owner =
+    androidx.activity.compose.LocalActivityResultRegistryOwner.current
+      ?: androidx.compose.runtime.remember(context) { context.findActivityResultRegistryOwner() }
+  if (owner == null) {
+    return {}
+  }
+  var launchAction: () -> Unit = {}
+  androidx.compose.runtime.CompositionLocalProvider(
+    androidx.activity.compose.LocalActivityResultRegistryOwner provides owner
+  ) {
+    val launcher =
+      androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+      ) { uri ->
+        if (uri != null) onUriPicked(uri)
+      }
+    launchAction = {
+      launcher.launch(
+        androidx.activity.result.PickVisualMediaRequest(
+          androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+        )
+      )
+    }
+  }
+  return launchAction
+}
+
+private tailrec fun android.content.Context.findActivityResultRegistryOwner():
+  androidx.activity.result.ActivityResultRegistryOwner? =
+  when (this) {
+    is androidx.activity.result.ActivityResultRegistryOwner -> this
+    is android.content.ContextWrapper -> baseContext.findActivityResultRegistryOwner()
+    else -> null
+  }
+

@@ -1,13 +1,16 @@
 package com.example.feature.library
 
+import android.net.Uri
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.data.local.media.CoverStorageManager
 import com.example.core.data.local.preferences.PreferencesRepository
-import com.example.core.data.repository.DiaryRepository
 import com.example.core.data.repository.LibraryRepository
 import com.example.core.model.AppLanguage
 import com.example.core.model.CatalogBook
+import com.example.core.model.CopyMediaType
+import com.example.core.model.EditionFormat
 import com.example.core.model.LibrarySortOrder
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.ReadingStatus
@@ -55,8 +58,8 @@ private fun collatorFor(language: AppLanguage): Collator {
 
 class LibraryViewModel(
   private val libraryRepository: LibraryRepository,
-  private val diaryRepository: DiaryRepository,
   private val preferencesRepository: PreferencesRepository,
+  private val coverStorageManager: CoverStorageManager? = null,
 ) : ViewModel() {
 
   private val searchQuery = MutableStateFlow("")
@@ -85,15 +88,15 @@ class LibraryViewModel(
         statusFilter,
         sortOrder,
         combine(preferencesRepository.preferences, activeViewModeOverride) { prefs, override ->
-          latestDefaultViewMode.value = prefs.defaultLibraryViewMode
-          val effectiveViewMode =
-            if (override != null && override.baseDefault == prefs.defaultLibraryViewMode) {
-              override.mode
-            } else {
-              prefs.defaultLibraryViewMode
-            }
-          prefs.language to effectiveViewMode
-        }
+            latestDefaultViewMode.value = prefs.defaultLibraryViewMode
+            val effectiveViewMode =
+              if (override != null && override.baseDefault == prefs.defaultLibraryViewMode) {
+                override.mode
+              } else {
+                prefs.defaultLibraryViewMode
+              }
+            prefs.language to effectiveViewMode
+          }
           .distinctUntilChanged(),
       ) { allBooks, query, filter, sort, (language, viewMode) ->
         val locale = language.toLocale()
@@ -107,7 +110,8 @@ class LibraryViewModel(
               val matchesQuery =
                 normalizedQuery.isEmpty() ||
                   book.title.lowercase(locale).contains(normalizedQuery) ||
-                  book.author.lowercase(locale).contains(normalizedQuery)
+                  book.author.lowercase(locale).contains(normalizedQuery) ||
+                  (book.primaryEdition?.isbn?.lowercase(locale)?.contains(normalizedQuery) == true)
               matchesStatus && matchesQuery
             }
           }
@@ -172,9 +176,19 @@ class LibraryViewModel(
     publicationYear: Int?,
     editionNote: String?,
     status: ReadingStatus,
+    isbn: String? = null,
+    pickedCoverUri: Uri? = null,
+    language: String? = null,
+    format: EditionFormat? = null,
+    translator: String? = null,
+    copyMediaType: CopyMediaType = CopyMediaType.PHYSICAL,
+    copyLabel: String? = null,
+    copyLocation: String? = null,
     onCompleted: (Long) -> Unit = {},
   ) {
     viewModelScope.launch {
+      val importedCoverPath =
+        pickedCoverUri?.let { uri -> coverStorageManager?.importCoverFromUri(uri) }
       val id =
         libraryRepository.addBook(
           title = title,
@@ -183,6 +197,14 @@ class LibraryViewModel(
           publicationYear = publicationYear,
           editionNote = editionNote,
           status = status,
+          isbn = isbn,
+          coverUri = importedCoverPath,
+          language = language,
+          format = format,
+          translator = translator,
+          copyMediaType = copyMediaType,
+          copyLabel = copyLabel,
+          copyLocation = copyLocation,
         )
       onCompleted(id)
     }

@@ -3,66 +3,38 @@ package com.example.feature.home
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.core.data.repository.DiaryRepository
 import com.example.core.data.repository.LibraryRepository
+import com.example.core.data.repository.ReadingJourneyRepository
 import com.example.core.data.repository.StatisticsRepository
 import com.example.core.model.ArchiveSnapshot
 import com.example.core.model.CatalogBook
-import com.example.core.model.DiaryEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
-
-@Immutable
-sealed interface RecentActivityItem {
-  val stableKey: String
-  val timestampMillis: Long
-
-  @Immutable
-  data class BookCataloged(val book: CatalogBook) : RecentActivityItem {
-    override val stableKey: String = "book_${book.id}"
-    override val timestampMillis: Long = book.work.createdAtEpochMillis
-  }
-
-  @Immutable
-  data class DiaryRecorded(val entry: DiaryEntry) : RecentActivityItem {
-    override val stableKey: String = "diary_${entry.id}"
-    override val timestampMillis: Long = entry.createdAtEpochMillis
-  }
-}
+import kotlinx.coroutines.launch
 
 @Immutable
 data class HomeUiState(
   val currentlyReading: List<CatalogBook> = emptyList(),
-  val recentActivity: List<RecentActivityItem> = emptyList(),
   val snapshot: ArchiveSnapshot = ArchiveSnapshot(),
 )
 
 class HomeViewModel(
   libraryRepository: LibraryRepository,
-  diaryRepository: DiaryRepository,
   statisticsRepository: StatisticsRepository,
+  private val readingJourneyRepository: ReadingJourneyRepository? = null,
 ) : ViewModel() {
 
   val uiState: StateFlow<HomeUiState> =
     combine(
         libraryRepository.observeCurrentlyReading(),
-        libraryRepository.observeAllBooks(),
-        diaryRepository.observeAllEntries(),
         statisticsRepository.observeArchiveSnapshot(),
-      ) { reading, allBooks, entries, snapshot ->
-        val activity =
-          (allBooks.take(5).map { RecentActivityItem.BookCataloged(it) } +
-              entries.take(5).map { RecentActivityItem.DiaryRecorded(it) })
-            .sortedByDescending { it.timestampMillis }
-            .take(6)
-
+      ) { reading, snapshot ->
         HomeUiState(
           currentlyReading = reading,
-          recentActivity = activity,
           snapshot = snapshot,
         )
       }
@@ -72,4 +44,51 @@ class HomeViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = HomeUiState(),
       )
+
+  fun updateProgressByPage(
+    book: CatalogBook,
+    page: Int,
+    note: String? = null,
+    markFinishedIfComplete: Boolean = true,
+  ) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch {
+      val sessionId =
+        book.activeSessionId ?: journeyRepo.startJourney(book.id, book.primaryCopy?.id)
+      journeyRepo.updateProgressByPage(
+        sessionId = sessionId,
+        page = page,
+        note = note,
+        markFinishedIfComplete = markFinishedIfComplete,
+      )
+    }
+  }
+
+  fun updateProgressByPercent(
+    book: CatalogBook,
+    percent: Float,
+    note: String? = null,
+    markFinishedIfComplete: Boolean = true,
+  ) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch {
+      val sessionId =
+        book.activeSessionId ?: journeyRepo.startJourney(book.id, book.primaryCopy?.id)
+      journeyRepo.updateProgressByPercent(
+        sessionId = sessionId,
+        percent = percent,
+        note = note,
+        markFinishedIfComplete = markFinishedIfComplete,
+      )
+    }
+  }
+
+  fun completeReading(book: CatalogBook) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch {
+      val sessionId =
+        book.activeSessionId ?: journeyRepo.startJourney(book.id, book.primaryCopy?.id)
+      journeyRepo.completeJourney(sessionId)
+    }
+  }
 }

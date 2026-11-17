@@ -1,5 +1,6 @@
 package com.example.core.data.local.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -7,6 +8,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import androidx.room.TypeConverter
+import com.example.core.model.CopyMediaType
+import com.example.core.model.EditionFormat
 import com.example.core.model.ReadingStatus
 import com.example.core.model.ShelfType
 import com.example.core.model.TypographyPreset
@@ -43,6 +46,11 @@ data class EditionEntity(
   val totalPages: Int? = null,
   val isbn: String? = null,
   val coverUri: String? = null,
+  val language: String? = null,
+  val format: EditionFormat? = null,
+  val translator: String? = null,
+  @ColumnInfo(defaultValue = "0") val isPrimary: Boolean = false,
+  @ColumnInfo(defaultValue = "0") val createdAtEpochMillis: Long = 0L,
 )
 
 @Entity(
@@ -63,6 +71,11 @@ data class BookCopyEntity(
   val currentPage: Int = 0,
   val physicalFormat: String? = null,
   val personalNote: String? = null,
+  val label: String? = null,
+  @ColumnInfo(defaultValue = "'PHYSICAL'") val mediaType: CopyMediaType = CopyMediaType.PHYSICAL,
+  val locationOrPlatform: String? = null,
+  val acquisitionEpochMillis: Long? = null,
+  @ColumnInfo(defaultValue = "0") val createdAtEpochMillis: Long = 0L,
 )
 
 @Entity(tableName = "shelves")
@@ -126,16 +139,58 @@ data class DiaryEntryEntity(
       parentColumns = ["id"],
       childColumns = ["workId"],
       onDelete = ForeignKey.CASCADE,
-    )
+    ),
+    ForeignKey(
+      entity = BookCopyEntity::class,
+      parentColumns = ["id"],
+      childColumns = ["copyId"],
+      onDelete = ForeignKey.SET_NULL,
+    ),
   ],
-  indices = [Index(value = ["workId"])],
+  indices = [
+    Index(value = ["workId"]),
+    Index(value = ["copyId"]),
+  ],
 )
 data class ReadingSessionEntity(
   @PrimaryKey(autoGenerate = true) val id: Long = 0,
   val workId: Long,
+  val copyId: Long? = null,
+  val status: ReadingStatus = ReadingStatus.READING,
+  val rereadNumber: Int = 1,
+  val currentPage: Int = 0,
+  val totalPagesSnapshot: Int? = null,
+  val progressPercent: Float = 0f,
   val startEpochMillis: Long,
   val endEpochMillis: Long? = null,
-  val rereadNumber: Int = 1,
+  val pausedAtEpochMillis: Long? = null,
+  val accumulatedPausedMillis: Long = 0L,
+  val notes: String? = null,
+)
+
+@Entity(
+  tableName = "reading_progress_logs",
+  foreignKeys = [
+    ForeignKey(
+      entity = ReadingSessionEntity::class,
+      parentColumns = ["id"],
+      childColumns = ["sessionId"],
+      onDelete = ForeignKey.CASCADE,
+    )
+  ],
+  indices = [
+    Index(value = ["sessionId"]),
+    Index(value = ["recordedAtEpochMillis"]),
+  ],
+)
+data class ReadingProgressLogEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val sessionId: Long,
+  val recordedAtEpochMillis: Long,
+  val pageNumber: Int? = null,
+  val progressPercent: Float,
+  val deltaPages: Int = 0,
+  val note: String? = null,
 )
 
 data class EditionWithCopies(
@@ -150,10 +205,30 @@ data class WorkWithEditions(
   val editions: List<EditionWithCopies>,
 )
 
+data class LibraryBookSummaryRow(
+  @Embedded val work: WorkEntity,
+  @Embedded(prefix = "pe_") val primaryEdition: EditionEntity?,
+  @Embedded(prefix = "pc_") val primaryCopy: BookCopyEntity?,
+  val editionCount: Int,
+  val copyCount: Int,
+  val activeSessionId: Long? = null,
+  val activeProgressPercent: Float?,
+  val activeCurrentPage: Int?,
+  val activeTotalPages: Int?,
+  val activeRereadNumber: Int?,
+  val activeCopyMediaType: CopyMediaType?,
+  val activeCopyLabel: String?,
+)
+
 data class DiaryEntryWithBookRow(
   @Embedded val entry: DiaryEntryEntity,
   val linkedBookTitle: String?,
   val linkedBookAuthor: String?,
+)
+
+data class ReadingProgressLogWithWorkRow(
+  @Embedded val log: ReadingProgressLogEntity,
+  val workId: Long,
 )
 
 class DipeConverters {
@@ -166,6 +241,16 @@ class DipeConverters {
   @TypeConverter
   fun toTypographyPreset(value: String?): TypographyPreset? =
     value?.let { TypographyPreset.fromName(it) }
+
+  @TypeConverter fun fromCopyMediaType(value: CopyMediaType): String = value.name
+
+  @TypeConverter
+  fun toCopyMediaType(value: String): CopyMediaType = CopyMediaType.fromName(value)
+
+  @TypeConverter fun fromEditionFormat(value: EditionFormat?): String? = value?.name
+
+  @TypeConverter
+  fun toEditionFormat(value: String?): EditionFormat? = EditionFormat.fromName(value)
 
   @TypeConverter fun fromShelfType(value: ShelfType): String = value.name
 

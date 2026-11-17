@@ -20,9 +20,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +45,7 @@ import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.EditorialMasthead
+import com.example.core.designsystem.components.EditorialMetadataStrip
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.readingStatusAccentColor
@@ -153,7 +157,7 @@ fun StatisticsScreen(
         }
       }
 
-      // 2x2 tonal metric cards
+      // Tonal metric cards
       item(key = "statistics_figures", contentType = "figures_grid") {
         Column(
           modifier = Modifier.fillMaxWidth(),
@@ -184,10 +188,28 @@ fun StatisticsScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
             StatisticMetricCard(
+              icon = Icons.AutoMirrored.Outlined.MenuBook,
+              value = LocaleManager.formatInteger(snapshot.totalPagesRead, language),
+              label = stringResource(R.string.statistics_metric_pages_read),
+              modifier = Modifier.weight(1f).fillMaxHeight().testTag("statistics_pages_read"),
+            )
+            StatisticMetricCard(
               icon = Icons.Outlined.CheckCircle,
-              value = LocaleManager.formatInteger(snapshot.finishedCount, language),
-              label = stringResource(R.string.statistics_metric_finished),
-              modifier = Modifier.weight(1f).fillMaxHeight(),
+              value = LocaleManager.formatInteger(snapshot.completedJourneysCount, language),
+              label = stringResource(R.string.statistics_metric_completed_journeys),
+              modifier = Modifier.weight(1f).fillMaxHeight().testTag("statistics_completed_journeys"),
+            )
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            StatisticMetricCard(
+              icon = Icons.Outlined.Replay,
+              value = LocaleManager.formatInteger(snapshot.rereadsCount, language),
+              label = stringResource(R.string.statistics_metric_rereads),
+              modifier = Modifier.weight(1f).fillMaxHeight().testTag("statistics_rereads"),
             )
             StatisticMetricCard(
               icon = Icons.Outlined.EditNote,
@@ -195,6 +217,35 @@ fun StatisticsScreen(
               label = stringResource(R.string.statistics_metric_diary),
               modifier = Modifier.weight(1f).fillMaxHeight(),
             )
+          }
+
+          EditorialSurfaceCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentPadding = PaddingValues(vertical = DipeSpacing.md, horizontal = DipeSpacing.sm),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.CollectionsBookmark,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(start = DipeSpacing.sm).size(18.dp),
+              )
+              EditorialMetadataStrip(
+                items =
+                  listOf(
+                    stringResource(R.string.statistics_metric_editions) to
+                      LocaleManager.formatInteger(snapshot.editionsCount, language),
+                    stringResource(R.string.statistics_metric_copies) to
+                      LocaleManager.formatInteger(snapshot.copiesCount, language),
+                    stringResource(R.string.statistics_metric_finished) to
+                      LocaleManager.formatInteger(snapshot.finishedCount, language),
+                  ),
+                modifier = Modifier.weight(1f),
+              )
+            }
           }
         }
       }

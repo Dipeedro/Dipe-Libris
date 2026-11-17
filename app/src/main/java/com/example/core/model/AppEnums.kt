@@ -77,6 +77,29 @@ enum class ReadingStatus {
   }
 }
 
+enum class CopyMediaType {
+  PHYSICAL,
+  DIGITAL;
+
+  companion object {
+    fun fromName(name: String?): CopyMediaType =
+      entries.firstOrNull { it.name == name } ?: PHYSICAL
+  }
+}
+
+enum class EditionFormat {
+  HARDCOVER,
+  PAPERBACK,
+  POCKET,
+  EBOOK,
+  OTHER;
+
+  companion object {
+    fun fromName(name: String?): EditionFormat? =
+      name?.let { value -> entries.firstOrNull { it.name == value } }
+  }
+}
+
 enum class ShelfType {
   CUSTOM,
   SMART,
