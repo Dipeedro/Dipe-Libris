@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -155,11 +157,13 @@ fun QuickProgressSheet(
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
+    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
     containerColor = MaterialTheme.colorScheme.surface,
   ) {
     Column(
       modifier =
         Modifier.fillMaxWidth()
+          .imePadding()
           .verticalScroll(rememberScrollState())
           .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm)
           .testTag("quick_progress_sheet"),

@@ -228,15 +228,15 @@ class Phase2UiFlowsTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("add_book_title_input").performTextInput("Grande Sertão")
-    composeTestRule.onNodeWithTag("add_book_author_input").performTextInput("Guimarães Rosa")
+    composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Grande Sertão")
+    composeTestRule.onNodeWithTag("add_book_author_input").performScrollTo().performTextInput("Guimarães Rosa")
     composeTestRule.onNodeWithTag("add_book_more_details_toggle").performScrollTo().performClick()
     composeTestRule.waitForIdle()
 
-    // Invalid ISBN blocks submit
+    // Invalid ISBN blocks submit (Save and validation error are always visible in pinned footer)
     composeTestRule.onNodeWithTag("add_book_isbn_input").performScrollTo().performTextInput("12345")
-    composeTestRule.onNodeWithTag("add_book_save_button").performScrollTo().performClick()
-    composeTestRule.onNodeWithTag("add_book_validation_error").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
+    composeTestRule.onNodeWithTag("add_book_validation_error").assertIsDisplayed()
     assertEquals(null, submitted)
 
     // Valid ISBN + Digital copy + Hardcover format succeeds
@@ -244,12 +244,47 @@ class Phase2UiFlowsTest {
     composeTestRule.onNodeWithTag("add_book_isbn_input").performTextInput("978-85-359-0277-8")
     composeTestRule.onNodeWithTag("add_book_format_hardcover").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("add_book_copy_media_digital").performScrollTo().performClick()
-    composeTestRule.onNodeWithTag("add_book_save_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
 
     assertNotNull(submitted)
     assertEquals(EditionFormat.HARDCOVER, submitted!!.format)
     assertEquals(CopyMediaType.DIGITAL, submitted!!.copyMediaType)
     assertEquals("978-85-359-0277-8", submitted!!.isbn)
+  }
+
+  @Test
+  fun addBookSheetHeroCoverOpensDualSourceChooserAndGuardsDraftOnClose() {
+    var dismissed = false
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          AddBookSheet(
+            onDismiss = { dismissed = true },
+            onSave = {},
+          )
+        }
+      }
+    }
+
+    // Save button is visible immediately without scrolling
+    composeTestRule.onNodeWithTag("add_book_save_button").assertIsDisplayed()
+
+    // Tapping cover badge opens Gallery + File picker chooser
+    composeTestRule.onNodeWithTag("add_book_cover_badge").performClick()
+    composeTestRule.onNodeWithTag("cover_source_gallery_option").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("cover_source_files_option").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("cover_source_cancel_button").performClick()
+
+    // Typing unsaved text triggers discard confirmation on close button
+    composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Vidas Secas")
+    composeTestRule.onNodeWithTag("add_book_close_button").performClick()
+    composeTestRule.onNodeWithTag("add_book_discard_keep").assertIsDisplayed().performClick()
+    assertEquals(false, dismissed)
+
+    composeTestRule.onNodeWithTag("add_book_close_button").performClick()
+    composeTestRule.onNodeWithTag("add_book_discard_confirm").performClick()
+    assertTrue(dismissed)
   }
 
   @Test

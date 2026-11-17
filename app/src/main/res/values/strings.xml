@@ -33,6 +33,12 @@
     <string name="cover_change_photo">Change cover</string>
     <string name="cover_remove_photo">Use typographic cover</string>
     <string name="cover_import_error">Could not load the selected image.</string>
+    <string name="cover_source_title">Cover photo</string>
+    <string name="cover_source_gallery">Photo gallery</string>
+    <string name="cover_source_files">File picker</string>
+    <string name="cover_picker_unavailable">No photo or file picker available on this device.</string>
+    <string name="cd_cover_badge_action">Choose or change cover photo</string>
+    <string name="cd_close">Close</string>
 
     <!-- Home -->
     <string name="home_masthead_title">Reading</string>
@@ -115,6 +121,10 @@
     <string name="book_field_copy_location">Shelf or device (optional)</string>
     <string name="book_save_action">Save</string>
     <string name="book_cancel_action">Cancel</string>
+    <string name="book_discard_title">Discard draft?</string>
+    <string name="book_discard_message">You have unsaved book details. Discard them?</string>
+    <string name="book_discard_action">Discard</string>
+    <string name="book_keep_editing_action">Keep editing</string>
     <string name="book_validation_required">Title and author are required.</string>
     <string name="book_validation_pages">Enter a valid page count between 1 and 50,000.</string>
     <string name="book_validation_year">Enter a valid publication year between 1 and 2100.</string>

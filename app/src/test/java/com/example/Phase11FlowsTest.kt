@@ -189,12 +189,12 @@ class Phase11FlowsTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("add_book_title_input").performTextInput("Capitães da Areia")
-    composeTestRule.onNodeWithTag("add_book_author_input").performTextInput("Jorge Amado")
-    composeTestRule.onNodeWithTag("add_book_pages_input").performTextInput("0")
-    composeTestRule.onNodeWithTag("add_book_save_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Capitães da Areia")
+    composeTestRule.onNodeWithTag("add_book_author_input").performScrollTo().performTextInput("Jorge Amado")
+    composeTestRule.onNodeWithTag("add_book_pages_input").performScrollTo().performTextInput("0")
+    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
 
-    composeTestRule.onNodeWithTag("add_book_validation_error").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("add_book_validation_error").assertIsDisplayed()
     assertFalse(saved)
   }
 

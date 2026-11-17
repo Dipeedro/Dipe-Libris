@@ -3,7 +3,9 @@ package com.example.core.data.local.media
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -23,22 +25,23 @@ class InternalCoverStorageManager(private val context: Context) : CoverStorageMa
 
   override suspend fun importCoverFromUri(sourceUri: Uri): String? =
     withContext(Dispatchers.IO) {
-      runCatching {
+      var tempSourceFile: File? = null
+      try {
         val resolver = context.contentResolver
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(sourceUri)?.use { stream ->
-          BitmapFactory.decodeStream(stream, null, bounds)
-        }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        val tempFile = File.createTempFile("cover_import_", ".tmp", context.cacheDir)
+        tempSourceFile = tempFile
+
+        val copiedBytes =
+          resolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+          } ?: return@withContext null
+
+        if (copiedBytes <= 0L || !tempFile.exists() || tempFile.length() <= 0L) {
           return@withContext null
         }
 
-        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, MAX_DIMENSION_PX)
-        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val decoded =
-          resolver.openInputStream(sourceUri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, decodeOptions)
-          } ?: return@withContext null
+          decodeScaledBitmap(tempFile) ?: return@withContext null
 
         val targetDir = coversDir.apply { mkdirs() }
         val outFile = File(targetDir, "cover_${UUID.randomUUID()}.jpg")
@@ -54,13 +57,50 @@ class InternalCoverStorageManager(private val context: Context) : CoverStorageMa
             }
             decoded.recycle()
           }
-          outFile.absolutePath
+          if (outFile.exists() && outFile.length() > 0L) outFile.absolutePath else null
         } catch (t: Throwable) {
           outFile.delete()
           throw t
         }
-      }.getOrNull()
+      } catch (_: Throwable) {
+        null
+      } finally {
+        tempSourceFile?.delete()
+      }
     }
+
+  private fun decodeScaledBitmap(sourceFile: File): Bitmap? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      val decodedP =
+        runCatching {
+            val source = ImageDecoder.createSource(sourceFile)
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+              decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+              val width = info.size.width
+              val height = info.size.height
+              val maxSide = maxOf(width, height)
+              if (maxSide > MAX_DIMENSION_PX && width > 0 && height > 0) {
+                val ratio = MAX_DIMENSION_PX.toFloat() / maxSide.toFloat()
+                decoder.setTargetSize(
+                  (width * ratio).toInt().coerceAtLeast(1),
+                  (height * ratio).toInt().coerceAtLeast(1),
+                )
+              }
+            }
+          }
+          .getOrNull()
+      if (decodedP != null) return decodedP
+    }
+
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(sourceFile.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+      return null
+    }
+    val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, MAX_DIMENSION_PX)
+    val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    return BitmapFactory.decodeFile(sourceFile.absolutePath, decodeOptions)
+  }
 
   override suspend fun deleteCoverIfManaged(coverUri: String?) {
     if (coverUri.isNullOrBlank()) return

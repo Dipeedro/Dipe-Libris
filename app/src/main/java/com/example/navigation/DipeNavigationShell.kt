@@ -1,5 +1,6 @@
 package com.example.navigation
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
@@ -440,7 +441,11 @@ fun DipeNavigationShell(
     }
   }
 
-  if (showAddBookSheet) {
+  AnimatedVisibility(
+    visible = showAddBookSheet,
+    enter = fadeIn(animationSpec = enterSpec),
+    exit = fadeOut(animationSpec = exitSpec),
+  ) {
     AddBookSheet(
       onDismiss = { showAddBookSheet = false },
       onSave = { submission ->

@@ -35,6 +35,9 @@ class DipeLibrisAppTest {
 
   @Test
   fun navigateBetweenAllMainAreasAndSettings() {
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("nav_tab_library")).fetchSemanticsNodes().isNotEmpty()
+    }
     composeTestRule.waitForIdle()
 
     // Home is initial destination without redundant settings/shortcut buttons, and Diary tab is removed
@@ -122,6 +125,9 @@ class DipeLibrisAppTest {
 
   @Test
   fun addBookThroughUiSheetDisplaysInLibraryAndOpensBookDiary() {
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("nav_tab_library")).fetchSemanticsNodes().isNotEmpty()
+    }
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("nav_tab_library").performClick()
     composeTestRule.waitForIdle()
@@ -129,9 +135,9 @@ class DipeLibrisAppTest {
     composeTestRule.onNodeWithTag("library_add_book_button").performClick()
     composeTestRule.waitForIdle()
 
-    composeTestRule.onNodeWithTag("add_book_title_input").performTextInput("Dom Casmurro")
-    composeTestRule.onNodeWithTag("add_book_author_input").performTextInput("Machado de Assis")
-    composeTestRule.onNodeWithTag("add_book_save_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Dom Casmurro")
+    composeTestRule.onNodeWithTag("add_book_author_input").performScrollTo().performTextInput("Machado de Assis")
+    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
       composeTestRule.onAllNodes(hasTestTag("add_book_save_button")).fetchSemanticsNodes().isEmpty() &&
         composeTestRule.onAllNodes(hasTestTag("library_grid_book_1")).fetchSemanticsNodes().isNotEmpty()

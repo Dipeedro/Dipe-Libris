@@ -33,6 +33,12 @@
     <string name="cover_change_photo">Trocar capa</string>
     <string name="cover_remove_photo">Usar capa tipográfica</string>
     <string name="cover_import_error">Não foi possível carregar a imagem selecionada.</string>
+    <string name="cover_source_title">Foto da capa</string>
+    <string name="cover_source_gallery">Galeria de fotos</string>
+    <string name="cover_source_files">Seletor de arquivos</string>
+    <string name="cover_picker_unavailable">Nenhum seletor de fotos ou arquivos disponível neste aparelho.</string>
+    <string name="cd_cover_badge_action">Escolher ou trocar foto da capa</string>
+    <string name="cd_close">Fechar</string>
 
     <!-- Home -->
     <string name="home_masthead_title">Leitura</string>
@@ -115,6 +121,10 @@
     <string name="book_field_copy_location">Estante ou dispositivo (opcional)</string>
     <string name="book_save_action">Salvar</string>
     <string name="book_cancel_action">Cancelar</string>
+    <string name="book_discard_title">Descartar rascunho?</string>
+    <string name="book_discard_message">Há dados preenchidos para este livro. Deseja descartar?</string>
+    <string name="book_discard_action">Descartar</string>
+    <string name="book_keep_editing_action">Continuar editando</string>
     <string name="book_validation_required">Título e autor são obrigatórios.</string>
     <string name="book_validation_pages">Informe um número válido de páginas entre 1 e 50.000.</string>
     <string name="book_validation_year">Informe um ano de publicação válido entre 1 e 2100.</string>

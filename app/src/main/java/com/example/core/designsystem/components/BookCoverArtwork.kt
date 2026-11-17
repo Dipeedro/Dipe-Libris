@@ -66,6 +66,7 @@ fun BookCoverArtwork(
   coverUri: String? = null,
   compact: Boolean = false,
   elevated: Boolean = false,
+  onImageLoadError: (() -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
@@ -89,7 +90,13 @@ fun BookCoverArtwork(
     remember(coverUri, context) {
       coverUri?.takeIf { it.isNotBlank() }?.let { raw ->
         val file = File(raw)
-        val data: Any = if (file.exists()) file else raw
+        val data: Any =
+          when {
+            file.exists() -> file
+            raw.startsWith("content://") || raw.startsWith("file://") ->
+              android.net.Uri.parse(raw)
+            else -> raw
+          }
         ImageRequest.Builder(context)
           .data(data)
           .crossfade(true)
@@ -97,7 +104,13 @@ fun BookCoverArtwork(
       }
     }
   val painter = imageRequest?.let { rememberAsyncImagePainter(model = it) }
-  val hasLoadedPhoto = painter?.state is AsyncImagePainter.State.Success
+  val painterState = painter?.state
+  androidx.compose.runtime.LaunchedEffect(coverUri, painterState) {
+    if (coverUri != null && painterState is AsyncImagePainter.State.Error) {
+      onImageLoadError?.invoke()
+    }
+  }
+  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success
 
   BoxWithConstraints(
     modifier =

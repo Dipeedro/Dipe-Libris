@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -53,7 +55,7 @@ import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.copyMediaTypeLabel
 import com.example.core.designsystem.components.editionFormatLabel
-import com.example.core.designsystem.components.rememberSafeCoverPicker
+import com.example.core.designsystem.components.rememberCoverSourcePickerState
 import com.example.core.model.CopyMediaType
 import com.example.core.model.Edition
 import com.example.core.model.EditionFormat
@@ -97,6 +99,7 @@ fun EditionEditorSheet(
   var isPrimary by remember(initialEdition) { mutableStateOf(initialEdition?.isPrimary == true) }
   var pickedCoverUri by remember(initialEdition) { mutableStateOf<Uri?>(null) }
   var removeExistingCover by remember(initialEdition) { mutableStateOf(false) }
+  var coverErrorRes by remember { mutableStateOf<Int?>(null) }
 
   var initialCopyMedia by remember { mutableStateOf(CopyMediaType.PHYSICAL) }
   var initialCopyLabel by remember { mutableStateOf("") }
@@ -106,17 +109,30 @@ fun EditionEditorSheet(
   var yearError by remember { mutableStateOf(false) }
   var isbnError by remember { mutableStateOf(false) }
 
-  val launchCoverPicker = rememberSafeCoverPicker { uri ->
-    pickedCoverUri = uri
-    removeExistingCover = false
-  }
-
   val previewCoverUri =
     when {
       pickedCoverUri != null -> pickedCoverUri.toString()
       removeExistingCover -> null
       else -> initialEdition?.coverUri
     }
+
+  val coverPickerState =
+    rememberCoverSourcePickerState(
+      hasCover = previewCoverUri != null,
+      onUriPicked = { uri ->
+        pickedCoverUri = uri
+        removeExistingCover = false
+        coverErrorRes = null
+      },
+      onRemoveCover = {
+        pickedCoverUri = null
+        removeExistingCover = true
+        coverErrorRes = null
+      },
+      onPickerUnavailable = {
+        coverErrorRes = R.string.cover_picker_unavailable
+      },
+    )
 
   val textFieldColors =
     OutlinedTextFieldDefaults.colors(
@@ -137,11 +153,13 @@ fun EditionEditorSheet(
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
+    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
     containerColor = MaterialTheme.colorScheme.surface,
   ) {
     Column(
       modifier =
         Modifier.fillMaxWidth()
+          .imePadding()
           .verticalScroll(rememberScrollState())
           .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm)
           .testTag("edition_editor_sheet"),
@@ -165,6 +183,10 @@ fun EditionEditorSheet(
           coverUri = previewCoverUri,
           compact = previewCoverUri == null,
           elevated = true,
+          onImageLoadError = {
+            pickedCoverUri = null
+            coverErrorRes = R.string.cover_import_error
+          },
           modifier = Modifier.width(64.dp),
         )
         Column(
@@ -172,7 +194,7 @@ fun EditionEditorSheet(
           verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
         ) {
           OutlinedButton(
-            onClick = launchCoverPicker,
+            onClick = { coverPickerState.openChooser() },
             shape = CircleShape,
             contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
             modifier =
@@ -198,6 +220,7 @@ fun EditionEditorSheet(
               onClick = {
                 pickedCoverUri = null
                 removeExistingCover = true
+                coverErrorRes = null
               },
               contentPadding = PaddingValues(horizontal = DipeSpacing.xs, vertical = 2.dp),
               modifier = Modifier.testTag("edition_remove_cover_button"),
@@ -213,6 +236,14 @@ fun EditionEditorSheet(
                 style = MaterialTheme.typography.labelMedium,
               )
             }
+          }
+          coverErrorRes?.let { errorRes ->
+            Text(
+              text = stringResource(errorRes),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+              modifier = Modifier.testTag("edition_cover_error"),
+            )
           }
         }
       }

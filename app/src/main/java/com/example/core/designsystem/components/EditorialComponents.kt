@@ -32,6 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -436,34 +439,236 @@ fun copyMediaTypeLabel(mediaType: com.example.core.model.CopyMediaType): String 
     com.example.core.model.CopyMediaType.DIGITAL -> stringResource(R.string.copy_media_digital)
   }
 
+@androidx.compose.runtime.Stable
+class CoverSourcePickerState internal constructor(
+  private val onLaunchGallery: () -> Unit,
+  private val onLaunchFiles: () -> Unit,
+  private val onRemoveCover: (() -> Unit)?,
+  hasCover: Boolean,
+) {
+  var showChooserDialog by androidx.compose.runtime.mutableStateOf(false)
+    internal set
+
+  internal var currentHasCover by androidx.compose.runtime.mutableStateOf(hasCover)
+
+  fun openChooser() {
+    showChooserDialog = true
+  }
+
+  fun launchGallery() {
+    showChooserDialog = false
+    onLaunchGallery()
+  }
+
+  fun launchFiles() {
+    showChooserDialog = false
+    onLaunchFiles()
+  }
+
+  fun removeCover() {
+    showChooserDialog = false
+    onRemoveCover?.invoke()
+  }
+}
+
 @Composable
-fun rememberSafeCoverPicker(onUriPicked: (android.net.Uri) -> Unit): () -> Unit {
+fun rememberCoverSourcePickerState(
+  hasCover: Boolean,
+  onUriPicked: (android.net.Uri) -> Unit,
+  onRemoveCover: (() -> Unit)? = null,
+  onPickerUnavailable: () -> Unit = {},
+): CoverSourcePickerState {
   val context = androidx.compose.ui.platform.LocalContext.current
   val owner =
     androidx.activity.compose.LocalActivityResultRegistryOwner.current
       ?: androidx.compose.runtime.remember(context) { context.findActivityResultRegistryOwner() }
-  if (owner == null) {
-    return {}
-  }
-  var launchAction: () -> Unit = {}
-  androidx.compose.runtime.CompositionLocalProvider(
-    androidx.activity.compose.LocalActivityResultRegistryOwner provides owner
-  ) {
-    val launcher =
-      androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
-      ) { uri ->
-        if (uri != null) onUriPicked(uri)
+
+  val latestOnUriPicked by androidx.compose.runtime.rememberUpdatedState(onUriPicked)
+  val latestOnRemove by androidx.compose.runtime.rememberUpdatedState(onRemoveCover)
+  val latestOnUnavailable by androidx.compose.runtime.rememberUpdatedState(onPickerUnavailable)
+
+  var launchGalleryAction by androidx.compose.runtime.remember { mutableStateOf<() -> Unit>({}) }
+  var launchFilesAction by androidx.compose.runtime.remember { mutableStateOf<() -> Unit>({}) }
+
+  if (owner != null) {
+    androidx.compose.runtime.CompositionLocalProvider(
+      androidx.activity.compose.LocalActivityResultRegistryOwner provides owner
+    ) {
+      val handlePickedUri: (android.net.Uri?) -> Unit = { uri ->
+        if (uri != null) {
+          runCatching {
+            context.contentResolver.takePersistableUriPermission(
+              uri,
+              android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+          }
+          latestOnUriPicked(uri)
+        }
       }
-    launchAction = {
-      launcher.launch(
-        androidx.activity.result.PickVisualMediaRequest(
-          androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+
+      val getContentLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+          androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+          onResult = handlePickedUri,
         )
+
+      val openDocumentLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+          androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+          onResult = handlePickedUri,
+        )
+
+      val photoPickerLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+          androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+          onResult = handlePickedUri,
+        )
+
+      val safeLaunchFiles = {
+        val launchedOpenDoc =
+          runCatching { openDocumentLauncher.launch(arrayOf("image/*")) }.isSuccess
+        if (!launchedOpenDoc) {
+          val launchedGetContent = runCatching { getContentLauncher.launch("image/*") }.isSuccess
+          if (!launchedGetContent) {
+            latestOnUnavailable()
+          }
+        }
+      }
+
+      val safeLaunchGallery = {
+        val launchedPhotoPicker =
+          runCatching {
+              photoPickerLauncher.launch(
+                androidx.activity.result.PickVisualMediaRequest(
+                  androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                )
+              )
+            }
+            .isSuccess
+        if (!launchedPhotoPicker) {
+          safeLaunchFiles()
+        }
+      }
+
+      launchGalleryAction = safeLaunchGallery
+      launchFilesAction = safeLaunchFiles
+    }
+  } else {
+    launchGalleryAction = { latestOnUnavailable() }
+    launchFilesAction = { latestOnUnavailable() }
+  }
+
+  val state =
+    androidx.compose.runtime.remember {
+      CoverSourcePickerState(
+        onLaunchGallery = { launchGalleryAction() },
+        onLaunchFiles = { launchFilesAction() },
+        onRemoveCover = { latestOnRemove?.invoke() },
+        hasCover = hasCover,
       )
     }
+  state.currentHasCover = hasCover
+
+  if (state.showChooserDialog) {
+    CoverSourceChooserDialog(
+      hasCover = state.currentHasCover && onRemoveCover != null,
+      onDismiss = { state.showChooserDialog = false },
+      onSelectGallery = { state.launchGallery() },
+      onSelectFiles = { state.launchFiles() },
+      onRemoveCover = { state.removeCover() },
+    )
   }
-  return launchAction
+
+  return state
+}
+
+@Composable
+private fun CoverSourceChooserDialog(
+  hasCover: Boolean,
+  onDismiss: () -> Unit,
+  onSelectGallery: () -> Unit,
+  onSelectFiles: () -> Unit,
+  onRemoveCover: () -> Unit,
+) {
+  androidx.compose.material3.AlertDialog(
+    onDismissRequest = onDismiss,
+    shape = MaterialTheme.shapes.large,
+    containerColor = MaterialTheme.colorScheme.surface,
+    title = {
+      Text(
+        text = stringResource(R.string.cover_source_title),
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+    },
+    text = {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      ) {
+        EditorialSurfaceCard(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+          contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.md),
+          onClick = onSelectGallery,
+          modifier =
+            Modifier.minimumInteractiveComponentSize().testTag("cover_source_gallery_option"),
+        ) {
+          Text(
+            text = stringResource(R.string.cover_source_gallery),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
+        EditorialSurfaceCard(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+          contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.md),
+          onClick = onSelectFiles,
+          modifier =
+            Modifier.minimumInteractiveComponentSize().testTag("cover_source_files_option"),
+        ) {
+          Text(
+            text = stringResource(R.string.cover_source_files),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
+        if (hasCover) {
+          EditorialSurfaceCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+            contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.sm),
+            onClick = onRemoveCover,
+            modifier =
+              Modifier.minimumInteractiveComponentSize().testTag("cover_source_remove_option"),
+          ) {
+            Text(
+              text = stringResource(R.string.cover_remove_photo),
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.secondary,
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("cover_source_cancel_button"),
+      ) {
+        Text(stringResource(R.string.book_cancel_action))
+      }
+    },
+  )
+}
+
+@Composable
+fun rememberSafeCoverPicker(onUriPicked: (android.net.Uri) -> Unit): () -> Unit {
+  val pickerState =
+    rememberCoverSourcePickerState(
+      hasCover = false,
+      onUriPicked = onUriPicked,
+    )
+  return { pickerState.openChooser() }
 }
 
 private tailrec fun android.content.Context.findActivityResultRegistryOwner():
