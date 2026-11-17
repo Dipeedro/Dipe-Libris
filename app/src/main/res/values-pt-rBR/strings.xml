@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Dipe Libris</string>
+    <string name="brand_wordmark" translatable="false">DIPE LIBRIS</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Início</string>
+    <string name="nav_library">Biblioteca</string>
+    <string name="nav_diary">Diário</string>
+    <string name="nav_statistics">Estatísticas</string>
+    <string name="nav_profile">Perfil</string>
+    <string name="nav_settings">Configurações</string>
+    <string name="cd_back">Voltar</string>
+    <string name="cd_open_settings">Abrir configurações</string>
+
+    <!-- Reading Statuses -->
+    <string name="status_unread">Para ler</string>
+    <string name="status_reading">Em leitura</string>
+    <string name="status_paused">Pausado</string>
+    <string name="status_finished">Concluído</string>
+    <string name="status_abandoned">Interrompido</string>
+
+    <!-- Home -->
+    <string name="home_editorial_kicker">ACERVO PESSOAL</string>
+    <string name="home_subtitle">Coleção literária privada e registros de leitura</string>
+    <string name="home_section_currently_reading">Em andamento</string>
+    <string name="home_section_recent_activity">Atividade recente</string>
+    <string name="home_section_featured_shelves">Estantes em destaque</string>
+    <string name="home_section_reading_calendar">Calendário</string>
+    <string name="home_section_shortcuts">Atalhos para a biblioteca</string>
+    <string name="home_section_reading_notes">Informações de leitura</string>
+    <string name="home_empty_reading_title">Nenhum volume aberto no momento</string>
+    <string name="home_empty_reading_body">Cadastre um livro na sua biblioteca ou marque uma edição como em leitura para acompanhá-la aqui.</string>
+    <string name="home_empty_activity_title">Seu diário está silencioso</string>
+    <string name="home_empty_activity_body">Reflexões do diário e obras recém-catalogadas aparecerão aqui em ordem cronológica.</string>
+    <string name="home_empty_shelves_title">Estantes preparadas para curadoria</string>
+    <string name="home_empty_shelves_body">Estantes personalizadas e inteligentes serão organizadas aqui conforme seu acervo crescer.</string>
+    <string name="home_calendar_planned_title">Calendário cronológico de leitura</string>
+    <string name="home_calendar_planned_body">Registros diários, releituras e visualização em calendário estão planejados para uma fase posterior.</string>
+    <string name="home_shortcut_open_library">Abrir acervo</string>
+    <string name="home_shortcut_add_volume">Catalogar livro</string>
+    <string name="home_shortcut_write_entry">Escrever no diário</string>
+    <string name="home_overview_volumes_count">%1$d obras catalogadas</string>
+    <string name="home_overview_entries_count">%1$d notas no diário</string>
+    <string name="home_overview_reading_count">%1$d em andamento</string>
+    <plurals name="home_overview_works_label">
+        <item quantity="one">obra catalogada</item>
+        <item quantity="other">obras catalogadas</item>
+    </plurals>
+    <plurals name="home_overview_reading_label">
+        <item quantity="one">em andamento</item>
+        <item quantity="other">em andamento</item>
+    </plurals>
+    <plurals name="home_overview_diary_label">
+        <item quantity="one">nota no diário</item>
+        <item quantity="other">notas no diário</item>
+    </plurals>
+
+    <!-- Library -->
+    <string name="library_title">Biblioteca</string>
+    <string name="library_subtitle">Catálogo de obras e edições</string>
+    <string name="library_search_placeholder">Pesquisar título ou autor</string>
+    <string name="library_clear_search">Limpar pesquisa</string>
+    <string name="library_add_book">Catalogar livro</string>
+    <string name="library_view_grid">Grade</string>
+    <string name="library_view_list">Lista</string>
+    <string name="library_view_shelf">Estante</string>
+    <string name="library_view_gallery">Galeria</string>
+    <string name="library_filter_all">Todos</string>
+    <string name="library_sort_recent">Mais recentes</string>
+    <string name="library_sort_title">Título (A–Z)</string>
+    <string name="library_sort_author">Autor (A–Z)</string>
+    <string name="library_sort_label">Ordenar</string>
+    <string name="library_shelves_label">Estantes personalizadas</string>
+    <string name="library_shelves_planned_note">Estantes personalizadas, scanner ISBN e consulta a catálogos externos já estão preparados na arquitetura para as próximas fases.</string>
+    <string name="library_empty_title">Suas estantes aguardam o primeiro volume</string>
+    <string name="library_empty_body">Inicie sua biblioteca particular catalogando uma obra. Todos os dados permanecem localmente no aparelho.</string>
+    <string name="library_empty_filtered_title">Nenhum volume correspondente</string>
+    <string name="library_empty_filtered_body">Ajuste a pesquisa ou o filtro de leitura para visualizar outras obras do catálogo.</string>
+    <string name="library_pages_format">%1$d páginas</string>
+    <plurals name="pages_count">
+        <item quantity="one">%1$d página</item>
+        <item quantity="other">%1$d páginas</item>
+    </plurals>
+    <string name="library_favorite_badge">Favorito</string>
+    <string name="cd_toggle_favorite">Alternar favorito</string>
+    <string name="cd_book_cover">Capa de %1$s</string>
+
+    <!-- Add / Detail Book -->
+    <string name="book_add_sheet_title">Catalogar volume</string>
+    <string name="book_field_title">Título da obra</string>
+    <string name="book_field_author">Autor</string>
+    <string name="book_field_pages">Total de páginas (opcional)</string>
+    <string name="book_field_year">Ano de publicação (opcional)</string>
+    <string name="book_field_edition_note">Nota de edição ou editora (opcional)</string>
+    <string name="book_field_status">Situação de leitura</string>
+    <string name="book_save_action">Salvar na biblioteca</string>
+    <string name="book_cancel_action">Cancelar</string>
+    <string name="book_validation_required">Título e autor são obrigatórios.</string>
+    <string name="book_validation_pages">Informe um número válido de páginas entre 1 e 50.000.</string>
+    <string name="book_validation_year">Informe um ano de publicação válido entre 1 e 2100.</string>
+    <string name="book_detail_kicker">FICHA DO ACERVO</string>
+    <string name="book_detail_loading">Abrindo ficha do livro…</string>
+    <string name="book_detail_not_found_title">Volume indisponível</string>
+    <string name="book_detail_not_found_body">Esta obra não está mais no catálogo ou foi removida.</string>
+    <string name="book_detail_not_found_action">Voltar ao catálogo</string>
+    <string name="book_detail_edition_section">Base de edição e exemplar</string>
+    <string name="book_detail_typography_note">A personalização tipográfica individual por ficha de livro está preparada na arquitetura para uma fase futura.</string>
+    <string name="book_detail_notes_section">Anotações do diário associadas</string>
+    <string name="book_detail_no_notes">Nenhuma anotação do diário associada a esta obra.</string>
+    <string name="book_detail_delete">Remover do catálogo</string>
+    <string name="book_delete_confirm_title">Remover do catálogo?</string>
+    <string name="book_delete_confirm_message">Esta ação exclui permanentemente a obra e os dados da edição da sua biblioteca. As anotações do diário associadas serão preservadas como notas pessoais.</string>
+    <string name="book_delete_confirm_action">Remover livro</string>
+    <string name="book_detail_status_label">Situação</string>
+    <string name="book_detail_pages_label">Páginas</string>
+    <string name="book_detail_year_label">Ano</string>
+    <string name="book_detail_unspecified">—</string>
+
+    <!-- Diary -->
+    <string name="diary_title">Diário</string>
+    <string name="diary_subtitle">Reflexões breves e registros de leitura</string>
+    <string name="diary_new_entry">Novo registro</string>
+    <string name="diary_empty_title">Nenhum registro anotado</string>
+    <string name="diary_empty_body">Guarde impressões de leitura, trechos marcantes ou pensamentos ligados opcionalmente a um livro do catálogo.</string>
+    <string name="diary_sheet_title">Novo registro no diário</string>
+    <string name="diary_field_content">Escreva sua reflexão</string>
+    <string name="diary_field_book_optional">Associar a um livro (opcional)</string>
+    <string name="diary_no_book_linked">Nota livre (sem livro associado)</string>
+    <string name="diary_save_action">Registrar nota</string>
+    <string name="diary_delete_entry">Excluir registro</string>
+    <string name="diary_delete_confirm_title">Excluir registro do diário?</string>
+    <string name="diary_delete_confirm_message">Esta reflexão será removida permanentemente do seu diário de leitura.</string>
+    <string name="diary_delete_confirm_action">Excluir registro</string>
+    <string name="diary_general_note_tag">Nota pessoal</string>
+
+    <!-- Statistics -->
+    <string name="statistics_title">Estatísticas</string>
+    <string name="statistics_subtitle">Panorama do acervo</string>
+    <string name="statistics_collection_summary">Retrato do catálogo</string>
+    <string name="statistics_metric_works">Obras catalogadas</string>
+    <string name="statistics_metric_reading">Em andamento</string>
+    <string name="statistics_metric_finished">Obras concluídas</string>
+    <string name="statistics_metric_diary">Registros no diário</string>
+    <string name="statistics_empty_notice">As estatísticas refletem exclusivamente registros reais do seu catálogo e diário — sem dados simulados.</string>
+    <string name="statistics_planned_section">Módulos analíticos preparados</string>
+    <string name="statistics_planned_cadence_title">Ritmo e histórico de leitura</string>
+    <string name="statistics_planned_cadence_body">Linhas do tempo mensais, histórico de releituras e distribuição por páginas estão planejados para uma fase futura.</string>
+    <string name="statistics_planned_authors_title">Autores, edições e gêneros</string>
+    <string name="statistics_planned_authors_body">Distribuição por autor, formato, idioma e estantes pessoais será expandida conforme a evolução do catálogo.</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Perfil</string>
+    <string name="profile_subtitle">Identidade pessoal de leitura</string>
+    <string name="profile_default_name">Leitor Particular</string>
+    <string name="profile_default_bio">Um arquivo silencioso e pessoal de obras, edições e reflexões de leitura.</string>
+    <string name="profile_edit_identity">Editar identidade</string>
+    <string name="profile_avatar_banner_note">Personalização de avatar e banner editorial está planejada para uma fase posterior.</string>
+    <string name="profile_section_favorites">Livros favoritos</string>
+    <string name="profile_empty_favorites">Marque qualquer livro da biblioteca como favorito para destacá-lo aqui.</string>
+    <string name="profile_section_authors">Autores favoritos</string>
+    <string name="profile_empty_authors">Os autores favoritos derivados das suas obras destacadas aparecerão aqui.</string>
+    <string name="profile_section_shelves">Estantes em destaque</string>
+    <string name="profile_empty_shelves">A curadoria de estantes e coleções fixadas está planejada para uma próxima fase.</string>
+    <string name="profile_section_visual">Preferências visuais</string>
+    <string name="profile_open_settings">Idioma, temas e tipografia</string>
+    <string name="profile_edit_sheet_title">Editar identidade do leitor</string>
+    <string name="profile_field_name">Nome de exibição</string>
+    <string name="profile_field_bio">Nota pessoal ou epígrafe</string>
+    <string name="profile_save_identity">Salvar identidade</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Configurações</string>
+    <string name="settings_subtitle">Idioma, estética e preferências do acervo</string>
+    <string name="settings_section_language">Idioma</string>
+    <string name="settings_language_description">Aplicado imediatamente a menus, datas e mensagens, sem traduzir títulos de livros ou anotações.</string>
+    <string name="settings_lang_pt_br">Português (Brasil)</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_section_theme">Tema editorial</string>
+    <string name="settings_theme_system">Sistema</string>
+    <string name="settings_theme_paper">Papel</string>
+    <string name="settings_theme_ink">Tinta</string>
+    <string name="settings_theme_sepia">Sépia</string>
+    <string name="settings_section_typography">Combinação tipográfica</string>
+    <string name="settings_typography_description">Combinações aplicadas globalmente. A personalização individual por livro chegará em uma fase futura.</string>
+    <string name="settings_typo_classic">Clássico Editorial</string>
+    <string name="settings_typo_classic_desc">Playfair Display + Inter + JetBrains Mono</string>
+    <string name="settings_typo_literary">Imprensa Literária</string>
+    <string name="settings_typo_literary_desc">Cormorant Garamond + Lora + JetBrains Mono</string>
+    <string name="settings_typo_modern">Acervo Moderno</string>
+    <string name="settings_typo_modern_desc">Lora + Inter + JetBrains Mono</string>
+    <string name="settings_section_general">Preferências gerais</string>
+    <string name="settings_default_library_view">Visualização padrão da biblioteca</string>
+    <string name="settings_reduce_motion">Reduzir movimento da interface</string>
+    <string name="settings_reduce_motion_desc">Minimiza transições além da preferência de acessibilidade do sistema.</string>
+    <string name="settings_section_about">Sobre o Dipe Libris</string>
+    <string name="settings_about_phase">Fase 1 — Fundação Editorial Nativa</string>
+    <string name="settings_about_version">Versão %1$s</string>
+    <string name="settings_about_privacy">Todos os dados permanecem estritamente offline neste dispositivo. Sem contas, rastreamento ou servidores externos.</string>
+    <string name="settings_future_modules_title">Planejado para as próximas fases</string>
+    <string name="settings_future_modules_body">Obras, edições e exemplares, histórico de releituras, progresso por páginas, citações, scanner ISBN, backup e restauração.</string>
+</resources>

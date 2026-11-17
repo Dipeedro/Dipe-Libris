@@ -1,0 +1,6 @@
+{
+  "name": "Dipe Libris",
+  "description": "Personal editorial literary library, reading archive, and private journal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

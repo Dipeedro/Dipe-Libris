@@ -1,0 +1,180 @@
+package com.example.feature.library
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.core.data.local.preferences.PreferencesRepository
+import com.example.core.data.repository.DiaryRepository
+import com.example.core.data.repository.LibraryRepository
+import com.example.core.model.CatalogBook
+import com.example.core.model.LibrarySortOrder
+import com.example.core.model.LibraryViewMode
+import com.example.core.model.ReadingStatus
+import java.text.Collator
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+data class LibraryUiState(
+  val books: List<CatalogBook> = emptyList(),
+  val totalCatalogCount: Int = 0,
+  val searchQuery: String = "",
+  val statusFilter: ReadingStatus? = null,
+  val sortOrder: LibrarySortOrder = LibrarySortOrder.RECENTLY_ADDED,
+  val viewMode: LibraryViewMode = LibraryViewMode.GRID,
+)
+
+private data class ViewModeOverride(
+  val mode: LibraryViewMode,
+  val baseDefault: LibraryViewMode,
+)
+
+class LibraryViewModel(
+  private val libraryRepository: LibraryRepository,
+  private val diaryRepository: DiaryRepository,
+  private val preferencesRepository: PreferencesRepository,
+) : ViewModel() {
+
+  private val searchQuery = MutableStateFlow("")
+  private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
+  private val sortOrder = MutableStateFlow(LibrarySortOrder.RECENTLY_ADDED)
+  private val activeViewModeOverride = MutableStateFlow<ViewModeOverride?>(null)
+  private val latestDefaultViewMode = MutableStateFlow(LibraryViewMode.GRID)
+
+  init {
+    viewModelScope.launch {
+      preferencesRepository.preferences
+        .map { it.defaultLibraryViewMode }
+        .distinctUntilChanged()
+        .drop(1)
+        .collect { newDefault ->
+          latestDefaultViewMode.value = newDefault
+          activeViewModeOverride.value = null
+        }
+    }
+  }
+
+  val uiState: StateFlow<LibraryUiState> =
+    combine(
+      libraryRepository.observeAllBooks(),
+      searchQuery,
+      statusFilter,
+      sortOrder,
+      combine(preferencesRepository.preferences, activeViewModeOverride) { prefs, override ->
+        latestDefaultViewMode.value = prefs.defaultLibraryViewMode
+        val effectiveViewMode =
+          if (override != null && override.baseDefault == prefs.defaultLibraryViewMode) {
+            override.mode
+          } else {
+            prefs.defaultLibraryViewMode
+          }
+        prefs.language to effectiveViewMode
+      },
+    ) { allBooks, query, filter, sort, (language, viewMode) ->
+      val collator =
+        Collator.getInstance(language.toLocale()).apply {
+          strength = Collator.SECONDARY
+        }
+
+      val filtered =
+        allBooks
+          .filter { book ->
+            val matchesStatus = filter == null || book.status == filter
+            val normalizedQuery = query.trim().lowercase(language.toLocale())
+            val matchesQuery =
+              normalizedQuery.isEmpty() ||
+                book.title.lowercase(language.toLocale()).contains(normalizedQuery) ||
+                book.author.lowercase(language.toLocale()).contains(normalizedQuery)
+            matchesStatus && matchesQuery
+          }
+          .let { list ->
+            when (sort) {
+              LibrarySortOrder.RECENTLY_ADDED -> list.sortedByDescending { it.work.createdAtEpochMillis }
+              LibrarySortOrder.TITLE_ASC ->
+                list.sortedWith { a, b ->
+                  val primary = collator.compare(a.title.trim(), b.title.trim())
+                  if (primary != 0) primary else a.title.compareTo(b.title, ignoreCase = true)
+                }
+              LibrarySortOrder.AUTHOR_ASC ->
+                list.sortedWith { a, b ->
+                  val byAuthor = collator.compare(a.author.trim(), b.author.trim())
+                  if (byAuthor != 0) byAuthor else collator.compare(a.title.trim(), b.title.trim())
+                }
+            }
+          }
+
+      LibraryUiState(
+        books = filtered,
+        totalCatalogCount = allBooks.size,
+        searchQuery = query,
+        statusFilter = filter,
+        sortOrder = sort,
+        viewMode = viewMode,
+      )
+    }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = LibraryUiState(),
+      )
+
+  fun setSearchQuery(value: String) {
+    searchQuery.value = value
+  }
+
+  fun setStatusFilter(status: ReadingStatus?) {
+    statusFilter.value = status
+  }
+
+  fun setSortOrder(order: LibrarySortOrder) {
+    sortOrder.value = order
+  }
+
+  fun setViewMode(mode: LibraryViewMode) {
+    activeViewModeOverride.value =
+      ViewModeOverride(mode = mode, baseDefault = latestDefaultViewMode.value)
+  }
+
+  fun addBook(
+    title: String,
+    author: String,
+    totalPages: Int?,
+    publicationYear: Int?,
+    editionNote: String?,
+    status: ReadingStatus,
+    onCompleted: (Long) -> Unit = {},
+  ) {
+    viewModelScope.launch {
+      val id =
+        libraryRepository.addBook(
+          title = title,
+          author = author,
+          totalPages = totalPages,
+          publicationYear = publicationYear,
+          editionNote = editionNote,
+          status = status,
+        )
+      onCompleted(id)
+    }
+  }
+
+  fun toggleFavorite(book: CatalogBook) {
+    viewModelScope.launch { libraryRepository.toggleFavorite(book.id, book.isFavorite) }
+  }
+
+  fun updateStatus(workId: Long, status: ReadingStatus) {
+    viewModelScope.launch { libraryRepository.updateReadingStatus(workId, status) }
+  }
+
+  fun deleteBook(workId: Long, onDeleted: () -> Unit = {}) {
+    viewModelScope.launch {
+      libraryRepository.deleteBook(workId)
+      onDeleted()
+    }
+  }
+}
