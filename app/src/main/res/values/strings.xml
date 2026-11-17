@@ -20,6 +20,8 @@
     <string name="status_abandoned">Set aside</string>
 
     <!-- Home -->
+    <string name="home_masthead_title">Reading</string>
+    <string name="home_masthead_empty_subtitle">Your quiet reading desk</string>
     <string name="home_section_currently_reading">Currently reading</string>
     <string name="home_section_recent_activity">Recent activity</string>
     <string name="home_empty_reading_title">No books in progress</string>
@@ -120,12 +122,14 @@
     </plurals>
 
     <!-- Statistics -->
+    <string name="statistics_masthead_subtitle">Overview of your reading archive</string>
     <string name="statistics_collection_summary">Reading figures</string>
     <string name="statistics_metric_works">Cataloged works</string>
     <string name="statistics_metric_reading">In progress</string>
     <string name="statistics_metric_finished">Finished</string>
     <string name="statistics_metric_diary">Diary notes</string>
     <string name="statistics_completion_label">Completion rate</string>
+    <string name="statistics_completion_detail">%1$s of %2$s finished</string>
     <string name="statistics_status_distribution">Collection by status</string>
 
     <!-- Profile -->
@@ -138,6 +142,7 @@
     <string name="profile_empty_authors">Authors from your favorite books will appear here.</string>
     <string name="profile_section_visual">Appearance &amp; language</string>
     <string name="profile_open_settings">Settings</string>
+    <string name="profile_open_settings_desc">Theme, typography, language &amp; layout</string>
     <string name="profile_edit_sheet_title">Reader profile</string>
     <string name="profile_field_name">Name</string>
     <string name="profile_field_bio">Short note</string>
@@ -160,6 +165,8 @@
     <string name="settings_typo_literary_desc">Cormorant Garamond + Lora + JetBrains Mono</string>
     <string name="settings_typo_modern">Modern Archive</string>
     <string name="settings_typo_modern_desc">Lora + Inter + JetBrains Mono</string>
+    <string name="settings_typo_specimen_title">A quiet afternoon with a book</string>
+    <string name="settings_typo_specimen_body">Notes and passages stay clear on warm paper.</string>
     <string name="settings_section_general">General</string>
     <string name="settings_default_library_view">Default library layout</string>
     <string name="settings_reduce_motion">Reduce motion</string>

@@ -22,14 +22,18 @@ object DipeSpacing {
   val lg: Dp = 24.dp
   val xl: Dp = 32.dp
   val xxl: Dp = 48.dp
+
+  fun horizontalMargin(widthClass: WindowWidthClass): Dp =
+    if (widthClass == WindowWidthClass.COMPACT) 20.dp else 36.dp
 }
 
 object DipeRadii {
   val none: Dp = 0.dp
   val sharp: Dp = 2.dp
-  val subtle: Dp = 4.dp
-  val card: Dp = 6.dp
-  val sheet: Dp = 12.dp
+  val subtle: Dp = 6.dp
+  val card: Dp = 12.dp
+  val surface: Dp = 16.dp
+  val sheet: Dp = 24.dp
 }
 
 object DipeElevation {
@@ -43,8 +47,8 @@ val DipeShapes =
     extraSmall = RoundedCornerShape(DipeRadii.sharp),
     small = RoundedCornerShape(DipeRadii.subtle),
     medium = RoundedCornerShape(DipeRadii.card),
-    large = RoundedCornerShape(DipeRadii.sheet),
-    extraLarge = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(DipeRadii.surface),
+    extraLarge = RoundedCornerShape(DipeRadii.sheet),
   )
 
 @Immutable

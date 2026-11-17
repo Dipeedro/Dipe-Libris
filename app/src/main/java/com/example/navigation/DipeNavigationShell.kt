@@ -137,9 +137,10 @@ fun DipeNavigationShell(
           Column(modifier = Modifier.fillMaxWidth()) {
             HairlineDivider()
             NavigationBar(
-              containerColor = MaterialTheme.colorScheme.surface,
+              containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
               tonalElevation = 0.dp,
             ) {
+              val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
               TopLevelDestination.entries.forEach { dest ->
                 val selected = currentDestination?.hasRoute(dest.route::class) == true
                 val label = stringResource(dest.labelRes)
@@ -155,18 +156,19 @@ fun DipeNavigationShell(
                   label = {
                     Text(
                       text = label,
-                      style = MaterialTheme.typography.labelMedium,
+                      style = navLabelStyle,
                       maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
+                      softWrap = false,
+                      overflow = TextOverflow.Clip,
                     )
                   },
                   colors =
                     NavigationBarItemDefaults.colors(
                       selectedIconColor = MaterialTheme.colorScheme.secondary,
                       selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                      indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                      indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                     ),
                   modifier = Modifier.testTag("nav_tab_${dest.routeKey}"),
                 )
@@ -179,10 +181,11 @@ fun DipeNavigationShell(
       Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (isTopLevel && useRail) {
           NavigationRail(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             windowInsets = WindowInsets(0, 0, 0, 0),
             modifier = Modifier.fillMaxHeight().testTag("dipe_navigation_rail"),
           ) {
+            val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
             TopLevelDestination.entries.forEach { dest ->
               val selected = currentDestination?.hasRoute(dest.route::class) == true
               val label = stringResource(dest.labelRes)
@@ -198,25 +201,26 @@ fun DipeNavigationShell(
                 label = {
                   Text(
                     text = label,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = navLabelStyle,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
                   )
                 },
                 colors =
                   NavigationRailItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.secondary,
                     selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                   ),
                 modifier =
                   Modifier.padding(vertical = DipeSpacing.xs).testTag("nav_rail_${dest.routeKey}"),
               )
             }
           }
-          VerticalDivider(thickness = 0.75.dp, color = MaterialTheme.colorScheme.outlineVariant)
+          VerticalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {

@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,12 +29,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
@@ -40,7 +45,7 @@ import com.example.core.designsystem.LocalDipeCoverTokens
 import com.example.core.designsystem.LocalDipeTypography
 
 private val BookCoverShape =
-  RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 5.dp, bottomEnd = 5.dp)
+  RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
 
 private val BookSpineShape = RoundedCornerShape(DipeRadii.sharp)
 
@@ -60,8 +65,17 @@ fun BookCoverArtwork(
   val palette =
     remember(title, author, coverTokens) { coverTokens.paletteFor(title = title, author = author) }
   val authorUpper = remember(author) { author.uppercase() }
+  val monogram =
+    remember(title) {
+      val words = title.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+      when {
+        words.isEmpty() -> "L"
+        words.size == 1 -> words.first().take(2).uppercase()
+        else -> "${words[0].first()}${words[1].first()}".uppercase()
+      }
+    }
 
-  Box(
+  BoxWithConstraints(
     modifier =
       modifier
         .aspectRatio(2f / 3f)
@@ -86,21 +100,22 @@ fun BookCoverArtwork(
               startX = 0f,
               endX = size.width,
             )
-          val pageEdgeWidth = if (compact) 0f else 3.dp.toPx()
+          val isTiny = compact || size.width < 92.dp.toPx()
+          val pageEdgeWidth = if (isTiny) 0f else 3.dp.toPx()
           val pageEdgeLeft = size.width - pageEdgeWidth
           val primaryStroke = 1.dp.toPx()
           val secondaryStroke = 0.75.dp.toPx()
           val secondaryOffset = 2.5.dp.toPx()
-          val frameInset = if (compact) 0f else 7.dp.toPx()
+          val frameInset = if (isTiny) 0f else 7.dp.toPx()
           val ribbonPath =
             if (isFavorite) {
-              val rWidth = (if (compact) 6.dp else 8.dp).toPx()
-              val rHeight = (if (compact) 15.dp else 23.dp).toPx()
-              val rEnd = (if (compact) 8.dp else 13.dp).toPx()
+              val rWidth = (if (isTiny) 5.dp else 8.dp).toPx()
+              val rHeight = (if (isTiny) 14.dp else 23.dp).toPx()
+              val rEnd = (if (isTiny) 6.dp else 13.dp).toPx()
               val rRight = size.width - pageEdgeWidth - rEnd
               val rLeft = rRight - rWidth
               val rMid = (rLeft + rRight) * 0.5f
-              val notch = 3.5.dp.toPx()
+              val notch = (if (isTiny) 2.5.dp else 3.5.dp).toPx()
               Path().apply {
                 moveTo(rLeft, 0f)
                 lineTo(rRight, 0f)
@@ -114,10 +129,8 @@ fun BookCoverArtwork(
             }
 
           onDrawBehind {
-            // Subtle tactile spine light & shadow
             drawRect(brush = spineGradient)
 
-            // Subtle physical page block on fore-edge for full-size covers
             if (pageEdgeWidth > 0f) {
               drawRect(
                 color = coverTokens.pageEdgeLight,
@@ -132,7 +145,6 @@ fun BookCoverArtwork(
               )
             }
 
-            // Spine binding creases
             drawLine(
               color = palette.spineCreasePrimary,
               start = Offset(spineX, 0f),
@@ -146,7 +158,6 @@ fun BookCoverArtwork(
               strokeWidth = secondaryStroke,
             )
 
-            // Fine inset editorial blind-deboss frame on full-size covers
             if (frameInset > 0f) {
               val frameLeft = spineX + frameInset
               val frameRight = pageEdgeLeft - frameInset
@@ -166,42 +177,82 @@ fun BookCoverArtwork(
               drawPath(path = ribbonPath, color = coverTokens.favoriteRibbon)
             }
           }
-        }
+        },
   ) {
-    Column(
-      modifier =
-        Modifier.fillMaxSize()
-          .padding(
-            start = if (compact) 12.dp else 24.dp,
-            end = if (compact) DipeSpacing.sm else 20.dp,
-            top = if (compact) DipeSpacing.sm else 20.dp,
-            bottom = if (compact) DipeSpacing.sm else 20.dp,
-          ),
-      verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-      Text(
-        text = title,
-        style = if (compact) typography.bookCoverTitleCompact else typography.bookCoverTitle,
-        color = palette.onCloth,
-        maxLines = if (compact) 3 else 4,
-        overflow = TextOverflow.Ellipsis,
-      )
+    val coverWidth = maxWidth
+    val renderMonogramOnly = compact || coverWidth < 96.dp
+    if (renderMonogramOnly) {
+      // Iconic embossed monogram for thumbnail sizes so text never collapses into 1-letter wraps
+      Box(
+        modifier = Modifier.fillMaxSize().padding(start = 6.dp, end = 4.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        ) {
+          Text(
+            text = monogram,
+            style =
+              if (coverWidth < 46.dp) typography.bookCoverMonogram.copy(fontSize = 13.sp)
+              else typography.bookCoverMonogram,
+            color = palette.onCloth,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+          )
+          Box(
+            modifier =
+              Modifier.width(if (coverWidth < 46.dp) 12.dp else 18.dp)
+                .height(0.75.dp)
+                .background(palette.ruleColor),
+          )
+        }
+      }
+    } else {
+      val isMediumCover = coverWidth < 140.dp
+      val titleStyle =
+        if (isMediumCover) typography.bookCoverTitle.copy(fontSize = 13.5.sp, lineHeight = 17.sp)
+        else typography.bookCoverTitle
+      val authorStyle =
+        if (isMediumCover) typography.bookCoverAuthor.copy(fontSize = 8.5.sp, letterSpacing = 0.9.sp)
+        else typography.bookCoverAuthor
 
-      Column {
-        Box(
-          modifier =
-            Modifier.width(if (compact) 16.dp else 22.dp)
-              .height(0.75.dp)
-              .background(palette.ruleColor)
-        )
-        Spacer(modifier = Modifier.height(DipeSpacing.xs))
+      Column(
+        modifier =
+          Modifier.fillMaxSize()
+            .padding(
+              start = if (isMediumCover) 18.dp else 24.dp,
+              end = if (isMediumCover) 14.dp else 20.dp,
+              top = if (isMediumCover) 16.dp else 22.dp,
+              bottom = if (isMediumCover) 16.dp else 22.dp,
+            ),
+        verticalArrangement = Arrangement.SpaceBetween,
+      ) {
         Text(
-          text = authorUpper,
-          style = if (compact) typography.bookCoverAuthorCompact else typography.bookCoverAuthor,
-          color = palette.authorColor,
-          maxLines = 2,
+          text = title,
+          style = titleStyle,
+          color = palette.onCloth,
+          maxLines = 4,
           overflow = TextOverflow.Ellipsis,
         )
+
+        Column {
+          Box(
+            modifier =
+              Modifier.width(if (isMediumCover) 18.dp else 24.dp)
+                .height(0.75.dp)
+                .background(palette.ruleColor),
+          )
+          Spacer(modifier = Modifier.height(DipeSpacing.xs))
+          Text(
+            text = authorUpper,
+            style = authorStyle,
+            color = palette.authorColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
       }
     }
   }
@@ -221,7 +272,6 @@ fun BookSpineTile(
   val borderColor = MaterialTheme.colorScheme.outlineVariant
   val palette =
     remember(title, author, coverTokens) { coverTokens.paletteFor(title = title, author = author) }
-  val shortTitle = remember(title) { title.take(18) }
 
   Box(
     modifier =
@@ -236,8 +286,8 @@ fun BookSpineTile(
           val spineShade =
             Brush.horizontalGradient(
               0.0f to palette.clothHighlight,
-              0.25f to Color.Transparent,
-              0.85f to Color.Transparent,
+              0.22f to Color.Transparent,
+              0.82f to Color.Transparent,
               1.0f to palette.clothShade,
               startX = 0f,
               endX = size.width,
@@ -248,23 +298,50 @@ fun BookSpineTile(
     contentAlignment = Alignment.Center,
   ) {
     Column(
-      modifier = Modifier.fillMaxHeight(),
-      verticalArrangement = Arrangement.SpaceBetween,
+      modifier = Modifier.fillMaxHeight().fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       if (isFavorite) {
-        Box(modifier = Modifier.width(12.dp).height(3.dp).background(coverTokens.favoriteRibbon))
+        Box(modifier = Modifier.width(14.dp).height(3.dp).background(coverTokens.favoriteRibbon))
       } else {
-        Box(modifier = Modifier.width(12.dp).height(1.dp).background(palette.ruleColor))
+        Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
       }
-      Text(
-        text = shortTitle,
-        style = typography.bookSpineTitle,
-        color = palette.onCloth,
-        maxLines = 4,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Box(modifier = Modifier.width(12.dp).height(1.dp).background(palette.ruleColor))
+
+      // Vertically rotated spine typography running cleanly along the spine height
+      Box(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = title,
+          style = typography.bookSpineTitle,
+          color = palette.onCloth,
+          maxLines = 1,
+          softWrap = false,
+          overflow = TextOverflow.Ellipsis,
+          modifier =
+            Modifier.layout { measurable, constraints ->
+                val rotatedConstraints =
+                  constraints.copy(
+                    minWidth = 0,
+                    maxWidth = constraints.maxHeight,
+                    minHeight = 0,
+                    maxHeight = constraints.maxWidth,
+                  )
+                val placeable = measurable.measure(rotatedConstraints)
+                layout(placeable.height, placeable.width) {
+                  placeable.place(
+                    x = -(placeable.width - placeable.height) / 2,
+                    y = (placeable.width - placeable.height) / 2,
+                  )
+                }
+              }
+              .graphicsLayer { rotationZ = -90f },
+        )
+      }
+
+      Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
     }
   }
 }

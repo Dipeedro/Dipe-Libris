@@ -1,5 +1,6 @@
 package com.example.feature.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,12 +11,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,6 +30,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
@@ -45,8 +51,10 @@ import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.PaperColorScheme
 import com.example.core.designsystem.SepiaColorScheme
 import com.example.core.designsystem.WindowWidthClass
+import com.example.core.designsystem.bodyFontFamilyFor
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSubscreenTopBar
+import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.displayFontFamilyFor
 import com.example.core.model.AppLanguage
@@ -68,15 +76,14 @@ fun SettingsScreen(
   modifier: Modifier = Modifier,
 ) {
   val listState = rememberLazyListState()
-  val horizontalPadding =
-    if (widthClass == WindowWidthClass.COMPACT) DipeSpacing.md else DipeSpacing.xl
+  val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
 
   val chipColors =
     FilterChipDefaults.filterChipColors(
       selectedContainerColor = MaterialTheme.colorScheme.primary,
       selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
       selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
-      containerColor = MaterialTheme.colorScheme.surface,
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
       labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
@@ -84,7 +91,13 @@ fun SettingsScreen(
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 820.dp).fillMaxSize().testTag("settings_lazy_column"),
-      contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
+      contentPadding =
+        PaddingValues(
+          start = horizontalPadding,
+          end = horizontalPadding,
+          top = DipeSpacing.md,
+          bottom = DipeSpacing.xxl,
+        ),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
     ) {
       item(key = "settings_top_bar", contentType = "top_bar") {
@@ -99,151 +112,200 @@ fun SettingsScreen(
       item(key = "settings_language", contentType = "chip_section") {
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.settings_section_language))
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          EditorialSurfaceCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentPadding = PaddingValues(DipeSpacing.md),
           ) {
-            AppLanguage.entries.forEach { language ->
-              val selected = preferences.language == language
-              FilterChip(
-                selected = selected,
-                onClick = { onSelectLanguage(language) },
-                shape = CircleShape,
-                colors = chipColors,
-                border =
-                  FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selected,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    borderWidth = 0.75.dp,
-                  ),
-                leadingIcon =
-                  if (selected) {
-                    { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                  } else null,
-                label = {
-                  Text(
-                    when (language) {
-                      AppLanguage.PORTUGUESE_BR -> stringResource(R.string.settings_lang_pt_br)
-                      AppLanguage.ENGLISH -> stringResource(R.string.settings_lang_en)
-                    }
-                  )
-                },
-                modifier = Modifier.testTag("settings_language_${language.name.lowercase()}"),
-              )
+            FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+              verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            ) {
+              AppLanguage.entries.forEach { language ->
+                val selected = preferences.language == language
+                FilterChip(
+                  selected = selected,
+                  onClick = { onSelectLanguage(language) },
+                  shape = CircleShape,
+                  colors = chipColors,
+                  border =
+                    FilterChipDefaults.filterChipBorder(
+                      enabled = true,
+                      selected = selected,
+                      borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                      borderWidth = 0.5.dp,
+                    ),
+                  leadingIcon =
+                    if (selected) {
+                      {
+                        Icon(
+                          Icons.Outlined.Check,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                        )
+                      }
+                    } else null,
+                  label = {
+                    Text(
+                      when (language) {
+                        AppLanguage.PORTUGUESE_BR -> stringResource(R.string.settings_lang_pt_br)
+                        AppLanguage.ENGLISH -> stringResource(R.string.settings_lang_en)
+                      }
+                    )
+                  },
+                  modifier = Modifier.testTag("settings_language_${language.name.lowercase()}"),
+                )
+              }
             }
           }
         }
       }
 
-      // Theme Selection with tactile color circle swatches
+      // Theme Selection with mini-screen preview swatches
       item(key = "settings_theme", contentType = "theme_section") {
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.settings_section_theme))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-          ) {
-            AppThemeMode.entries.forEach { mode ->
-              val selected = preferences.themeMode == mode
-              ThemeSwatchOption(
-                mode = mode,
-                label =
-                  when (mode) {
-                    AppThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
-                    AppThemeMode.PAPER -> stringResource(R.string.settings_theme_paper)
-                    AppThemeMode.INK -> stringResource(R.string.settings_theme_ink)
-                    AppThemeMode.SEPIA -> stringResource(R.string.settings_theme_sepia)
-                  },
-                selected = selected,
-                onClick = { onSelectTheme(mode) },
-                modifier =
-                  Modifier.weight(1f)
-                    .testTag("settings_theme_${mode.name.lowercase()}"),
-              )
+          val themes = AppThemeMode.entries
+          if (widthClass == WindowWidthClass.COMPACT) {
+            Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+              themes.chunked(2).forEach { rowModes ->
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                ) {
+                  rowModes.forEach { mode ->
+                    ThemeSwatchCard(
+                      mode = mode,
+                      label = themeModeLabel(mode),
+                      selected = preferences.themeMode == mode,
+                      onClick = { onSelectTheme(mode) },
+                      modifier =
+                        Modifier.weight(1f)
+                          .testTag("settings_theme_${mode.name.lowercase()}"),
+                    )
+                  }
+                }
+              }
+            }
+          } else {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            ) {
+              themes.forEach { mode ->
+                ThemeSwatchCard(
+                  mode = mode,
+                  label = themeModeLabel(mode),
+                  selected = preferences.themeMode == mode,
+                  onClick = { onSelectTheme(mode) },
+                  modifier =
+                    Modifier.weight(1f)
+                      .testTag("settings_theme_${mode.name.lowercase()}"),
+                )
+              }
             }
           }
         }
       }
 
-      // Typography Preset Selection with live serif "Aa" specimen
+      // Typography Preset Selection with live display + body specimen cards
       item(key = "settings_typography", contentType = "typography_section") {
-        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.settings_section_typography))
-          TypographyPreset.entries.forEach { preset ->
-            val selected = preferences.typographyPreset == preset
-            val (titleRes, descRes) =
-              when (preset) {
-                TypographyPreset.CLASSIC_EDITORIAL ->
-                  R.string.settings_typo_classic to R.string.settings_typo_classic_desc
-                TypographyPreset.LITERARY_PRESS ->
-                  R.string.settings_typo_literary to R.string.settings_typo_literary_desc
-                TypographyPreset.MODERN_ARCHIVE ->
-                  R.string.settings_typo_modern to R.string.settings_typo_modern_desc
-              }
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .defaultMinSize(minHeight = 60.dp)
-                  .clickable { onSelectTypography(preset) }
-                  .padding(vertical = DipeSpacing.sm)
-                  .testTag("settings_typography_${preset.name.lowercase()}"),
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Box(
+          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+            TypographyPreset.entries.forEach { preset ->
+              val selected = preferences.typographyPreset == preset
+              val (titleRes, descRes) =
+                when (preset) {
+                  TypographyPreset.CLASSIC_EDITORIAL ->
+                    R.string.settings_typo_classic to R.string.settings_typo_classic_desc
+                  TypographyPreset.LITERARY_PRESS ->
+                    R.string.settings_typo_literary to R.string.settings_typo_literary_desc
+                  TypographyPreset.MODERN_ARCHIVE ->
+                    R.string.settings_typo_modern to R.string.settings_typo_modern_desc
+                }
+              Surface(
+                onClick = { onSelectTypography(preset) },
+                shape = MaterialTheme.shapes.large,
+                color =
+                  if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+                  else MaterialTheme.colorScheme.surfaceContainerLowest,
+                border =
+                  BorderStroke(
+                    width = if (selected) 1.25.dp else 0.5.dp,
+                    color =
+                      if (selected) MaterialTheme.colorScheme.secondary
+                      else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                  ),
                 modifier =
-                  Modifier.size(40.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(
-                      if (selected) MaterialTheme.colorScheme.secondaryContainer
-                      else MaterialTheme.colorScheme.surfaceContainerLow,
-                    )
-                    .border(
-                      width = 0.75.dp,
-                      color =
-                        if (selected) MaterialTheme.colorScheme.secondary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                      shape = MaterialTheme.shapes.small,
-                    ),
-                contentAlignment = Alignment.Center,
+                  Modifier.fillMaxWidth()
+                    .testTag("settings_typography_${preset.name.lowercase()}"),
               ) {
-                Text(
-                  text = "Aa",
-                  fontFamily = displayFontFamilyFor(preset),
-                  fontSize = 18.sp,
-                  color =
-                    if (selected) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.onSurface,
-                )
-              }
+                Column(
+                  modifier = Modifier.padding(DipeSpacing.md),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Column(
+                      modifier = Modifier.weight(1f),
+                      verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                      Text(
+                        text = stringResource(titleRes),
+                        style = MaterialTheme.typography.titleMedium,
+                        color =
+                          if (selected) MaterialTheme.colorScheme.secondary
+                          else MaterialTheme.colorScheme.onSurface,
+                      )
+                      Text(
+                        text = stringResource(descRes),
+                        style = LocalDipeTypography.current.monoMetadata,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
+                    }
+                    if (selected) {
+                      Box(
+                        modifier =
+                          Modifier.size(28.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondary),
+                        contentAlignment = Alignment.Center,
+                      ) {
+                        Icon(
+                          imageVector = Icons.Outlined.Check,
+                          contentDescription = null,
+                          tint = MaterialTheme.colorScheme.onSecondary,
+                          modifier = Modifier.size(16.dp),
+                        )
+                      }
+                    }
+                  }
 
-              Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
-              ) {
-                Text(
-                  text = stringResource(titleRes),
-                  style = MaterialTheme.typography.titleMedium,
-                  color =
-                    if (selected) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                  text = stringResource(descRes),
-                  style = LocalDipeTypography.current.monoMetadata,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              if (selected) {
-                Icon(
-                  imageVector = Icons.Outlined.Check,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
+                  HairlineDivider()
+
+                  // Live multi-line specimen in the actual preset fonts
+                  Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                      text = stringResource(R.string.settings_typo_specimen_title),
+                      fontFamily = displayFontFamilyFor(preset),
+                      fontSize = 18.sp,
+                      lineHeight = 23.sp,
+                      color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                      text = stringResource(R.string.settings_typo_specimen_body),
+                      fontFamily = bodyFontFamilyFor(preset),
+                      fontSize = 13.sp,
+                      lineHeight = 18.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
+                }
               }
             }
-            HairlineDivider()
           }
         }
       }
@@ -252,95 +314,109 @@ fun SettingsScreen(
       item(key = "settings_general", contentType = "general_section") {
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.settings_section_general))
-          Text(
-            text = stringResource(R.string.settings_default_library_view),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-          )
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          EditorialSurfaceCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentPadding = PaddingValues(DipeSpacing.md),
           ) {
-            LibraryViewMode.entries.forEach { mode ->
-              val selected = preferences.defaultLibraryViewMode == mode
-              FilterChip(
-                selected = selected,
-                onClick = { onSelectDefaultLibraryView(mode) },
-                shape = CircleShape,
-                colors = chipColors,
-                border =
-                  FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selected,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    borderWidth = 0.75.dp,
-                  ),
-                label = {
-                  Text(
-                    when (mode) {
-                      LibraryViewMode.GRID -> stringResource(R.string.library_view_grid)
-                      LibraryViewMode.LIST -> stringResource(R.string.library_view_list)
-                      LibraryViewMode.SHELF -> stringResource(R.string.library_view_shelf)
-                      LibraryViewMode.GALLERY -> stringResource(R.string.library_view_gallery)
-                    }
-                  )
-                },
-                modifier = Modifier.testTag("settings_default_view_${mode.name.lowercase()}"),
-              )
-            }
-          }
-
-          HairlineDivider()
-
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = 52.dp)
-                .clickable { onToggleReduceMotion(!preferences.reduceMotion) }
-                .padding(vertical = DipeSpacing.xs)
-                .testTag("settings_reduce_motion_row"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(
-              modifier = Modifier.weight(1f).padding(end = DipeSpacing.md),
-              verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
               Text(
-                text = stringResource(R.string.settings_reduce_motion),
-                style = MaterialTheme.typography.titleMedium,
+                text = stringResource(R.string.settings_default_library_view),
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
               )
-              Text(
-                text = stringResource(R.string.settings_reduce_motion_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+              FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+              ) {
+                LibraryViewMode.entries.forEach { mode ->
+                  val selected = preferences.defaultLibraryViewMode == mode
+                  FilterChip(
+                    selected = selected,
+                    onClick = { onSelectDefaultLibraryView(mode) },
+                    shape = CircleShape,
+                    colors = chipColors,
+                    border =
+                      FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        borderWidth = 0.5.dp,
+                      ),
+                    label = {
+                      Text(
+                        when (mode) {
+                          LibraryViewMode.GRID -> stringResource(R.string.library_view_grid)
+                          LibraryViewMode.LIST -> stringResource(R.string.library_view_list)
+                          LibraryViewMode.SHELF -> stringResource(R.string.library_view_shelf)
+                          LibraryViewMode.GALLERY -> stringResource(R.string.library_view_gallery)
+                        }
+                      )
+                    },
+                    modifier = Modifier.testTag("settings_default_view_${mode.name.lowercase()}"),
+                  )
+                }
+              }
+
+              HairlineDivider()
+
+              Row(
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .defaultMinSize(minHeight = 52.dp)
+                    .clickable { onToggleReduceMotion(!preferences.reduceMotion) }
+                    .padding(vertical = DipeSpacing.xs)
+                    .testTag("settings_reduce_motion_row"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Column(
+                  modifier = Modifier.weight(1f).padding(end = DipeSpacing.md),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+                ) {
+                  Text(
+                    text = stringResource(R.string.settings_reduce_motion),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  )
+                  Text(
+                    text = stringResource(R.string.settings_reduce_motion_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                Switch(
+                  checked = preferences.reduceMotion,
+                  onCheckedChange = onToggleReduceMotion,
+                  modifier = Modifier.testTag("settings_reduce_motion_switch"),
+                )
+              }
             }
-            Switch(
-              checked = preferences.reduceMotion,
-              onCheckedChange = onToggleReduceMotion,
-              modifier = Modifier.testTag("settings_reduce_motion_switch"),
-            )
           }
         }
       }
 
-      // Application Info (Version 1.2)
+      // Application Info
       item(key = "settings_app_info", contentType = "app_info") {
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
           EditorialSectionHeader(title = stringResource(R.string.settings_section_app_info))
-          Text(
-            text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
-            style = LocalDipeTypography.current.monoMetadata,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.testTag("settings_app_version"),
-          )
-          Text(
-            text = stringResource(R.string.settings_about_privacy),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+          EditorialSurfaceCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
+            contentPadding = PaddingValues(DipeSpacing.md),
+          ) {
+            Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+              Text(
+                text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
+                style = LocalDipeTypography.current.monoMetadata,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.testTag("settings_app_version"),
+              )
+              Text(
+                text = stringResource(R.string.settings_about_privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
         }
       }
     }
@@ -348,66 +424,114 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun ThemeSwatchOption(
+private fun themeModeLabel(mode: AppThemeMode): String =
+  when (mode) {
+    AppThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
+    AppThemeMode.PAPER -> stringResource(R.string.settings_theme_paper)
+    AppThemeMode.INK -> stringResource(R.string.settings_theme_ink)
+    AppThemeMode.SEPIA -> stringResource(R.string.settings_theme_sepia)
+  }
+
+@Composable
+private fun ThemeSwatchCard(
   mode: AppThemeMode,
   label: String,
   selected: Boolean,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Column(
-    modifier =
-      modifier
-        .defaultMinSize(minHeight = 48.dp)
-        .clickable(onClick = onClick)
-        .padding(vertical = DipeSpacing.xs),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+  Surface(
+    onClick = onClick,
+    shape = MaterialTheme.shapes.large,
+    color =
+      if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+      else MaterialTheme.colorScheme.surfaceContainerLowest,
+    border =
+      BorderStroke(
+        width = if (selected) 1.25.dp else 0.5.dp,
+        color =
+          if (selected) MaterialTheme.colorScheme.secondary
+          else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+      ),
+    modifier = modifier.defaultMinSize(minHeight = 72.dp),
   ) {
-    val ringColor =
-      if (selected) MaterialTheme.colorScheme.secondary
-      else MaterialTheme.colorScheme.outlineVariant
-    val ringWidth = if (selected) 2.dp else 0.75.dp
-
-    Box(
-      modifier =
-        Modifier.size(42.dp)
-          .clip(CircleShape)
-          .border(ringWidth, ringColor, CircleShape)
-          .padding(3.dp)
-          .clip(CircleShape),
-      contentAlignment = Alignment.Center,
+    Row(
+      modifier = Modifier.padding(12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
     ) {
-      when (mode) {
-        AppThemeMode.PAPER -> {
-          Box(modifier = Modifier.fillMaxSize().background(PaperColorScheme.background))
-        }
-        AppThemeMode.INK -> {
-          Box(modifier = Modifier.fillMaxSize().background(InkColorScheme.background))
-        }
-        AppThemeMode.SEPIA -> {
-          Box(modifier = Modifier.fillMaxSize().background(SepiaColorScheme.background))
-        }
-        AppThemeMode.SYSTEM -> {
-          Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-              modifier = Modifier.weight(1f).fillMaxHeight().background(PaperColorScheme.background)
-            )
-            Box(
-              modifier = Modifier.weight(1f).fillMaxHeight().background(InkColorScheme.background)
-            )
+      Box(
+        modifier =
+          Modifier.size(36.dp)
+            .clip(CircleShape)
+            .border(
+              width = 0.75.dp,
+              color = MaterialTheme.colorScheme.outlineVariant,
+              shape = CircleShape,
+            ),
+      ) {
+        when (mode) {
+          AppThemeMode.PAPER -> {
+            Box(modifier = Modifier.fillMaxSize().background(PaperColorScheme.background)) {
+              Box(
+                modifier =
+                  Modifier.align(Alignment.BottomEnd)
+                    .padding(7.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(PaperColorScheme.secondary),
+              )
+            }
+          }
+          AppThemeMode.INK -> {
+            Box(modifier = Modifier.fillMaxSize().background(InkColorScheme.background)) {
+              Box(
+                modifier =
+                  Modifier.align(Alignment.BottomEnd)
+                    .padding(7.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(InkColorScheme.secondary),
+              )
+            }
+          }
+          AppThemeMode.SEPIA -> {
+            Box(modifier = Modifier.fillMaxSize().background(SepiaColorScheme.background)) {
+              Box(
+                modifier =
+                  Modifier.align(Alignment.BottomEnd)
+                    .padding(7.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(SepiaColorScheme.secondary),
+              )
+            }
+          }
+          AppThemeMode.SYSTEM -> {
+            Row(modifier = Modifier.fillMaxSize()) {
+              Box(
+                modifier =
+                  Modifier.weight(1f).fillMaxHeight().background(PaperColorScheme.background),
+              )
+              Box(
+                modifier =
+                  Modifier.weight(1f).fillMaxHeight().background(InkColorScheme.background),
+              )
+            }
           }
         }
       }
-    }
 
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelMedium,
-      color =
-        if (selected) MaterialTheme.colorScheme.onBackground
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-      maxLines = 1,
-    )
+      Text(
+        text = label,
+        style = MaterialTheme.typography.titleSmall,
+        color =
+          if (selected) MaterialTheme.colorScheme.secondary
+          else MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f),
+      )
+    }
   }
 }

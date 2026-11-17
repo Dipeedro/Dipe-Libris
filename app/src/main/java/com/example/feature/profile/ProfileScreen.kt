@@ -51,8 +51,9 @@ import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeBrandTokens
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.BookCoverArtwork
+import com.example.core.designsystem.components.EditorialMasthead
 import com.example.core.designsystem.components.EditorialSectionHeader
-import com.example.core.designsystem.components.HairlineDivider
+import com.example.core.designsystem.components.EditorialSurfaceCard
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,8 +67,7 @@ fun ProfileScreen(
 ) {
   val brand = LocalDipeBrandTokens.current
   val listState = rememberLazyListState()
-  val horizontalPadding =
-    if (widthClass == WindowWidthClass.COMPACT) DipeSpacing.md else DipeSpacing.xl
+  val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val customName = uiState.preferences.readerName.trim()
   val displayName = customName.ifBlank { stringResource(R.string.profile_default_name) }
   val displayBio =
@@ -79,63 +79,28 @@ fun ProfileScreen(
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 820.dp).fillMaxSize().testTag("profile_lazy_column"),
-      contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
+      contentPadding =
+        PaddingValues(
+          start = horizontalPadding,
+          end = horizontalPadding,
+          top = DipeSpacing.md,
+          bottom = DipeSpacing.xxl,
+        ),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
     ) {
-      item(key = "profile_identity", contentType = "identity_header") {
-        Column(
-          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Box(
-              modifier =
-                Modifier.size(58.dp)
-                  .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                  .border(0.75.dp, brand.badgeBorder, CircleShape),
-              contentAlignment = Alignment.Center,
+      item(key = "profile_masthead", contentType = "masthead") {
+        EditorialMasthead(
+          title = stringResource(R.string.nav_profile),
+          trailingContent = {
+            Surface(
+              shape = CircleShape,
+              color = MaterialTheme.colorScheme.surfaceContainerLow,
+              border =
+                BorderStroke(
+                  0.5.dp,
+                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                ),
             ) {
-              if (initialLetter != null) {
-                Text(
-                  text = initialLetter,
-                  style = MaterialTheme.typography.headlineMedium,
-                  color = MaterialTheme.colorScheme.onBackground,
-                )
-              } else {
-                Icon(
-                  imageVector = Icons.Outlined.PersonOutline,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(26.dp),
-                )
-              }
-            }
-
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-            ) {
-              OutlinedButton(
-                onClick = onEditIdentity,
-                shape = CircleShape,
-                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
-                contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
-                modifier =
-                  Modifier.minimumInteractiveComponentSize().testTag("profile_edit_button"),
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Edit,
-                  contentDescription = null,
-                  modifier = Modifier.size(15.dp),
-                )
-                Spacer(modifier = Modifier.width(DipeSpacing.xs))
-                Text(stringResource(R.string.profile_edit_identity))
-              }
               IconButton(
                 onClick = onOpenSettings,
                 modifier =
@@ -148,21 +113,82 @@ fun ProfileScreen(
                 )
               }
             }
-          }
+          },
+        )
+      }
 
-          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-            Text(
-              text = displayName,
-              style = MaterialTheme.typography.headlineLarge,
-              color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-              text = displayBio,
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+      item(key = "profile_identity", contentType = "identity_header") {
+        EditorialSurfaceCard(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+          contentPadding = PaddingValues(DipeSpacing.lg),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Box(
+                modifier =
+                  Modifier.size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .border(0.75.dp, brand.badgeBorder, CircleShape),
+                contentAlignment = Alignment.Center,
+              ) {
+                if (initialLetter != null) {
+                  Text(
+                    text = initialLetter,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                  )
+                } else {
+                  Icon(
+                    imageVector = Icons.Outlined.PersonOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(28.dp),
+                  )
+                }
+              }
+
+              OutlinedButton(
+                onClick = onEditIdentity,
+                shape = CircleShape,
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier =
+                  Modifier.minimumInteractiveComponentSize().testTag("profile_edit_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.Edit,
+                  contentDescription = null,
+                  modifier = Modifier.size(15.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = stringResource(R.string.profile_edit_identity),
+                  style = MaterialTheme.typography.labelLarge,
+                )
+              }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+              Text(
+                text = displayName,
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+              )
+              Text(
+                text = displayBio,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           }
-          HairlineDivider()
         }
       }
 
@@ -170,11 +196,16 @@ fun ProfileScreen(
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.profile_section_favorites))
           if (uiState.favoriteBooks.isEmpty()) {
-            Text(
-              text = stringResource(R.string.profile_empty_favorites),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            EditorialSurfaceCard(
+              containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
+              contentPadding = PaddingValues(DipeSpacing.lg),
+            ) {
+              Text(
+                text = stringResource(R.string.profile_empty_favorites),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
               items(
@@ -184,20 +215,24 @@ fun ProfileScreen(
               ) { book ->
                 val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                 Column(
-                  modifier = Modifier.width(114.dp).clickable(onClick = onBookClick),
-                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+                  modifier =
+                    Modifier.width(118.dp)
+                      .clip(MaterialTheme.shapes.medium)
+                      .clickable(onClick = onBookClick)
+                      .padding(DipeSpacing.xs),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
                 ) {
                   BookCoverArtwork(
                     title = book.title,
                     author = book.author,
                     isFavorite = book.isFavorite,
-                    compact = true,
                     elevated = true,
                     modifier = Modifier.fillMaxWidth(),
                   )
                   Text(
                     text = book.title,
                     style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                   )
@@ -212,11 +247,16 @@ fun ProfileScreen(
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.profile_section_authors))
           if (uiState.favoriteAuthors.isEmpty()) {
-            Text(
-              text = stringResource(R.string.profile_empty_authors),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            EditorialSurfaceCard(
+              containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f),
+              contentPadding = PaddingValues(DipeSpacing.lg),
+            ) {
+              Text(
+                text = stringResource(R.string.profile_empty_authors),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           } else {
             FlowRow(
               horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
@@ -224,16 +264,20 @@ fun ProfileScreen(
             ) {
               uiState.favoriteAuthors.forEach { author ->
                 Surface(
-                  color = MaterialTheme.colorScheme.surface,
+                  color = MaterialTheme.colorScheme.surfaceContainerLowest,
                   shape = CircleShape,
-                  border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+                  border =
+                    BorderStroke(
+                      0.5.dp,
+                      MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    ),
                 ) {
                   Text(
                     text = author,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier =
-                      Modifier.padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
+                      Modifier.padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.sm),
                   )
                 }
               }
@@ -243,41 +287,63 @@ fun ProfileScreen(
       }
 
       item(key = "profile_visual_preferences", contentType = "settings_shortcut") {
-        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(title = stringResource(R.string.profile_section_visual))
-          Row(
+          EditorialSurfaceCard(
             modifier =
-              Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = 52.dp)
-                .clickable(onClick = onOpenSettings)
-                .padding(vertical = DipeSpacing.sm)
+              Modifier.defaultMinSize(minHeight = 64.dp)
                 .testTag("profile_visual_preferences_row"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),
+            onClick = onOpenSettings,
           ) {
             Row(
+              modifier = Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-              modifier = Modifier.weight(1f),
+              horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+                modifier = Modifier.weight(1f),
+              ) {
+                Box(
+                  modifier =
+                    Modifier.size(38.dp)
+                      .clip(CircleShape)
+                      .background(MaterialTheme.colorScheme.secondaryContainer),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.Tune,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(18.dp),
+                  )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
+                  Text(
+                    text = stringResource(R.string.profile_open_settings),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  )
+                  Text(
+                    text = stringResource(R.string.profile_open_settings_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
+              }
               Icon(
-                imageVector = Icons.Outlined.Tune,
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
               )
-              Text(
-                text = stringResource(R.string.profile_open_settings),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-              )
             }
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
           }
-          HairlineDivider()
         }
       }
     }

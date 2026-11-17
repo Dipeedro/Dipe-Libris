@@ -20,6 +20,8 @@
     <string name="status_abandoned">Interrompido</string>
 
     <!-- Home -->
+    <string name="home_masthead_title">Leitura</string>
+    <string name="home_masthead_empty_subtitle">Sua mesa de leitura</string>
     <string name="home_section_currently_reading">Em andamento</string>
     <string name="home_section_recent_activity">Atividade recente</string>
     <string name="home_empty_reading_title">Nenhuma leitura em andamento</string>
@@ -120,12 +122,14 @@
     </plurals>
 
     <!-- Statistics -->
+    <string name="statistics_masthead_subtitle">Panorama do seu acervo de leitura</string>
     <string name="statistics_collection_summary">Números de leitura</string>
     <string name="statistics_metric_works">Obras catalogadas</string>
     <string name="statistics_metric_reading">Em andamento</string>
     <string name="statistics_metric_finished">Concluídas</string>
     <string name="statistics_metric_diary">Notas no diário</string>
     <string name="statistics_completion_label">Taxa de conclusão</string>
+    <string name="statistics_completion_detail">%1$s de %2$s concluídas</string>
     <string name="statistics_status_distribution">Acervo por situação</string>
 
     <!-- Profile -->
@@ -138,6 +142,7 @@
     <string name="profile_empty_authors">Autores das obras favoritas aparecerão aqui.</string>
     <string name="profile_section_visual">Aparência e idioma</string>
     <string name="profile_open_settings">Configurações</string>
+    <string name="profile_open_settings_desc">Tema, tipografia, idioma e visualização</string>
     <string name="profile_edit_sheet_title">Perfil do leitor</string>
     <string name="profile_field_name">Nome</string>
     <string name="profile_field_bio">Nota breve</string>
@@ -160,6 +165,8 @@
     <string name="settings_typo_literary_desc">Cormorant Garamond + Lora + JetBrains Mono</string>
     <string name="settings_typo_modern">Moderno</string>
     <string name="settings_typo_modern_desc">Lora + Inter + JetBrains Mono</string>
+    <string name="settings_typo_specimen_title">Uma tarde tranquila com um livro</string>
+    <string name="settings_typo_specimen_body">Notas e trechos permanecem nítidos no papel.</string>
     <string name="settings_section_general">Geral</string>
     <string name="settings_default_library_view">Visualização padrão da biblioteca</string>
     <string name="settings_reduce_motion">Reduzir movimento</string>

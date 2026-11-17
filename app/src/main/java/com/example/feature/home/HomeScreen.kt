@@ -34,13 +34,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -52,8 +54,9 @@ import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.EditorialEmptyState
+import com.example.core.designsystem.components.EditorialMasthead
 import com.example.core.designsystem.components.EditorialSectionHeader
-import com.example.core.designsystem.components.HairlineDivider
+import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
@@ -73,12 +76,37 @@ fun HomeScreen(
 ) {
   val language = LocalAppLanguage.current
   val listState = rememberLazyListState()
-  val horizontalPadding =
-    if (widthClass == WindowWidthClass.COMPACT) DipeSpacing.md else DipeSpacing.xl
+  val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val featuredReading = uiState.currentlyReading.firstOrNull()
   val secondaryReading =
     remember(uiState.currentlyReading) {
       if (uiState.currentlyReading.size > 1) uiState.currentlyReading.drop(1) else emptyList()
+    }
+
+  val worksText =
+    pluralStringResource(
+      R.plurals.volumes_count,
+      if (uiState.snapshot.totalWorks == 1) 1 else 2,
+      uiState.snapshot.totalWorks,
+    )
+  val readingText =
+    "${LocaleManager.formatInteger(uiState.snapshot.readingCount, language)} ${
+      pluralStringResource(
+        R.plurals.home_overview_reading_label,
+        if (uiState.snapshot.readingCount == 1) 1 else 2,
+      )
+    }"
+  val notesText =
+    pluralStringResource(
+      R.plurals.diary_entries_count,
+      if (uiState.snapshot.diaryEntriesCount == 1) 1 else 2,
+      uiState.snapshot.diaryEntriesCount,
+    )
+  val mastheadSubtitle =
+    if (uiState.snapshot.totalWorks == 0 && uiState.snapshot.diaryEntriesCount == 0) {
+      stringResource(R.string.home_masthead_empty_subtitle)
+    } else {
+      "$worksText · $readingText · $notesText"
     }
 
   Box(
@@ -88,68 +116,42 @@ fun HomeScreen(
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 880.dp).fillMaxSize().testTag("home_lazy_column"),
-      contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
+      contentPadding =
+        PaddingValues(
+          start = horizontalPadding,
+          end = horizontalPadding,
+          top = DipeSpacing.md,
+          bottom = DipeSpacing.xxl,
+        ),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
     ) {
-      // Discreet editorial summary bar + settings action
+      // Editorial Masthead + Settings action
       item(key = "home_overview_header", contentType = "overview_header") {
-        Column(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Row(
-              modifier = Modifier.weight(1f),
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-              verticalAlignment = Alignment.CenterVertically,
+        EditorialMasthead(
+          title = stringResource(R.string.home_masthead_title),
+          subtitle = mastheadSubtitle,
+          trailingContent = {
+            Surface(
+              shape = CircleShape,
+              color = MaterialTheme.colorScheme.surfaceContainerLow,
+              border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
             ) {
-              OverviewFactInline(
-                value = LocaleManager.formatInteger(uiState.snapshot.totalWorks, language),
-                label =
-                  pluralStringResource(
-                    R.plurals.home_overview_works_label,
-                    if (uiState.snapshot.totalWorks == 1) 1 else 2,
-                  ),
-                modifier = Modifier.weight(1f),
-              )
-              OverviewFactInline(
-                value = LocaleManager.formatInteger(uiState.snapshot.readingCount, language),
-                label =
-                  pluralStringResource(
-                    R.plurals.home_overview_reading_label,
-                    if (uiState.snapshot.readingCount == 1) 1 else 2,
-                  ),
-                modifier = Modifier.weight(1f),
-              )
-              OverviewFactInline(
-                value = LocaleManager.formatInteger(uiState.snapshot.diaryEntriesCount, language),
-                label =
-                  pluralStringResource(
-                    R.plurals.home_overview_diary_label,
-                    if (uiState.snapshot.diaryEntriesCount == 1) 1 else 2,
-                  ),
-                modifier = Modifier.weight(1f),
-              )
+              IconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.minimumInteractiveComponentSize().testTag("home_settings_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.Settings,
+                  contentDescription = stringResource(R.string.cd_open_settings),
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
-
-            IconButton(
-              onClick = onOpenSettings,
-              modifier = Modifier.minimumInteractiveComponentSize().testTag("home_settings_button"),
-            ) {
-              Icon(
-                imageVector = Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.cd_open_settings),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          }
-          Spacer(modifier = Modifier.height(DipeSpacing.sm))
-          HairlineDivider()
-        }
+          },
+        )
       }
 
-      // Currently reading: hero book showcase + secondary horizontal covers
+      // Currently reading: elevated editorial showcase + secondary horizontal covers
       item(key = "home_currently_reading", contentType = "currently_reading") {
         Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
           EditorialSectionHeader(
@@ -176,6 +178,7 @@ fun HomeScreen(
               onClick = onFeaturedClick,
             )
             if (secondaryReading.isNotEmpty()) {
+              Spacer(modifier = Modifier.height(DipeSpacing.xs))
               LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
                 items(
                   items = secondaryReading,
@@ -191,54 +194,28 @@ fun HomeScreen(
         }
       }
 
-      // Direct actions
+      // Spacious quick action tiles (prevent label truncation in PT/EN)
       item(key = "home_quick_actions", contentType = "quick_actions") {
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
           horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
         ) {
-          OutlinedButton(
+          QuickActionTile(
+            icon = Icons.AutoMirrored.Outlined.LibraryBooks,
+            label = stringResource(R.string.home_shortcut_open_library),
             onClick = onOpenLibrary,
-            shape = CircleShape,
-            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier =
-              Modifier.weight(1f).minimumInteractiveComponentSize().testTag("home_shortcut_library"),
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.LibraryBooks,
-              contentDescription = null,
-              modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(DipeSpacing.xs))
-            Text(
-              text = stringResource(R.string.home_shortcut_open_library),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-          OutlinedButton(
+            modifier = Modifier.weight(1f).fillMaxHeight().testTag("home_shortcut_library"),
+          )
+          QuickActionTile(
+            icon = Icons.Outlined.EditNote,
+            label = stringResource(R.string.home_shortcut_write_entry),
             onClick = onWriteDiaryEntry,
-            shape = CircleShape,
-            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier =
-              Modifier.weight(1f).minimumInteractiveComponentSize().testTag("home_shortcut_diary"),
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.EditNote,
-              contentDescription = null,
-              modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(DipeSpacing.xs))
-            Text(
-              text = stringResource(R.string.home_shortcut_write_entry),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
+            modifier = Modifier.weight(1f).fillMaxHeight().testTag("home_shortcut_diary"),
+          )
         }
       }
 
-      // Recent activity header
+      // Recent activity section
       item(key = "home_recent_header", contentType = "section_header") {
         EditorialSectionHeader(title = stringResource(R.string.home_section_recent_activity))
       }
@@ -271,7 +248,6 @@ fun HomeScreen(
                 language = language,
                 onClick = onBookClick,
               )
-              HairlineDivider()
             }
             is RecentActivityItem.DiaryRecorded -> {
               val linkedWorkId = item.entry.workId
@@ -284,7 +260,6 @@ fun HomeScreen(
                 language = language,
                 onClick = onDiaryClick,
               )
-              HairlineDivider()
             }
           }
         }
@@ -294,24 +269,46 @@ fun HomeScreen(
 }
 
 @Composable
-private fun OverviewFactInline(
-  value: String,
+private fun QuickActionTile(
+  icon: ImageVector,
   label: String,
+  onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
-    Text(
-      text = value,
-      style = MaterialTheme.typography.headlineMedium,
-      color = MaterialTheme.colorScheme.onBackground,
-    )
-    Text(
-      text = label,
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
-    )
+  Surface(
+    onClick = onClick,
+    shape = MaterialTheme.shapes.medium,
+    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    modifier = modifier.defaultMinSize(minHeight = 56.dp),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = DipeSpacing.md, vertical = 14.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+    ) {
+      Box(
+        modifier =
+          Modifier.size(32.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.secondary,
+          modifier = Modifier.size(16.dp),
+        )
+      }
+      Text(
+        text = label,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
   }
 }
 
@@ -330,66 +327,70 @@ private fun FeaturedReadingPlate(
       }.joinToString(" · ")
     }
 
-  Row(
-    modifier =
-      Modifier.fillMaxWidth()
-        .clickable(onClick = onClick)
-        .padding(vertical = DipeSpacing.xs)
-        .testTag("home_reading_book_${book.id}"),
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
-    verticalAlignment = Alignment.CenterVertically,
+  EditorialSurfaceCard(
+    modifier = Modifier.testTag("home_reading_book_${book.id}"),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    contentPadding = PaddingValues(DipeSpacing.lg),
+    onClick = onClick,
   ) {
-    BookCoverArtwork(
-      title = book.title,
-      author = book.author,
-      isFavorite = book.isFavorite,
-      elevated = true,
-      modifier = Modifier.width(126.dp),
-    )
-
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text(
-        text = book.author,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+      BookCoverArtwork(
+        title = book.title,
+        author = book.author,
+        isFavorite = book.isFavorite,
+        elevated = true,
+        modifier = Modifier.width(120.dp),
       )
-      Text(
-        text = book.title,
-        style = MaterialTheme.typography.headlineMedium,
-        color = MaterialTheme.colorScheme.onBackground,
-        maxLines = 3,
-        overflow = TextOverflow.Ellipsis,
-      )
-      if (metadataLine.isNotEmpty()) {
+
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      ) {
         Text(
-          text = metadataLine,
-          style = LocalDipeTypography.current.monoMetadata,
+          text = book.author,
+          style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
-      }
-      Spacer(modifier = Modifier.height(DipeSpacing.xs))
-      Button(
-        onClick = onClick,
-        shape = CircleShape,
-        colors =
-          ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondary,
-            contentColor = MaterialTheme.colorScheme.onSecondary,
-          ),
-        contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
-        modifier = Modifier.minimumInteractiveComponentSize(),
-      ) {
         Text(
-          text = stringResource(R.string.home_open_book),
-          style = MaterialTheme.typography.labelLarge,
+          text = book.title,
+          style = MaterialTheme.typography.headlineMedium,
+          color = MaterialTheme.colorScheme.onBackground,
+          maxLines = 3,
+          overflow = TextOverflow.Ellipsis,
         )
+        if (metadataLine.isNotEmpty()) {
+          Text(
+            text = metadataLine,
+            style = LocalDipeTypography.current.monoMetadata,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        Spacer(modifier = Modifier.height(DipeSpacing.sm))
+        Button(
+          onClick = onClick,
+          shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
+          modifier = Modifier.minimumInteractiveComponentSize(),
+        ) {
+          Text(
+            text = stringResource(R.string.home_open_book),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+          )
+        }
       }
     }
   }
@@ -402,8 +403,10 @@ private fun CurrentlyReadingPlate(
 ) {
   Column(
     modifier =
-      Modifier.width(124.dp)
+      Modifier.width(126.dp)
+        .clip(MaterialTheme.shapes.medium)
         .clickable(onClick = onClick)
+        .padding(DipeSpacing.xs)
         .testTag("home_reading_book_${book.id}"),
     verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
   ) {
@@ -411,7 +414,6 @@ private fun CurrentlyReadingPlate(
       title = book.title,
       author = book.author,
       isFavorite = book.isFavorite,
-      compact = true,
       elevated = true,
       modifier = Modifier.fillMaxWidth(),
     )
@@ -443,43 +445,49 @@ private fun RecentBookRow(
 ) {
   val formattedDate =
     remember(timestampMillis, language) { LocaleManager.formatShortDate(timestampMillis, language) }
-  Row(
-    modifier =
-      Modifier.fillMaxWidth()
-        .defaultMinSize(minHeight = 48.dp)
-        .clickable(onClick = onClick)
-        .padding(vertical = DipeSpacing.sm),
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-    verticalAlignment = Alignment.CenterVertically,
+  EditorialSurfaceCard(
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    shape = MaterialTheme.shapes.medium,
+    contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),
+    onClick = onClick,
   ) {
-    BookCoverArtwork(
-      title = book.title,
-      author = book.author,
-      isFavorite = book.isFavorite,
-      compact = true,
-      modifier = Modifier.width(38.dp),
-    )
-    Column(modifier = Modifier.weight(1f)) {
-      Text(
-        text = book.title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    Row(
+      modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      BookCoverArtwork(
+        title = book.title,
+        author = book.author,
+        isFavorite = book.isFavorite,
+        compact = true,
+        modifier = Modifier.width(42.dp),
       )
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+      ) {
+        Text(
+          text = book.title,
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = "${book.author} · ${readingStatusLabel(book.status)}",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
       Text(
-        text = "${book.author} · ${readingStatusLabel(book.status)}",
-        style = MaterialTheme.typography.bodySmall,
+        text = formattedDate,
+        style = LocalDipeTypography.current.monoMetadata,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
       )
     }
-    Text(
-      text = formattedDate,
-      style = LocalDipeTypography.current.monoMetadata,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
   }
 }
 
@@ -493,52 +501,55 @@ private fun RecentDiaryRow(
     remember(item.timestampMillis, language) {
       LocaleManager.formatShortDate(item.timestampMillis, language)
     }
-  Row(
-    modifier =
-      Modifier.fillMaxWidth()
-        .height(IntrinsicSize.Min)
-        .defaultMinSize(minHeight = 48.dp)
-        .let { base -> if (onClick != null) base.clickable(onClick = onClick) else base }
-        .testTag("home_diary_entry_${item.entry.id}")
-        .padding(vertical = DipeSpacing.sm),
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+  EditorialSurfaceCard(
+    modifier = Modifier.testTag("home_diary_entry_${item.entry.id}"),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    shape = MaterialTheme.shapes.medium,
+    contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),
+    onClick = onClick,
   ) {
-    Box(
-      modifier =
-        Modifier.width(2.dp)
-          .fillMaxHeight()
-          .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)),
-    )
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+    Row(
+      modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).defaultMinSize(minHeight = 48.dp),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+      Box(
+        modifier =
+          Modifier.width(3.dp)
+            .fillMaxHeight()
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f)),
+      )
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
       ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = item.entry.linkedBookTitle ?: stringResource(R.string.diary_general_note_tag),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.weight(1f).padding(end = DipeSpacing.sm),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = formattedDate,
+            style = LocalDipeTypography.current.monoMetadata,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
         Text(
-          text = item.entry.linkedBookTitle ?: stringResource(R.string.diary_general_note_tag),
-          style = MaterialTheme.typography.labelMedium,
-          color = MaterialTheme.colorScheme.secondary,
-          modifier = Modifier.weight(1f).padding(end = DipeSpacing.sm),
-          maxLines = 1,
+          text = item.entry.content,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
-        Text(
-          text = formattedDate,
-          style = LocalDipeTypography.current.monoMetadata,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
       }
-      Text(
-        text = item.entry.content,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-      )
     }
   }
 }

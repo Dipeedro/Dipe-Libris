@@ -2,15 +2,18 @@ package com.example.feature.diary
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -33,7 +36,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.model.CatalogBook
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,8 +51,10 @@ fun NewDiaryEntrySheet(
 
   val textFieldColors =
     OutlinedTextFieldDefaults.colors(
-      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-      focusedBorderColor = MaterialTheme.colorScheme.primary,
+      focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
+      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+      focusedBorderColor = MaterialTheme.colorScheme.secondary,
     )
 
   ModalBottomSheet(
@@ -63,14 +67,11 @@ fun NewDiaryEntrySheet(
         Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-        Text(
-          text = stringResource(R.string.diary_sheet_title),
-          style = MaterialTheme.typography.headlineMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-        )
-        HairlineDivider()
-      }
+      Text(
+        text = stringResource(R.string.diary_sheet_title),
+        style = MaterialTheme.typography.headlineLarge,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
 
       OutlinedTextField(
         value = content,
@@ -78,7 +79,7 @@ fun NewDiaryEntrySheet(
         label = { Text(stringResource(R.string.diary_field_content)) },
         minLines = 4,
         maxLines = 8,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("diary_entry_content_input"),
       )
@@ -94,10 +95,10 @@ fun NewDiaryEntrySheet(
             FilterChipDefaults.filterChipColors(
               selectedContainerColor = MaterialTheme.colorScheme.primary,
               selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-              containerColor = MaterialTheme.colorScheme.surface,
+              containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
               labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-          LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
             item(key = "no_book_linked", contentType = "book_chip") {
               FilterChip(
                 selected = selectedWorkId == null,
@@ -108,8 +109,8 @@ fun NewDiaryEntrySheet(
                   FilterChipDefaults.filterChipBorder(
                     enabled = true,
                     selected = selectedWorkId == null,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    borderWidth = 0.75.dp,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    borderWidth = 0.5.dp,
                   ),
                 label = { Text(stringResource(R.string.diary_no_book_linked)) },
               )
@@ -129,8 +130,8 @@ fun NewDiaryEntrySheet(
                   FilterChipDefaults.filterChipBorder(
                     enabled = true,
                     selected = selected,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    borderWidth = 0.75.dp,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    borderWidth = 0.5.dp,
                   ),
                 label = { Text(book.title) },
               )
@@ -139,7 +140,7 @@ fun NewDiaryEntrySheet(
         }
       }
 
-      HairlineDivider()
+      Spacer(modifier = Modifier.height(DipeSpacing.xs))
 
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -151,6 +152,7 @@ fun NewDiaryEntrySheet(
         ) {
           Text(stringResource(R.string.book_cancel_action))
         }
+        Spacer(modifier = Modifier.width(DipeSpacing.sm))
         Button(
           onClick = {
             if (content.isNotBlank()) {
@@ -159,6 +161,12 @@ fun NewDiaryEntrySheet(
           },
           enabled = content.isNotBlank(),
           shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
           modifier = Modifier.minimumInteractiveComponentSize().testTag("diary_save_button"),
         ) {
           Text(stringResource(R.string.diary_save_action))

@@ -2,13 +2,16 @@ package com.example.feature.profile
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -28,7 +31,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.components.HairlineDivider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,8 +46,10 @@ fun EditProfileSheet(
 
   val textFieldColors =
     OutlinedTextFieldDefaults.colors(
-      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-      focusedBorderColor = MaterialTheme.colorScheme.primary,
+      focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
+      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+      focusedBorderColor = MaterialTheme.colorScheme.secondary,
     )
 
   ModalBottomSheet(
@@ -58,21 +62,18 @@ fun EditProfileSheet(
         Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-        Text(
-          text = stringResource(R.string.profile_edit_sheet_title),
-          style = MaterialTheme.typography.headlineMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-        )
-        HairlineDivider()
-      }
+      Text(
+        text = stringResource(R.string.profile_edit_sheet_title),
+        style = MaterialTheme.typography.headlineLarge,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
 
       OutlinedTextField(
         value = name,
         onValueChange = { name = it },
         label = { Text(stringResource(R.string.profile_field_name)) },
         singleLine = true,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("profile_name_input"),
       )
@@ -82,12 +83,12 @@ fun EditProfileSheet(
         label = { Text(stringResource(R.string.profile_field_bio)) },
         minLines = 3,
         maxLines = 5,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         colors = textFieldColors,
         modifier = Modifier.fillMaxWidth().testTag("profile_bio_input"),
       )
 
-      HairlineDivider()
+      Spacer(modifier = Modifier.height(DipeSpacing.xs))
 
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton(
@@ -96,9 +97,16 @@ fun EditProfileSheet(
         ) {
           Text(stringResource(R.string.book_cancel_action))
         }
+        Spacer(modifier = Modifier.width(DipeSpacing.sm))
         Button(
           onClick = { onSave(name, bio) },
           shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
           modifier = Modifier.minimumInteractiveComponentSize().testTag("profile_save_button"),
         ) {
           Text(stringResource(R.string.profile_save_identity))

@@ -54,12 +54,13 @@ data class DipeTypographyExtensions(
   val preset: TypographyPreset,
   val displayFontFamily: FontFamily,
   val bodyFontFamily: FontFamily,
+  val editorialMasthead: TextStyle,
+  val navBarLabel: TextStyle,
   val monoMetadata: TextStyle,
   val editorialKicker: TextStyle,
   val bookCoverTitle: TextStyle,
-  val bookCoverTitleCompact: TextStyle,
+  val bookCoverMonogram: TextStyle,
   val bookCoverAuthor: TextStyle,
-  val bookCoverAuthorCompact: TextStyle,
   val bookSpineTitle: TextStyle,
 )
 
@@ -75,13 +76,16 @@ fun displayFontFamilyFor(preset: TypographyPreset): FontFamily =
     TypographyPreset.MODERN_ARCHIVE -> LoraFontFamily
   }
 
+fun bodyFontFamilyFor(preset: TypographyPreset): FontFamily =
+  when (preset) {
+    TypographyPreset.CLASSIC_EDITORIAL -> InterFontFamily
+    TypographyPreset.LITERARY_PRESS -> LoraFontFamily
+    TypographyPreset.MODERN_ARCHIVE -> InterFontFamily
+  }
+
 fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypographyExtensions> {
-  val (displayFamily, bodyFamily) =
-    when (preset) {
-      TypographyPreset.CLASSIC_EDITORIAL -> PlayfairDisplayFontFamily to InterFontFamily
-      TypographyPreset.LITERARY_PRESS -> CormorantGaramondFontFamily to LoraFontFamily
-      TypographyPreset.MODERN_ARCHIVE -> LoraFontFamily to InterFontFamily
-    }
+  val displayFamily = displayFontFamilyFor(preset)
+  val bodyFamily = bodyFontFamilyFor(preset)
 
   val typography =
     Typography(
@@ -89,40 +93,40 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 32.sp,
-          lineHeight = 38.sp,
-          letterSpacing = (-0.4).sp,
+          fontSize = 34.sp,
+          lineHeight = 40.sp,
+          letterSpacing = (-0.5).sp,
         ),
       displayMedium =
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 25.sp,
-          lineHeight = 31.sp,
-          letterSpacing = (-0.2).sp,
+          fontSize = 26.sp,
+          lineHeight = 32.sp,
+          letterSpacing = (-0.25).sp,
         ),
       headlineLarge =
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 23.sp,
-          lineHeight = 29.sp,
-          letterSpacing = (-0.15).sp,
+          fontSize = 24.sp,
+          lineHeight = 30.sp,
+          letterSpacing = (-0.2).sp,
         ),
       headlineMedium =
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 19.sp,
-          lineHeight = 25.sp,
-          letterSpacing = 0.sp,
+          fontSize = 20.sp,
+          lineHeight = 26.sp,
+          letterSpacing = (-0.1).sp,
         ),
       headlineSmall =
         TextStyle(
           fontFamily = displayFamily,
           fontWeight = FontWeight.Normal,
-          fontSize = 17.sp,
-          lineHeight = 23.sp,
+          fontSize = 18.sp,
+          lineHeight = 24.sp,
           letterSpacing = 0.sp,
         ),
       titleLarge =
@@ -137,24 +141,24 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
         TextStyle(
           fontFamily = bodyFamily,
           fontWeight = FontWeight.Medium,
-          fontSize = 15.sp,
+          fontSize = 15.5.sp,
           lineHeight = 21.sp,
-          letterSpacing = 0.05.sp,
+          letterSpacing = 0.sp,
         ),
       titleSmall =
         TextStyle(
           fontFamily = bodyFamily,
           fontWeight = FontWeight.Medium,
-          fontSize = 13.sp,
+          fontSize = 13.5.sp,
           lineHeight = 18.sp,
-          letterSpacing = 0.1.sp,
+          letterSpacing = 0.05.sp,
         ),
       bodyLarge =
         TextStyle(
           fontFamily = bodyFamily,
           fontWeight = FontWeight.Normal,
           fontSize = 15.5.sp,
-          lineHeight = 24.sp,
+          lineHeight = 25.sp,
           letterSpacing = 0.1.sp,
         ),
       bodyMedium =
@@ -162,8 +166,8 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
           fontFamily = bodyFamily,
           fontWeight = FontWeight.Normal,
           fontSize = 14.sp,
-          lineHeight = 20.sp,
-          letterSpacing = 0.12.sp,
+          lineHeight = 21.sp,
+          letterSpacing = 0.1.sp,
         ),
       bodySmall =
         TextStyle(
@@ -179,7 +183,7 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
           fontWeight = FontWeight.Medium,
           fontSize = 13.sp,
           lineHeight = 18.sp,
-          letterSpacing = 0.2.sp,
+          letterSpacing = 0.15.sp,
         ),
       labelMedium =
         TextStyle(
@@ -187,7 +191,7 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
           fontWeight = FontWeight.Medium,
           fontSize = 11.5.sp,
           lineHeight = 16.sp,
-          letterSpacing = 0.35.sp,
+          letterSpacing = 0.2.sp,
         ),
       labelSmall =
         TextStyle(
@@ -195,7 +199,7 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
           fontWeight = FontWeight.Normal,
           fontSize = 10.sp,
           lineHeight = 14.sp,
-          letterSpacing = 0.8.sp,
+          letterSpacing = 0.6.sp,
           fontFeatureSettings = "tnum",
         ),
     )
@@ -206,7 +210,7 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
       fontWeight = FontWeight.Medium,
       fontSize = 10.5.sp,
       lineHeight = 14.sp,
-      letterSpacing = 1.4.sp,
+      letterSpacing = 1.3.sp,
     )
 
   val bookCoverTitle =
@@ -223,22 +227,50 @@ fun buildTypographyBundle(preset: TypographyPreset): Pair<Typography, DipeTypogr
       preset = preset,
       displayFontFamily = displayFamily,
       bodyFontFamily = bodyFamily,
+      editorialMasthead =
+        TextStyle(
+          fontFamily = displayFamily,
+          fontWeight = FontWeight.Normal,
+          fontSize = 31.sp,
+          lineHeight = 36.sp,
+          letterSpacing = (-0.5).sp,
+        ),
+      navBarLabel =
+        TextStyle(
+          fontFamily = bodyFamily,
+          fontWeight = FontWeight.Medium,
+          fontSize = 10.5.sp,
+          lineHeight = 14.sp,
+          letterSpacing = 0.sp,
+        ),
       monoMetadata =
         TextStyle(
           fontFamily = JetBrainsMonoFontFamily,
           fontWeight = FontWeight.Normal,
           fontSize = 11.sp,
-          lineHeight = 15.sp,
-          letterSpacing = 0.3.sp,
+          lineHeight = 16.sp,
+          letterSpacing = 0.25.sp,
           fontFeatureSettings = "tnum",
         ),
       editorialKicker = editorialKicker,
       bookCoverTitle = bookCoverTitle,
-      bookCoverTitleCompact = bookCoverTitle.copy(fontSize = 12.sp, lineHeight = 15.sp),
-      bookCoverAuthor = editorialKicker.copy(fontSize = 9.5.sp, letterSpacing = 1.1.sp),
-      bookCoverAuthorCompact = editorialKicker.copy(fontSize = 8.sp, letterSpacing = 0.9.sp),
+      bookCoverMonogram =
+        TextStyle(
+          fontFamily = displayFamily,
+          fontWeight = FontWeight.Medium,
+          fontSize = 16.sp,
+          lineHeight = 20.sp,
+          letterSpacing = 0.5.sp,
+        ),
+      bookCoverAuthor = editorialKicker.copy(fontSize = 9.5.sp, letterSpacing = 1.0.sp),
       bookSpineTitle =
-        editorialKicker.copy(fontSize = 8.5.sp, lineHeight = 10.5.sp, letterSpacing = 0.8.sp),
+        TextStyle(
+          fontFamily = displayFamily,
+          fontWeight = FontWeight.Normal,
+          fontSize = 12.sp,
+          lineHeight = 15.sp,
+          letterSpacing = 0.2.sp,
+        ),
     )
 
   return typography to extensions

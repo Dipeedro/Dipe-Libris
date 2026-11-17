@@ -40,6 +40,8 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ViewColumn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -47,9 +49,9 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -74,8 +76,9 @@ import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.BookSpineTile
 import com.example.core.designsystem.components.EditorialEmptyState
+import com.example.core.designsystem.components.EditorialMasthead
 import com.example.core.designsystem.components.EditorialMetadataStrip
-import com.example.core.designsystem.components.HairlineDivider
+import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.readingStatusAccentColor
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.localization.LocalAppLanguage
@@ -102,8 +105,7 @@ fun LibraryScreen(
   val listState = rememberLazyListState()
 
   BoxWithConstraints(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-    val horizontalPadding =
-      if (widthClass == WindowWidthClass.COMPACT) DipeSpacing.md else DipeSpacing.xl
+    val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
     val contentMaxWidth = minOf(maxWidth, 960.dp) - (horizontalPadding * 2)
     val shelfInnerWidth = (contentMaxWidth - (DipeSpacing.xs * 2)).coerceAtLeast(48.dp)
     val spinesPerShelf =
@@ -124,9 +126,14 @@ fun LibraryScreen(
         columns = GridCells.Fixed(columns),
         modifier = Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("library_grid"),
         contentPadding =
-          PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
+          PaddingValues(
+            start = horizontalPadding,
+            end = horizontalPadding,
+            top = DipeSpacing.md,
+            bottom = DipeSpacing.xxl,
+          ),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
       ) {
         item(
           key = "library_controls",
@@ -167,7 +174,12 @@ fun LibraryScreen(
         state = listState,
         modifier = Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("library_lazy_column"),
         contentPadding =
-          PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
+          PaddingValues(
+            start = horizontalPadding,
+            end = horizontalPadding,
+            top = DipeSpacing.md,
+            bottom = DipeSpacing.xxl,
+          ),
         verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
       ) {
         item(key = "library_controls", contentType = "controls") {
@@ -220,7 +232,6 @@ fun LibraryScreen(
                   onClick = onBookClick,
                   onToggleFavorite = onFavClick,
                 )
-                HairlineDivider()
               }
             }
 
@@ -245,7 +256,6 @@ fun LibraryScreen(
               ) { book ->
                 val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                 LibraryGalleryItem(book = book, onClick = onBookClick)
-                HairlineDivider()
               }
             }
           }
@@ -269,51 +279,61 @@ private fun LibraryControlsBlock(
   onOpenAddBook: () -> Unit,
 ) {
   val countForPlural = if (filteredCount == 1) 1 else 2
+  val subtitle =
+    if (totalCatalogCount > 0) {
+      pluralStringResource(R.plurals.volumes_count, countForPlural, filteredCount)
+    } else {
+      stringResource(R.string.library_empty_body)
+    }
+
   val chipColors =
     FilterChipDefaults.filterChipColors(
       selectedContainerColor = MaterialTheme.colorScheme.primary,
       selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-      containerColor = MaterialTheme.colorScheme.surface,
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
       labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-  Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text =
-          if (totalCatalogCount > 0) {
-            pluralStringResource(R.plurals.volumes_count, countForPlural, filteredCount).uppercase()
-          } else {
-            ""
-          },
-        style = LocalDipeTypography.current.editorialKicker,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      OutlinedButton(
-        onClick = onOpenAddBook,
-        shape = CircleShape,
-        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline),
-        contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
-      ) {
-        Icon(
-          imageVector = Icons.Outlined.Add,
-          contentDescription = null,
-          modifier = Modifier.size(16.dp),
-        )
-        Spacer(modifier = Modifier.width(DipeSpacing.xs))
-        Text(stringResource(R.string.library_add_book))
-      }
-    }
+  Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
+    EditorialMasthead(
+      title = stringResource(R.string.nav_library),
+      subtitle = subtitle,
+      trailingContent = {
+        Button(
+          onClick = onOpenAddBook,
+          shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+          modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Add,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+          )
+          Spacer(modifier = Modifier.width(DipeSpacing.xs))
+          Text(
+            text = stringResource(R.string.library_add_book),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+          )
+        }
+      },
+    )
 
     OutlinedTextField(
       value = searchQuery,
       onValueChange = onSearchChange,
-      placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+      placeholder = {
+        Text(
+          text = stringResource(R.string.library_search_placeholder),
+          style = MaterialTheme.typography.bodyMedium,
+        )
+      },
       leadingIcon = {
         Icon(
           imageVector = Icons.Outlined.Search,
@@ -340,13 +360,13 @@ private fun LibraryControlsBlock(
         OutlinedTextFieldDefaults.colors(
           focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
           unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-          focusedBorderColor = MaterialTheme.colorScheme.primary,
+          unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+          focusedBorderColor = MaterialTheme.colorScheme.secondary,
         ),
       modifier = Modifier.fillMaxWidth().testTag("library_search_input"),
     )
 
-    // Quiet editorial view-mode strip + sort trigger
+    // Consolidated view-mode pills + sort trigger
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -354,23 +374,24 @@ private fun LibraryControlsBlock(
     ) {
       LazyRow(
         modifier = Modifier.weight(1f),
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
       ) {
-        items(LibraryViewMode.entries, key = { it.name }, contentType = { "view_mode_tab" }) { mode
-          ->
+        items(LibraryViewMode.entries, key = { it.name }, contentType = { "view_mode_tab" }) { mode ->
           val selected = viewMode == mode
-          Column(
+          Surface(
+            onClick = { onViewModeChange(mode) },
+            shape = CircleShape,
+            color =
+              if (selected) MaterialTheme.colorScheme.secondaryContainer
+              else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
             modifier =
-              Modifier.defaultMinSize(minHeight = 48.dp)
-                .clickable { onViewModeChange(mode) }
-                .padding(horizontal = DipeSpacing.xxs, vertical = DipeSpacing.xs)
+              Modifier.defaultMinSize(minHeight = 40.dp)
                 .testTag("library_view_mode_${mode.name.lowercase()}"),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
           ) {
             Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               Icon(
                 imageVector =
@@ -382,9 +403,9 @@ private fun LibraryControlsBlock(
                   },
                 contentDescription = null,
                 tint =
-                  if (selected) MaterialTheme.colorScheme.onBackground
+                  if (selected) MaterialTheme.colorScheme.secondary
                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(16.dp),
               )
               Text(
                 text =
@@ -396,21 +417,10 @@ private fun LibraryControlsBlock(
                   },
                 style = MaterialTheme.typography.labelLarge,
                 color =
-                  if (selected) MaterialTheme.colorScheme.onBackground
+                  if (selected) MaterialTheme.colorScheme.onSecondaryContainer
                   else MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
-            Spacer(modifier = Modifier.height(DipeSpacing.xs))
-            Box(
-              modifier =
-                Modifier.width(18.dp)
-                  .height(2.dp)
-                  .clip(CircleShape)
-                  .background(
-                    if (selected) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                  ),
-            )
           }
         }
       }
@@ -418,7 +428,7 @@ private fun LibraryControlsBlock(
       LibrarySortControl(onSortOrderChange = onSortOrderChange)
     }
 
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
       item(key = "filter_all", contentType = "status_filter") {
         FilterChip(
           selected = statusFilter == null,
@@ -430,8 +440,8 @@ private fun LibraryControlsBlock(
             FilterChipDefaults.filterChipBorder(
               enabled = true,
               selected = statusFilter == null,
-              borderColor = MaterialTheme.colorScheme.outlineVariant,
-              borderWidth = 0.75.dp,
+              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+              borderWidth = 0.5.dp,
             ),
           modifier = Modifier.testTag("library_filter_all"),
         )
@@ -448,15 +458,15 @@ private fun LibraryControlsBlock(
             FilterChipDefaults.filterChipBorder(
               enabled = true,
               selected = selected,
-              borderColor = MaterialTheme.colorScheme.outlineVariant,
-              borderWidth = 0.75.dp,
+              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+              borderWidth = 0.5.dp,
             ),
           modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
         )
       }
     }
 
-    HairlineDivider()
+    Spacer(modifier = Modifier.height(DipeSpacing.xxs))
   }
 }
 
@@ -467,6 +477,7 @@ private fun LibrarySortControl(onSortOrderChange: (LibrarySortOrder) -> Unit) {
   Box {
     TextButton(
       onClick = { sortMenuExpanded = true },
+      contentPadding = PaddingValues(horizontal = DipeSpacing.sm, vertical = DipeSpacing.xs),
       modifier = Modifier.minimumInteractiveComponentSize().testTag("library_sort_button"),
     ) {
       Icon(
@@ -478,6 +489,7 @@ private fun LibrarySortControl(onSortOrderChange: (LibrarySortOrder) -> Unit) {
       Spacer(modifier = Modifier.width(DipeSpacing.xs))
       Text(
         text = stringResource(R.string.library_sort_label),
+        style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
     }
@@ -514,8 +526,12 @@ private fun LibraryGridCard(
 ) {
   val statusColor = readingStatusAccentColor(book.status)
   Column(
-    modifier = modifier.clickable(onClick = onClick).testTag("library_grid_book_${book.id}"),
-    verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+    modifier =
+      modifier
+        .clip(MaterialTheme.shapes.medium)
+        .clickable(onClick = onClick)
+        .testTag("library_grid_book_${book.id}"),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     BookCoverArtwork(
       title = book.title,
@@ -524,7 +540,7 @@ private fun LibraryGridCard(
       elevated = true,
       modifier = Modifier.fillMaxWidth(),
     )
-    Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
       Text(
         text = book.title,
         style = MaterialTheme.typography.titleMedium,
@@ -539,9 +555,10 @@ private fun LibraryGridCard(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )
+      Spacer(modifier = Modifier.height(DipeSpacing.xxs))
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
         Text(
@@ -563,82 +580,86 @@ private fun LibraryListRow(
   onToggleFavorite: () -> Unit,
 ) {
   val statusColor = readingStatusAccentColor(book.status)
-  Row(
-    modifier =
-      Modifier.fillMaxWidth()
-        .clickable(onClick = onClick)
-        .padding(vertical = DipeSpacing.sm)
-        .testTag("library_list_book_${book.id}"),
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-    verticalAlignment = Alignment.CenterVertically,
+  EditorialSurfaceCard(
+    modifier = Modifier.testTag("library_list_book_${book.id}"),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    shape = MaterialTheme.shapes.medium,
+    contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = 14.dp),
+    onClick = onClick,
   ) {
-    BookCoverArtwork(
-      title = book.title,
-      author = book.author,
-      isFavorite = book.isFavorite,
-      compact = true,
-      elevated = true,
-      modifier = Modifier.width(56.dp),
-    )
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text(
-        text = book.title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
+      BookCoverArtwork(
+        title = book.title,
+        author = book.author,
+        isFavorite = book.isFavorite,
+        compact = true,
+        elevated = true,
+        modifier = Modifier.width(52.dp),
       )
-      Text(
-        text = book.author,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
       ) {
-        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
         Text(
-          text = readingStatusLabel(book.status),
-          style = LocalDipeTypography.current.monoMetadata,
-          color = statusColor,
+          text = book.title,
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
         )
-        book.totalPages?.let { pages ->
+        Text(
+          text = book.author,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
           Text(
-            text = "·",
+            text = readingStatusLabel(book.status),
             style = LocalDipeTypography.current.monoMetadata,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = statusColor,
           )
-          Text(
-            text =
-              pluralStringResource(
-                R.plurals.pages_count,
-                if (pages == 1) 1 else 2,
-                pages,
-              ),
-            style = LocalDipeTypography.current.monoMetadata,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+          book.totalPages?.let { pages ->
+            Text(
+              text = "·",
+              style = LocalDipeTypography.current.monoMetadata,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+              text =
+                pluralStringResource(
+                  R.plurals.pages_count,
+                  if (pages == 1) 1 else 2,
+                  pages,
+                ),
+              style = LocalDipeTypography.current.monoMetadata,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
         }
       }
-    }
-    IconButton(
-      onClick = onToggleFavorite,
-      modifier = Modifier.minimumInteractiveComponentSize().testTag("library_favorite_${book.id}"),
-    ) {
-      Icon(
-        imageVector =
-          if (book.isFavorite) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-        contentDescription = stringResource(R.string.cd_toggle_favorite),
-        tint =
-          if (book.isFavorite) MaterialTheme.colorScheme.secondary
-          else MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+      IconButton(
+        onClick = onToggleFavorite,
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("library_favorite_${book.id}"),
+      ) {
+        Icon(
+          imageVector =
+            if (book.isFavorite) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+          contentDescription = stringResource(R.string.cd_toggle_favorite),
+          tint =
+            if (book.isFavorite) MaterialTheme.colorScheme.secondary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
     }
   }
 }
@@ -649,7 +670,7 @@ private fun LibraryShelfRow(
   onOpenBook: (Long) -> Unit,
 ) {
   Column(
-    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.sm),
+    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md, bottom = DipeSpacing.sm),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.xs),
@@ -658,7 +679,7 @@ private fun LibraryShelfRow(
     ) {
       shelfBooks.forEach { book ->
         val spineHeight =
-          remember(book.title) { (138 + ((book.title.hashCode() and Int.MAX_VALUE) % 34)).dp }
+          remember(book.title) { (164 + ((book.title.hashCode() and Int.MAX_VALUE) % 32)).dp }
         val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
         BookSpineTile(
           title = book.title,
@@ -674,10 +695,15 @@ private fun LibraryShelfRow(
     Box(
       modifier =
         Modifier.fillMaxWidth()
-          .height(5.dp)
+          .height(6.dp)
           .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     )
-    HairlineDivider()
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(3.dp)
+          .background(MaterialTheme.colorScheme.surfaceContainerLow),
+    )
   }
 }
 
@@ -692,55 +718,51 @@ private fun LibraryGalleryItem(
       ?: stringResource(R.string.book_detail_unspecified)
   val yearValue = book.publicationYear?.toString() ?: stringResource(R.string.book_detail_unspecified)
   val statusValue = readingStatusLabel(book.status)
-  val stripItems =
-    remember(statusValue, pagesValue, yearValue) {
-      listOf(
-        "Status" to statusValue,
-        "Pág." to pagesValue,
-        "Ano" to yearValue,
-      )
-    }
 
-  Column(
-    modifier =
-      Modifier.fillMaxWidth()
-        .clickable(onClick = onClick)
-        .padding(vertical = DipeSpacing.lg)
-        .testTag("library_gallery_book_${book.id}"),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+  EditorialSurfaceCard(
+    modifier = Modifier.testTag("library_gallery_book_${book.id}"),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.xl),
+    onClick = onClick,
   ) {
-    BookCoverArtwork(
-      title = book.title,
-      author = book.author,
-      isFavorite = book.isFavorite,
-      elevated = true,
-      modifier = Modifier.width(204.dp),
-    )
     Column(
+      modifier = Modifier.fillMaxWidth(),
       horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
     ) {
-      Text(
-        text = book.title,
-        style = MaterialTheme.typography.headlineMedium,
-        color = MaterialTheme.colorScheme.onBackground,
-        textAlign = TextAlign.Center,
+      BookCoverArtwork(
+        title = book.title,
+        author = book.author,
+        isFavorite = book.isFavorite,
+        elevated = true,
+        modifier = Modifier.width(196.dp),
       )
-      Text(
-        text = book.author,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      ) {
+        Text(
+          text = book.title,
+          style = MaterialTheme.typography.headlineLarge,
+          color = MaterialTheme.colorScheme.onBackground,
+          textAlign = TextAlign.Center,
+        )
+        Text(
+          text = book.author,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center,
+        )
+      }
+      EditorialMetadataStrip(
+        items =
+          listOf(
+            stringResource(R.string.book_detail_status_label) to statusValue,
+            stringResource(R.string.book_detail_pages_label) to pagesValue,
+            stringResource(R.string.book_detail_year_label) to yearValue,
+          ),
+        modifier = Modifier.widthIn(max = 420.dp),
       )
     }
-    EditorialMetadataStrip(
-      items = listOf(
-        stringResource(R.string.book_detail_status_label) to statusValue,
-        stringResource(R.string.book_detail_pages_label) to pagesValue,
-        stringResource(R.string.book_detail_year_label) to yearValue,
-      ),
-      modifier = Modifier.widthIn(max = 420.dp).padding(top = DipeSpacing.xs),
-    )
   }
 }

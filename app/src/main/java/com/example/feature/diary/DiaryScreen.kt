@@ -1,8 +1,6 @@
 package com.example.feature.diary
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,10 +27,12 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -53,7 +54,8 @@ import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.EditorialEmptyState
-import com.example.core.designsystem.components.HairlineDivider
+import com.example.core.designsystem.components.EditorialMasthead
+import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.model.AppLanguage
@@ -71,43 +73,47 @@ fun DiaryScreen(
   val language = LocalAppLanguage.current
   val listState = rememberLazyListState()
   var pendingDeleteEntryId by remember { mutableStateOf<Long?>(null) }
-  val horizontalPadding =
-    if (widthClass == WindowWidthClass.COMPACT) DipeSpacing.md else DipeSpacing.xl
+  val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val entriesCount = uiState.entries.size
+
+  val subtitle =
+    if (entriesCount > 0) {
+      pluralStringResource(
+        R.plurals.diary_entries_count,
+        if (entriesCount == 1) 1 else 2,
+        entriesCount,
+      )
+    } else {
+      stringResource(R.string.diary_empty_title)
+    }
 
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 820.dp).fillMaxSize().testTag("diary_lazy_column"),
-      contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = DipeSpacing.md),
+      contentPadding =
+        PaddingValues(
+          start = horizontalPadding,
+          end = horizontalPadding,
+          top = DipeSpacing.md,
+          bottom = DipeSpacing.xxl,
+        ),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
       item(key = "diary_toolbar", contentType = "toolbar") {
-        Column(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = DipeSpacing.sm),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Text(
-              text =
-                if (entriesCount > 0) {
-                  pluralStringResource(
-                    R.plurals.diary_entries_count,
-                    if (entriesCount == 1) 1 else 2,
-                    entriesCount,
-                  ).uppercase()
-                } else {
-                  ""
-                },
-              style = LocalDipeTypography.current.editorialKicker,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(
+        EditorialMasthead(
+          title = stringResource(R.string.nav_diary),
+          subtitle = subtitle,
+          trailingContent = {
+            Button(
               onClick = onOpenNewEntry,
               shape = CircleShape,
-              border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline),
-              contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.secondary,
+                  contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
               modifier = Modifier.minimumInteractiveComponentSize().testTag("diary_new_entry_button"),
             ) {
               Icon(
@@ -116,11 +122,15 @@ fun DiaryScreen(
                 modifier = Modifier.size(16.dp),
               )
               Spacer(modifier = Modifier.width(DipeSpacing.xs))
-              Text(stringResource(R.string.diary_new_entry))
+              Text(
+                text = stringResource(R.string.diary_new_entry),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+              )
             }
-          }
-          HairlineDivider()
-        }
+          },
+          modifier = Modifier.padding(bottom = DipeSpacing.xs),
+        )
       }
 
       if (uiState.entries.isEmpty()) {
@@ -147,7 +157,6 @@ fun DiaryScreen(
             onOpenBook = onOpenBook,
             onRequestDelete = onRequestDelete,
           )
-          HairlineDivider()
         }
       }
     }
@@ -156,7 +165,7 @@ fun DiaryScreen(
   pendingDeleteEntryId?.let { targetId ->
     AlertDialog(
       onDismissRequest = { pendingDeleteEntryId = null },
-      shape = MaterialTheme.shapes.medium,
+      shape = MaterialTheme.shapes.large,
       containerColor = MaterialTheme.colorScheme.surface,
       title = {
         Text(
@@ -212,89 +221,102 @@ private fun DiaryEntryRow(
       LocaleManager.formatShortDate(entry.createdAtEpochMillis, language)
     }
 
-  Column(
-    modifier =
-      Modifier.fillMaxWidth()
-        .padding(vertical = DipeSpacing.sm)
-        .testTag("diary_entry_${entry.id}"),
-    verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+  EditorialSurfaceCard(
+    modifier = Modifier.testTag("diary_entry_${entry.id}"),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    contentPadding = PaddingValues(DipeSpacing.lg),
   ) {
-    Row(
+    Column(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = formattedDate,
-          style = LocalDipeTypography.current.monoMetadata,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        val linkedTitle = entry.linkedBookTitle
-        val workId = entry.workId
-        if (linkedTitle != null && workId != null) {
-          val onBookClick = remember(workId, onOpenBook) { { onOpenBook(workId) } }
-          Row(
-            modifier =
-              Modifier.defaultMinSize(minHeight = 48.dp)
-                .clickable(onClick = onBookClick)
-                .testTag("diary_entry_book_${entry.id}"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.AutoStories,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.secondary,
-              modifier = Modifier.size(14.dp),
-            )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+      ) {
+        Column(
+          modifier = Modifier.weight(1f),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        ) {
+          Text(
+            text = formattedDate,
+            style = LocalDipeTypography.current.monoMetadata,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          val linkedTitle = entry.linkedBookTitle
+          val workId = entry.workId
+          if (linkedTitle != null && workId != null) {
+            val onBookClick = remember(workId, onOpenBook) { { onOpenBook(workId) } }
+            Surface(
+              onClick = onBookClick,
+              shape = CircleShape,
+              color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+              modifier =
+                Modifier.defaultMinSize(minHeight = 36.dp)
+                  .testTag("diary_entry_book_${entry.id}"),
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.AutoStories,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.secondary,
+                  modifier = Modifier.size(14.dp),
+                )
+                Text(
+                  text =
+                    if (entry.linkedBookAuthor != null) "$linkedTitle — ${entry.linkedBookAuthor}"
+                    else linkedTitle,
+                  style = MaterialTheme.typography.labelLarge,
+                  color = MaterialTheme.colorScheme.onSecondaryContainer,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+            }
+          } else {
             Text(
-              text =
-                if (entry.linkedBookAuthor != null) "$linkedTitle — ${entry.linkedBookAuthor}"
-                else linkedTitle,
-              style = MaterialTheme.typography.titleSmall,
-              color = MaterialTheme.colorScheme.secondary,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
+              text = stringResource(R.string.diary_general_note_tag),
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-        } else {
-          Text(
-            text = stringResource(R.string.diary_general_note_tag),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+
+        IconButton(
+          onClick = onRequestDelete,
+          modifier = Modifier.minimumInteractiveComponentSize().testTag("diary_delete_${entry.id}"),
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.DeleteOutline,
+            contentDescription = stringResource(R.string.diary_delete_entry),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
       }
 
-      IconButton(
-        onClick = onRequestDelete,
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("diary_delete_${entry.id}"),
+      Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
       ) {
-        Icon(
-          imageVector = Icons.Outlined.DeleteOutline,
-          contentDescription = stringResource(R.string.diary_delete_entry),
-          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Box(
+          modifier =
+            Modifier.width(3.dp)
+              .fillMaxHeight()
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f)),
+        )
+        Text(
+          text = entry.content,
+          style = MaterialTheme.typography.bodyLarge,
+          color = MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.weight(1f),
         )
       }
-    }
-
-    Row(
-      modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-    ) {
-      Box(
-        modifier =
-          Modifier.width(2.dp)
-            .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
-      )
-      Text(
-        text = entry.content,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.weight(1f),
-      )
     }
   }
 }
