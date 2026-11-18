@@ -453,8 +453,8 @@ class Phase2UiFlowsTest {
       }
     }
 
-    // Empty state shows brand seal and empty stage without text logo clutter
-    composeTestRule.onNodeWithTag("home_brand_seal").assertIsDisplayed()
+    // Empty state shows calm empty stage without brand seal or text logo clutter
+    composeTestRule.onNodeWithTag("home_brand_seal").assertDoesNotExist()
     composeTestRule.onNodeWithTag("home_empty_stage").assertIsDisplayed()
     composeTestRule.onNodeWithText("DL", ignoreCase = true).assertDoesNotExist()
     composeTestRule.onNodeWithText("Dipe Libris", ignoreCase = true).assertDoesNotExist()

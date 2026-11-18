@@ -212,6 +212,7 @@ val SepiaColorScheme: ColorScheme =
 @Immutable
 data class DipeSemanticColors(
   val canvas: Color,
+  val homeCanvas: Color,
   val surfaceElevated: Color,
   val surfaceTonal: Color,
   val textPrimary: Color,
@@ -230,6 +231,9 @@ data class DipeSemanticColors(
 fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors =
   DipeSemanticColors(
     canvas = scheme.background,
+    homeCanvas =
+      if (scheme.background == PaperColorScheme.background) Color(0xFFF3EEE2)
+      else scheme.background,
     surfaceElevated = scheme.surfaceContainerLowest,
     surfaceTonal = scheme.surfaceContainerLow,
     textPrimary = scheme.onBackground,

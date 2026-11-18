@@ -195,9 +195,10 @@ fun DipeNavigationShell(
   BoxWithConstraints(modifier = modifier.fillMaxSize()) {
     val widthClass = WindowWidthClass.fromWidth(maxWidth)
     val useRail = widthClass != WindowWidthClass.COMPACT
+    val isHomeRoute = currentDestination?.hasRoute(HomeRoute::class) ?: true
 
     Scaffold(
-      containerColor = DipeTheme.colors.canvas,
+      containerColor = if (isHomeRoute) DipeTheme.colors.homeCanvas else DipeTheme.colors.canvas,
       contentWindowInsets = WindowInsets.safeDrawing,
       snackbarHost = {
         SnackbarHost(hostState = snackbarHostState) { data ->
