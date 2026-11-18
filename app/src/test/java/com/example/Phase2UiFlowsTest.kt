@@ -208,14 +208,20 @@ class Phase2UiFlowsTest {
       }
     }
 
+    // Page-only mode: percent mode toggle removed, hero displays live percentage
+    composeTestRule.onNodeWithTag("progress_mode_page").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_mode_percent").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_hero_percent").assertIsDisplayed()
+
     // 4 symmetric steppers (-10, -1, +1, +10), without +5
     composeTestRule.onNodeWithTag("progress_step_plus_5").assertDoesNotExist()
     composeTestRule.onNodeWithTag("progress_step_minus_10").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("progress_step_minus_1").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("progress_step_plus_10").performScrollTo().assertIsDisplayed()
 
-    // Stepper +1 moves page 50 -> 51
+    // Stepper +1 moves page 50 -> 51 (and updates hero percentage 25% -> 26%)
     composeTestRule.onNodeWithTag("progress_step_plus_1").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("progress_hero_percent").assertIsDisplayed()
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
     assertEquals(51, savedPage)
 
@@ -225,8 +231,7 @@ class Phase2UiFlowsTest {
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("progress_validation_error").assertIsDisplayed()
 
-    // Switching to Percent mode and completing requires confirmation dialog
-    composeTestRule.onNodeWithTag("progress_mode_percent").performScrollTo().performClick()
+    // Completing requires confirmation dialog
     composeTestRule.onNodeWithTag("progress_complete_button").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("progress_complete_confirm_dialog").assertIsDisplayed()
     assertFalse(finishedCalled)
