@@ -1,5 +1,7 @@
 package com.example.navigation
 
+import android.app.Activity
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -24,8 +26,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -45,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,13 +57,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination
@@ -75,6 +82,7 @@ import com.example.R
 import com.example.core.designsystem.DipeElevation
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
+import com.example.core.designsystem.TopSquircleShape
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.di.AppContainer
 import com.example.core.ui.dipeFactory
@@ -195,6 +203,31 @@ fun DipeNavigationShell(
     val widthClass = WindowWidthClass.fromWidth(maxWidth)
     val useRail = widthClass != WindowWidthClass.COMPACT
     val isHomeRoute = currentDestination?.hasRoute(HomeRoute::class) ?: true
+    val hasTerracottaBottomBar = isTopLevel && !useRail
+    val view = LocalView.current
+    val navBarContainerColor = DipeTheme.colors.navBarContainer
+    val canvasColor = DipeTheme.colors.canvas
+    val isDarkCanvas = canvasColor.luminance() < 0.5f
+
+    if (!view.isInEditMode) {
+      SideEffect {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+          val insetsController = WindowCompat.getInsetsController(window, view)
+          insetsController.isAppearanceLightNavigationBars =
+            if (hasTerracottaBottomBar) false else !isDarkCanvas
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+          } else {
+            @Suppress("DEPRECATION")
+            window.navigationBarColor =
+              (if (hasTerracottaBottomBar) navBarContainerColor else canvasColor).toArgb()
+          }
+        }
+      }
+    }
 
     Scaffold(
       containerColor = if (isHomeRoute) DipeTheme.colors.homeCanvas else DipeTheme.colors.canvas,
@@ -579,92 +612,95 @@ private fun EditorialBottomNavBar(
   modifier: Modifier = Modifier,
 ) {
   val motion = DipeTheme.motion
-  Column(modifier = modifier.fillMaxWidth()) {
-    Surface(
-      modifier = Modifier.fillMaxWidth(),
-      color = DipeTheme.colors.navBarContainer,
-      tonalElevation = DipeElevation.flat,
-      shadowElevation = DipeElevation.flat,
+  val squircleTopShape = remember { TopSquircleShape(cornerRadius = 24.dp) }
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = squircleTopShape,
+    color = DipeTheme.colors.navBarContainer,
+    tonalElevation = DipeElevation.flat,
+    shadowElevation = DipeElevation.flat,
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .windowInsetsPadding(
+            WindowInsets.navigationBars.union(
+              WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+            )
+          )
+          .padding(
+            start = DipeSpacing.md,
+            end = DipeSpacing.md,
+            top = DipeSpacing.md,
+            bottom = DipeSpacing.compact,
+          )
+          .heightIn(min = 58.dp)
+          .selectableGroup(),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .heightIn(min = 60.dp)
-            .padding(horizontal = DipeSpacing.xs)
-            .selectableGroup(),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        TopLevelDestination.entries.forEach { dest ->
-          val selected = currentDestination?.hasRoute(dest.route::class) == true
-          val label = stringResource(dest.labelRes)
-          val indicatorFraction by
-            animateFloatAsState(
-              targetValue = if (selected) 1f else 0f,
-              animationSpec = motion.standardTween(180),
-              label = "nav_tab_indicator_${dest.routeKey}",
-            )
-          val contentColor =
-            if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
-          val labelStyle =
-            if (selected) DipeTheme.typography.navBarLabelActive
-            else DipeTheme.typography.navBarLabel
+      TopLevelDestination.entries.forEach { dest ->
+        val selected = currentDestination?.hasRoute(dest.route::class) == true
+        val label = stringResource(dest.labelRes)
+        val indicatorFraction by
+          animateFloatAsState(
+            targetValue = if (selected) 1f else 0f,
+            animationSpec = motion.standardTween(180),
+            label = "nav_tab_indicator_${dest.routeKey}",
+          )
+        val contentColor =
+          if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
+        val labelStyle =
+          if (selected) DipeTheme.typography.navBarLabelActive
+          else DipeTheme.typography.navBarLabel
 
-          Column(
-            modifier =
-              Modifier.weight(1f)
-                .defaultMinSize(minWidth = 48.dp, minHeight = 56.dp)
-                .clip(MaterialTheme.shapes.medium)
-                .selectable(
-                  selected = selected,
-                  onClick = { onNavigate(dest) },
-                  role = Role.Tab,
-                )
-                .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.xs)
-                .testTag("nav_tab_${dest.routeKey}"),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs, Alignment.CenterVertically),
+        Column(
+          modifier =
+            Modifier.weight(1f)
+              .defaultMinSize(minWidth = 48.dp, minHeight = 58.dp)
+              .clip(MaterialTheme.shapes.medium)
+              .selectable(
+                selected = selected,
+                onClick = { onNavigate(dest) },
+                role = Role.Tab,
+              )
+              .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.xs)
+              .testTag("nav_tab_${dest.routeKey}"),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
+        ) {
+          Box(
+            modifier = Modifier.height(2.5.dp).fillMaxWidth(),
+            contentAlignment = Alignment.Center,
           ) {
-            Box(
-              modifier = Modifier.height(2.dp).fillMaxWidth(),
-              contentAlignment = Alignment.Center,
-            ) {
-              if (indicatorFraction > 0.01f) {
-                Box(
-                  modifier =
-                    Modifier.width(24.dp * indicatorFraction)
-                      .height(2.dp)
-                      .background(
-                        color = DipeTheme.colors.navBarContent,
-                        shape = CircleShape,
-                      )
-                )
-              }
+            if (indicatorFraction > 0.01f) {
+              Box(
+                modifier =
+                  Modifier.width(26.dp * indicatorFraction)
+                    .height(2.5.dp)
+                    .background(
+                      color = DipeTheme.colors.navBarContent,
+                      shape = CircleShape,
+                    )
+              )
             }
-            Icon(
-              imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-              contentDescription = label,
-              tint = contentColor,
-              modifier = Modifier.size(22.dp),
-            )
-            Text(
-              text = label,
-              style = labelStyle,
-              color = contentColor,
-              maxLines = 1,
-              softWrap = false,
-              overflow = TextOverflow.Ellipsis,
-              textAlign = TextAlign.Center,
-            )
           }
+          Icon(
+            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(22.dp),
+          )
+          Text(
+            text = label,
+            style = labelStyle,
+            color = contentColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+          )
         }
       }
     }
-    Spacer(
-      modifier =
-        Modifier.fillMaxWidth()
-          .background(DipeTheme.colors.surfaceElevated)
-          .windowInsetsBottomHeight(WindowInsets.navigationBars)
-    )
   }
 }

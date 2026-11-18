@@ -73,7 +73,6 @@ fun DipeLibrisTheme(
       if (window != null) {
         val insetsController = WindowCompat.getInsetsController(window, view)
         insetsController.isAppearanceLightStatusBars = !isDarkEffective
-        insetsController.isAppearanceLightNavigationBars = !isDarkEffective
       }
     }
   }

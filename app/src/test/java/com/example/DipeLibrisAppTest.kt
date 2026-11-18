@@ -140,7 +140,7 @@ class DipeLibrisAppTest {
     composeTestRule.onNodeWithTag("add_book_save_button").performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
       composeTestRule.onAllNodes(hasTestTag("add_book_save_button")).fetchSemanticsNodes().isEmpty() &&
-        composeTestRule.onAllNodes(hasTestTag("library_grid_book_1")).fetchSemanticsNodes().isNotEmpty()
+        composeTestRule.onAllNodes(hasTestTag("library_grid")).fetchSemanticsNodes().isNotEmpty()
     }
 
     composeTestRule

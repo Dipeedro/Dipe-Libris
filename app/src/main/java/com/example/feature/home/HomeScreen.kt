@@ -106,9 +106,9 @@ fun HomeScreen(
           start = horizontalPadding,
           end = horizontalPadding,
           top = DipeSpacing.md,
-          bottom = DipeSpacing.xxl,
+          bottom = DipeSpacing.xl,
         ),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
     ) {
       item(key = "home_masthead", contentType = "masthead") {
         EditorialMasthead(
@@ -258,7 +258,7 @@ private fun FeaturedReadingShowcase(
         coverUri = book.coverUri,
         elevated = true,
         modifier =
-          Modifier.width(if (widthClass == WindowWidthClass.COMPACT) 212.dp else 232.dp),
+          Modifier.width(if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp),
       )
 
       Spacer(modifier = Modifier.height(DipeSpacing.md))

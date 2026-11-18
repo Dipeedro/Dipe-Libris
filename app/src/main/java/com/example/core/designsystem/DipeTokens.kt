@@ -97,3 +97,43 @@ enum class WindowWidthClass {
       }
   }
 }
+
+class TopSquircleShape(
+  private val cornerRadius: Dp = 22.dp,
+) : androidx.compose.ui.graphics.Shape {
+  override fun createOutline(
+    size: androidx.compose.ui.geometry.Size,
+    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    density: androidx.compose.ui.unit.Density,
+  ): androidx.compose.ui.graphics.Outline {
+    val radiusPx = with(density) { cornerRadius.toPx() }
+    val reach = (radiusPx * 1.4f).coerceAtMost(size.width * 0.45f).coerceAtMost(size.height * 0.85f)
+    val handle = reach * 0.30f
+    val path =
+      androidx.compose.ui.graphics.Path().apply {
+        moveTo(0f, size.height)
+        lineTo(0f, reach)
+        cubicTo(
+          x1 = 0f,
+          y1 = handle,
+          x2 = handle,
+          y2 = 0f,
+          x3 = reach,
+          y3 = 0f,
+        )
+        lineTo(size.width - reach, 0f)
+        cubicTo(
+          x1 = size.width - handle,
+          y1 = 0f,
+          x2 = size.width,
+          y2 = handle,
+          x3 = size.width,
+          y3 = reach,
+        )
+        lineTo(size.width, size.height)
+        close()
+      }
+    return androidx.compose.ui.graphics.Outline.Generic(path)
+  }
+}
+
