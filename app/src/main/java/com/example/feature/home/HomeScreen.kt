@@ -5,12 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,12 +34,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -94,10 +100,19 @@ fun HomeScreen(
       stringResource(R.string.home_masthead_empty_subtitle)
     }
 
-  Box(
+  val density = LocalDensity.current
+  var mastheadHeightPx by remember { mutableIntStateOf(0) }
+  val centerPrimaryStage = secondaryReading.isEmpty()
+
+  BoxWithConstraints(
     modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas),
     contentAlignment = Alignment.TopCenter,
   ) {
+    val mastheadHeightDp = with(density) { mastheadHeightPx.toDp() }
+    val verticalPadding = DipeSpacing.md
+    val centeredStageMinHeight =
+      (maxHeight - verticalPadding - mastheadHeightDp - verticalPadding).coerceAtLeast(0.dp)
+
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 760.dp).fillMaxSize().testTag("home_lazy_column"),
@@ -105,36 +120,48 @@ fun HomeScreen(
         PaddingValues(
           start = horizontalPadding,
           end = horizontalPadding,
-          top = DipeSpacing.md,
-          bottom = DipeSpacing.xl,
+          top = verticalPadding,
+          bottom = if (centerPrimaryStage) verticalPadding else DipeSpacing.xl,
         ),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.lg),
+      verticalArrangement =
+        if (centerPrimaryStage) Arrangement.Top else Arrangement.spacedBy(DipeSpacing.lg),
     ) {
       item(key = "home_masthead", contentType = "masthead") {
         EditorialMasthead(
           title = stringResource(R.string.home_masthead_title),
           subtitle = mastheadSubtitle,
+          modifier = Modifier.onSizeChanged { mastheadHeightPx = it.height },
         )
       }
 
       item(key = "home_currently_reading", contentType = "currently_reading") {
-        if (featuredReading == null) {
-          EditorialEmptyState(
-            icon = Icons.Outlined.AutoStories,
-            title = stringResource(R.string.home_empty_reading_title),
-            body = stringResource(R.string.home_empty_reading_body),
-            modifier = Modifier.testTag("home_empty_stage"),
-          )
-        } else {
-          val onFeaturedClick =
-            remember(featuredReading.id, onOpenBook) { { onOpenBook(featuredReading.id) } }
-          FeaturedReadingShowcase(
-            book = featuredReading,
-            widthClass = widthClass,
-            language = language,
-            onClick = onFeaturedClick,
-            onUpdateProgress = { progressSheetBook = featuredReading },
-          )
+        Box(
+          modifier =
+            if (centerPrimaryStage) {
+              Modifier.fillMaxWidth().defaultMinSize(minHeight = centeredStageMinHeight)
+            } else {
+              Modifier.fillMaxWidth()
+            },
+          contentAlignment = Alignment.Center,
+        ) {
+          if (featuredReading == null) {
+            EditorialEmptyState(
+              icon = Icons.Outlined.AutoStories,
+              title = stringResource(R.string.home_empty_reading_title),
+              body = stringResource(R.string.home_empty_reading_body),
+              modifier = Modifier.testTag("home_empty_stage"),
+            )
+          } else {
+            val onFeaturedClick =
+              remember(featuredReading.id, onOpenBook) { { onOpenBook(featuredReading.id) } }
+            FeaturedReadingShowcase(
+              book = featuredReading,
+              widthClass = widthClass,
+              language = language,
+              onClick = onFeaturedClick,
+              onUpdateProgress = { progressSheetBook = featuredReading },
+            )
+          }
         }
       }
 
@@ -247,7 +274,7 @@ private fun FeaturedReadingShowcase(
         Modifier.fillMaxWidth()
           .clip(MaterialTheme.shapes.large)
           .clickable(onClick = onClick)
-          .padding(top = DipeSpacing.xs, bottom = DipeSpacing.md)
+          .padding(vertical = DipeSpacing.sm)
           .testTag("home_reading_book_${book.id}"),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -413,8 +440,8 @@ private fun FeaturedBookDetails(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         colors =
           ButtonDefaults.outlinedButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.85f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
           ),
         contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
         modifier = Modifier.heightIn(min = 48.dp).testTag("home_update_progress_button"),
