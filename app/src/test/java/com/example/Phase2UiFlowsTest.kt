@@ -208,15 +208,19 @@ class Phase2UiFlowsTest {
       }
     }
 
-    // Page-only mode: percent mode toggle removed, hero displays live percentage
+    // Page-only stepper mode: input field, percent toggle, and Cancel button removed
     composeTestRule.onNodeWithTag("progress_mode_page").assertDoesNotExist()
     composeTestRule.onNodeWithTag("progress_mode_percent").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_value_input").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_cancel_button").assertDoesNotExist()
     composeTestRule.onNodeWithTag("progress_hero_percent").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("progress_hero_page").assertIsDisplayed()
 
-    // 4 symmetric steppers (-10, -1, +1, +10), without +5
+    // 4 steppers (-10, -1, +1, +10), without +5
     composeTestRule.onNodeWithTag("progress_step_plus_5").assertDoesNotExist()
     composeTestRule.onNodeWithTag("progress_step_minus_10").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("progress_step_minus_1").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("progress_step_plus_1").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("progress_step_plus_10").performScrollTo().assertIsDisplayed()
 
     // Stepper +1 moves page 50 -> 51 (and updates hero percentage 25% -> 26%)
@@ -225,11 +229,12 @@ class Phase2UiFlowsTest {
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
     assertEquals(51, savedPage)
 
-    // Exceeding page count displays validation error
-    composeTestRule.onNodeWithTag("progress_value_input").performScrollTo().performTextClearance()
-    composeTestRule.onNodeWithTag("progress_value_input").performTextInput("999")
+    // Steppers clamp cleanly at edition page bounds (0..200)
+    repeat(20) {
+      composeTestRule.onNodeWithTag("progress_step_plus_10").performScrollTo().performClick()
+    }
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
-    composeTestRule.onNodeWithTag("progress_validation_error").assertIsDisplayed()
+    assertEquals(200, savedPage)
 
     // Completing requires confirmation dialog
     composeTestRule.onNodeWithTag("progress_complete_button").performScrollTo().performClick()
@@ -480,7 +485,9 @@ class Phase2UiFlowsTest {
       .performScrollToNode(hasTestTag("home_update_progress_button"))
     composeTestRule.onNodeWithTag("home_update_progress_button").performClick()
     composeTestRule.onNodeWithTag("quick_progress_sheet").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("progress_cancel_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("progress_cancel_button").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("quick_progress_sheet").assertDoesNotExist()
 
     // Multi-book state displays secondary horizontal reading strip
