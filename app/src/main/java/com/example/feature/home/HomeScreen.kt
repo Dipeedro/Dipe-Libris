@@ -190,18 +190,21 @@ private fun FeaturedReadingShowcase(
   onClick: () -> Unit,
   onUpdateProgress: () -> Unit,
 ) {
-  val metadataLine =
-    remember(book.totalPages, book.publicationYear, book.editionNote, language) {
-      buildList {
-        book.totalPages?.let { add(LocaleManager.formatInteger(it, language) + " p.") }
-        book.publicationYear?.let { add(it.toString()) }
-        book.editionNote?.takeIf { it.isNotBlank() }?.let { add(it) }
-      }.joinToString(" · ")
-    }
-
   val progressPercent = book.activeProgressPercent
   val currentPage = book.activeCurrentPage
   val isExpanded = widthClass == WindowWidthClass.EXPANDED
+  val showTotalInProgress = progressPercent != null && currentPage != null && book.totalPages != null
+
+  val metadataParts =
+    remember(book.totalPages, book.publicationYear, book.editionNote, language, showTotalInProgress) {
+      buildList {
+        if (!showTotalInProgress) {
+          book.totalPages?.let { add(LocaleManager.formatInteger(it, language) + " p.") }
+        }
+        book.publicationYear?.let { add(it.toString()) }
+        book.editionNote?.takeIf { it.isNotBlank() }?.let { add(it) }
+      }
+    }
 
   if (isExpanded) {
     Row(
@@ -220,7 +223,7 @@ private fun FeaturedReadingShowcase(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
-        modifier = Modifier.width(220.dp),
+        modifier = Modifier.width(232.dp),
       )
       Column(
         modifier = Modifier.weight(1f),
@@ -228,7 +231,7 @@ private fun FeaturedReadingShowcase(
       ) {
         FeaturedBookDetails(
           book = book,
-          metadataLine = metadataLine,
+          metadataParts = metadataParts,
           progressPercent = progressPercent,
           currentPage = currentPage,
           language = language,
@@ -244,7 +247,7 @@ private fun FeaturedReadingShowcase(
         Modifier.fillMaxWidth()
           .clip(MaterialTheme.shapes.large)
           .clickable(onClick = onClick)
-          .padding(top = DipeSpacing.sm, bottom = DipeSpacing.md)
+          .padding(top = DipeSpacing.xs, bottom = DipeSpacing.md)
           .testTag("home_reading_book_${book.id}"),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -255,14 +258,14 @@ private fun FeaturedReadingShowcase(
         coverUri = book.coverUri,
         elevated = true,
         modifier =
-          Modifier.width(if (widthClass == WindowWidthClass.COMPACT) 196.dp else 220.dp),
+          Modifier.width(if (widthClass == WindowWidthClass.COMPACT) 212.dp else 232.dp),
       )
 
-      Spacer(modifier = Modifier.height(DipeSpacing.lg))
+      Spacer(modifier = Modifier.height(DipeSpacing.md))
 
       FeaturedBookDetails(
         book = book,
-        metadataLine = metadataLine,
+        metadataParts = metadataParts,
         progressPercent = progressPercent,
         currentPage = currentPage,
         language = language,
@@ -278,7 +281,7 @@ private fun FeaturedReadingShowcase(
 @Composable
 private fun FeaturedBookDetails(
   book: CatalogBook,
-  metadataLine: String,
+  metadataParts: List<String>,
   progressPercent: Float?,
   currentPage: Int?,
   language: AppLanguage,
@@ -304,25 +307,34 @@ private fun FeaturedBookDetails(
 
     Spacer(modifier = Modifier.height(DipeSpacing.xs))
 
-    Text(
-      text = book.author,
-      style = MaterialTheme.typography.titleMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = textAlign,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
-    )
-
-    if (metadataLine.isNotEmpty()) {
-      Spacer(modifier = Modifier.height(DipeSpacing.sm))
+    FlowRow(
+      horizontalArrangement =
+        Arrangement.spacedBy(
+          DipeSpacing.compact,
+          if (centered) Alignment.CenterHorizontally else Alignment.Start,
+        ),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+    ) {
       Text(
-        text = metadataLine,
-        style = DipeTheme.typography.monoMetadata,
+        text = book.author,
+        style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = textAlign,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.align(Alignment.CenterVertically),
       )
+      if (metadataParts.isNotEmpty()) {
+        Text(
+          text = metadataParts.joinToString(" · "),
+          style = DipeTheme.typography.monoMetadata,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = textAlign,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.align(Alignment.CenterVertically),
+        )
+      }
     }
 
     if (progressPercent != null) {

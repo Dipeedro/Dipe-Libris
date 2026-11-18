@@ -223,13 +223,18 @@ data class DipeSemanticColors(
   val selectedContent: Color,
   val readingProgress: Color,
   val readingProgressTrack: Color,
+  val navBarContainer: Color,
+  val navBarContent: Color,
+  val navBarContentMuted: Color,
   val controlBorder: Color,
   val dividerHairline: Color,
   val destructive: Color,
 )
 
-fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors =
-  DipeSemanticColors(
+fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors {
+  val isInkDark = scheme.background == InkColorScheme.background
+  val isSepia = scheme.background == SepiaColorScheme.background
+  return DipeSemanticColors(
     canvas = scheme.background,
     homeCanvas =
       if (scheme.background == PaperColorScheme.background) Color(0xFFF3EEE2)
@@ -244,10 +249,19 @@ fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors =
     selectedContent = scheme.onPrimary,
     readingProgress = scheme.secondary,
     readingProgressTrack = scheme.surfaceContainerHigh,
+    navBarContainer = if (isInkDark) Color(0xFF8C3B26) else scheme.secondary,
+    navBarContent = if (isInkDark) Color(0xFFFAF8F3) else scheme.onSecondary,
+    navBarContentMuted =
+      when {
+        isInkDark -> Color(0xFFEBDED4)
+        isSepia -> Color(0xFFE8DCC8)
+        else -> Color(0xFFF1E6DF)
+      },
     controlBorder = scheme.outline,
     dividerHairline = scheme.outlineVariant,
     destructive = scheme.error,
   )
+}
 
 val LocalDipeColors = staticCompositionLocalOf { resolveSemanticColors(PaperColorScheme) }
 

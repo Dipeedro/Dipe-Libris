@@ -24,8 +24,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -76,7 +76,6 @@ import com.example.core.designsystem.DipeElevation
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.WindowWidthClass
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.di.AppContainer
 import com.example.core.ui.dipeFactory
 import com.example.feature.diary.DiaryScreen
@@ -223,7 +222,7 @@ fun DipeNavigationShell(
       Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (isTopLevel && useRail) {
           NavigationRail(
-            containerColor = DipeTheme.colors.surfaceElevated,
+            containerColor = DipeTheme.colors.navBarContainer,
             windowInsets = WindowInsets(0, 0, 0, 0),
             modifier = Modifier.fillMaxHeight().testTag("dipe_navigation_rail"),
           ) {
@@ -245,7 +244,7 @@ fun DipeNavigationShell(
                           .height(18.dp)
                           .background(
                             color =
-                              if (selected) DipeTheme.colors.inkActionContainer
+                              if (selected) DipeTheme.colors.navBarContent
                               else Color.Transparent,
                             shape = CircleShape,
                           )
@@ -270,11 +269,11 @@ fun DipeNavigationShell(
                 },
                 colors =
                   NavigationRailItemDefaults.colors(
-                    selectedIconColor = DipeTheme.colors.textPrimary,
-                    selectedTextColor = DipeTheme.colors.textPrimary,
+                    selectedIconColor = DipeTheme.colors.navBarContent,
+                    selectedTextColor = DipeTheme.colors.navBarContent,
                     indicatorColor = Color.Transparent,
-                    unselectedIconColor = DipeTheme.colors.textSecondary,
-                    unselectedTextColor = DipeTheme.colors.textSecondary,
+                    unselectedIconColor = DipeTheme.colors.navBarContentMuted,
+                    unselectedTextColor = DipeTheme.colors.navBarContentMuted,
                   ),
                 modifier =
                   Modifier.padding(vertical = DipeSpacing.xs).testTag("nav_rail_${dest.routeKey}"),
@@ -580,25 +579,17 @@ private fun EditorialBottomNavBar(
   modifier: Modifier = Modifier,
 ) {
   val motion = DipeTheme.motion
-  Surface(
-    modifier = modifier.fillMaxWidth(),
-    color = DipeTheme.colors.surfaceElevated,
-    tonalElevation = DipeElevation.flat,
-    shadowElevation = DipeElevation.flat,
-  ) {
-    Column(
-      modifier =
-        Modifier.fillMaxWidth()
-          .windowInsetsPadding(
-            WindowInsets.navigationBars.union(
-              WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
-            )
-          )
+  Column(modifier = modifier.fillMaxWidth()) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      color = DipeTheme.colors.navBarContainer,
+      tonalElevation = DipeElevation.flat,
+      shadowElevation = DipeElevation.flat,
     ) {
-      HairlineDivider()
       Row(
         modifier =
           Modifier.fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .heightIn(min = 60.dp)
             .padding(horizontal = DipeSpacing.xs)
             .selectableGroup(),
@@ -614,7 +605,7 @@ private fun EditorialBottomNavBar(
               label = "nav_tab_indicator_${dest.routeKey}",
             )
           val contentColor =
-            if (selected) DipeTheme.colors.textPrimary else DipeTheme.colors.textSecondary
+            if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
           val labelStyle =
             if (selected) DipeTheme.typography.navBarLabelActive
             else DipeTheme.typography.navBarLabel
@@ -644,7 +635,7 @@ private fun EditorialBottomNavBar(
                     Modifier.width(24.dp * indicatorFraction)
                       .height(2.dp)
                       .background(
-                        color = DipeTheme.colors.inkActionContainer,
+                        color = DipeTheme.colors.navBarContent,
                         shape = CircleShape,
                       )
                 )
@@ -669,5 +660,11 @@ private fun EditorialBottomNavBar(
         }
       }
     }
+    Spacer(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(DipeTheme.colors.surfaceElevated)
+          .windowInsetsBottomHeight(WindowInsets.navigationBars)
+    )
   }
 }
