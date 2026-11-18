@@ -1,12 +1,15 @@
 package com.example.feature.library
 
 import android.os.Build
+import android.view.ViewGroup
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,7 +18,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -33,8 +40,10 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -46,26 +55,24 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,11 +81,19 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -91,7 +106,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import com.example.R
@@ -103,13 +121,15 @@ import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.model.ReadingProgressMath
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private const val PROGRESS_ANIM_DURATION_MS = 220
 private val ProgressAnimEasing = FastOutSlowInEasing
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickProgressSheet(
   bookTitle: String,
@@ -121,9 +141,10 @@ fun QuickProgressSheet(
   onSavePercent: (percent: Float, note: String?) -> Unit = { _, _ -> },
   onMarkFinished: (note: String?) -> Unit,
 ) {
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val language = LocalAppLanguage.current
   val reduceMotion = DipeTheme.motion.reduceMotion
+  val density = LocalDensity.current
+  val scope = rememberCoroutineScope()
 
   var currentPage by remember(initialPage) { mutableIntStateOf(initialPage.coerceAtLeast(0)) }
   var noteText by remember { mutableStateOf("") }
@@ -184,25 +205,148 @@ fun QuickProgressSheet(
         LocaleManager.formatInteger(it, language),
       )
     }
-  val maxPageDigits =
+  val maxPageText =
     remember(totalPages, livePreview.currentPage, language) {
-      val maxDisplay =
-        totalPages?.let { LocaleManager.formatInteger(it, language) }
-          ?: LocaleManager.formatInteger(livePreview.currentPage.coerceAtLeast(100), language)
-      maxDisplay.length.coerceAtLeast(3)
+      totalPages?.let { LocaleManager.formatInteger(it, language) }
+        ?: LocaleManager.formatInteger(livePreview.currentPage.coerceAtLeast(100), language)
     }
 
   val sheetBackgroundColor = DipeTheme.colors.surfaceElevated
   val isLightSheetBackground = sheetBackgroundColor.luminance() > 0.5f
 
-  ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
-    shape = TopSquircleShape(cornerRadius = 24.dp),
-    containerColor = sheetBackgroundColor,
-    tonalElevation = DipeElevation.flat,
-    contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+  // Reversible, interruptible sheet drag & backdrop state
+  val initialEnterOffsetPx = remember(reduceMotion, density) {
+    if (reduceMotion) 0f else with(density) { 180.dp.toPx() }
+  }
+  val offsetY = remember { Animatable(initialEnterOffsetPx) }
+  var sheetHeightPx by remember { mutableFloatStateOf(1f) }
+  var isClosing by remember { mutableStateOf(false) }
+  var lastNestedDragDeltaY by remember { mutableFloatStateOf(0f) }
+
+  LaunchedEffect(reduceMotion) {
+    if (reduceMotion) {
+      offsetY.snapTo(0f)
+    } else {
+      offsetY.animateTo(
+        targetValue = 0f,
+        animationSpec =
+          spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+          ),
+      )
+    }
+  }
+
+  val startClosingAnimation: () -> Unit = {
+    if (!isClosing) {
+      isClosing = true
+      scope.launch {
+        try {
+          if (reduceMotion) {
+            offsetY.snapTo(sheetHeightPx)
+          } else {
+            offsetY.animateTo(
+              targetValue = sheetHeightPx,
+              animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            )
+          }
+          onDismiss()
+        } catch (_: CancellationException) {
+          isClosing = false
+        }
+      }
+    }
+  }
+
+  val snapBackToOpen: () -> Unit = {
+    isClosing = false
+    scope.launch {
+      if (reduceMotion) {
+        offsetY.snapTo(0f)
+      } else {
+        offsetY.animateTo(
+          targetValue = 0f,
+          animationSpec =
+            spring(
+              dampingRatio = Spring.DampingRatioNoBouncy,
+              stiffness = Spring.StiffnessMediumLow,
+            ),
+        )
+      }
+    }
+  }
+
+  val evaluateRelease: (velocityY: Float, lastDeltaY: Float) -> Unit = { velocityY, lastDeltaY ->
+    val flingDownThresholdPx = with(density) { 400.dp.toPx() }
+    val flingUpThresholdPx = with(density) { -120.dp.toPx() }
+    val distanceThresholdPx = sheetHeightPx * 0.30f
+    val lastMoveWasUpward = lastDeltaY < 0f || velocityY < flingUpThresholdPx
+    val shouldClose =
+      !lastMoveWasUpward &&
+        (offsetY.value > distanceThresholdPx || velocityY > flingDownThresholdPx)
+    if (shouldClose) {
+      startClosingAnimation()
+    } else {
+      snapBackToOpen()
+    }
+  }
+
+  val sheetNestedScroll = remember(reduceMotion) {
+    object : NestedScrollConnection {
+      override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+        if (abs(available.y) > 0.5f) {
+          lastNestedDragDeltaY = available.y
+        }
+        val current = offsetY.value
+        if (available.y < 0f && current > 0f) {
+          val next = (current + available.y).coerceAtLeast(0f)
+          val consumedY = next - current
+          scope.launch { offsetY.snapTo(next) }
+          return Offset(0f, consumedY)
+        }
+        return Offset.Zero
+      }
+
+      override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource,
+      ): Offset {
+        if (source != NestedScrollSource.UserInput) return Offset.Zero
+        if (abs(available.y) > 0.5f) {
+          lastNestedDragDeltaY = available.y
+        }
+        if (available.y > 0f) {
+          val next = (offsetY.value + available.y).coerceAtLeast(0f)
+          scope.launch { offsetY.snapTo(next) }
+          return Offset(0f, available.y)
+        }
+        return Offset.Zero
+      }
+
+      override suspend fun onPreFling(available: Velocity): Velocity {
+        if (offsetY.value > 0f) {
+          evaluateRelease(available.y, lastNestedDragDeltaY)
+          lastNestedDragDeltaY = 0f
+          return available
+        }
+        lastNestedDragDeltaY = 0f
+        return Velocity.Zero
+      }
+    }
+  }
+
+  Dialog(
+    onDismissRequest = {},
+    properties =
+      DialogProperties(
+        dismissOnBackPress = false,
+        dismissOnClickOutside = false,
+        usePlatformDefaultWidth = false,
+        decorFitsSystemWindows = false,
+      ),
   ) {
     // Extend sheet background seamlessly behind Android's system navigation bar without gray scrim
     val dialogView = LocalView.current
@@ -211,13 +355,22 @@ fun QuickProgressSheet(
         val dialogWindow = (dialogView.parent as? DialogWindowProvider)?.window
         if (dialogWindow != null) {
           WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+          dialogWindow.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+          )
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             dialogWindow.isNavigationBarContrastEnforced = false
+            dialogWindow.isStatusBarContrastEnforced = false
             @Suppress("DEPRECATION")
             dialogWindow.navigationBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
           } else {
             @Suppress("DEPRECATION")
             dialogWindow.navigationBarColor = sheetBackgroundColor.toArgb()
+            @Suppress("DEPRECATION")
+            dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
           }
           WindowCompat.getInsetsController(dialogWindow, dialogView)
             .isAppearanceLightNavigationBars = isLightSheetBackground
@@ -225,241 +378,304 @@ fun QuickProgressSheet(
       }
     }
 
-    Column(
-      modifier =
-        Modifier.fillMaxWidth()
-          .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-          .verticalScroll(rememberScrollState())
-          .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm)
-          .testTag("quick_progress_sheet"),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-    ) {
-      // Sheet masthead
-      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-        Text(
-          text = stringResource(R.string.progress_sheet_title),
-          style = MaterialTheme.typography.headlineMedium,
-          color = DipeTheme.colors.textPrimary,
-        )
-        Text(
-          text = bookTitle,
-          style = MaterialTheme.typography.bodyMedium,
-          color = DipeTheme.colors.textSecondary,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
+    val dragFraction =
+      if (sheetHeightPx > 1f) (offsetY.value / sheetHeightPx).coerceIn(0f, 1f) else 0f
+    val scrimOpacity = (1f - dragFraction).coerceIn(0f, 1f)
 
-      // Borderless tonal Hero Visualizer featuring synchronized unified numbers + non-interactive progress track
-      Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = DipeTheme.colors.surfaceTonal,
-        tonalElevation = DipeElevation.flat,
-      ) {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.md),
-          verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
-          ) {
-            Row(
-              verticalAlignment = Alignment.Bottom,
-              modifier =
-                Modifier.clearAndSetSemantics {
-                  testTag = "progress_hero_percent"
-                  contentDescription = formattedPercent
-                },
-            ) {
-              UnifiedTabularNumber(
-                value = roundedPercent,
-                formattedValue = LocaleManager.formatInteger(roundedPercent, language),
-                maxChars = 3,
-                style = DipeTheme.typography.progressHeroNumber,
-                color = DipeTheme.colors.readingProgress,
-                reduceMotion = reduceMotion,
-              )
-              Text(
-                text = "%",
-                style = DipeTheme.typography.progressHeroNumber,
-                color = DipeTheme.colors.readingProgress,
-                maxLines = 1,
-                softWrap = false,
-              )
-            }
-
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier.padding(bottom = DipeSpacing.sm)
-                  .clearAndSetSemantics {
-                    testTag = "progress_hero_page"
-                    contentDescription =
-                      if (formattedTotalInline != null) {
-                        "$pageUnitLabel ${LocaleManager.formatInteger(livePreview.currentPage, language)} $formattedTotalInline"
-                      } else {
-                        "$pageUnitLabel ${LocaleManager.formatInteger(livePreview.currentPage, language)}"
-                      }
-                  },
-            ) {
-              Text(
-                text = "$pageUnitLabel ",
-                style = DipeTheme.typography.monoMetadata,
-                color = DipeTheme.colors.textSecondary,
-                maxLines = 1,
-                softWrap = false,
-              )
-              UnifiedTabularNumber(
-                value = livePreview.currentPage,
-                formattedValue = LocaleManager.formatInteger(livePreview.currentPage, language),
-                maxChars = maxPageDigits,
-                style = DipeTheme.typography.monoMetadata,
-                color = DipeTheme.colors.textSecondary,
-                reduceMotion = reduceMotion,
-              )
-              if (formattedTotalInline != null) {
-                Text(
-                  text = " $formattedTotalInline",
-                  style = DipeTheme.typography.monoMetadata,
-                  color = DipeTheme.colors.textSecondary,
-                  maxLines = 1,
-                  softWrap = false,
-                )
-              }
-            }
-          }
-
-          VisualOnlyProgressTrack(
-            progressPercent = livePreview.progressPercent,
-            currentPage = livePreview.currentPage,
-            reduceMotion = reduceMotion,
-          )
-        }
-      }
-
-      // Asymmetric hierarchy steppers: -1 and +1 prominent primary; -10 and +10 compact secondary
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        val steppers = listOf(-10, -1, 1, 10)
-        steppers.forEach { delta ->
-          val isPrimary = delta == -1 || delta == 1
-          val tagSuffix = if (delta < 0) "minus_${-delta}" else "plus_$delta"
-          val label = if (delta > 0) "+$delta" else delta.toString()
-          TonalStepperButton(
-            label = label,
-            isPrimary = isPrimary,
-            reduceMotion = reduceMotion,
-            onClick = { applyDelta(delta) },
-            modifier =
-              Modifier.weight(if (isPrimary) 1.35f else 0.75f)
-                .heightIn(min = if (isPrimary) 56.dp else 48.dp)
-                .testTag("progress_step_$tagSuffix"),
-          )
-        }
-      }
-
-      // Borderless tonal short note field
-      val fieldShape = RoundedCornerShape(14.dp)
-      val noteFieldBorderColor =
-        if (isNoteFieldFocused) DipeTheme.colors.readingProgress.copy(alpha = 0.45f)
-        else Color.Transparent
-      TextField(
-        value = noteText,
-        onValueChange = { noteText = it },
-        label = { Text(stringResource(R.string.progress_field_note)) },
-        maxLines = 2,
-        shape = fieldShape,
-        colors = borderlessFieldColors,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+    Box(modifier = Modifier.fillMaxSize()) {
+      // Backdrop scrim synchronized smoothly with sheet offsetY
+      Box(
         modifier =
-          Modifier.fillMaxWidth()
-            .border(width = 1.dp, color = noteFieldBorderColor, shape = fieldShape)
-            .onFocusChanged { isNoteFieldFocused = it.isFocused }
-            .testTag("progress_note_input"),
+          Modifier.fillMaxSize()
+            .graphicsLayer { alpha = scrimOpacity }
+            .background(Color.Black.copy(alpha = 0.36f))
+            .pointerInput(Unit) { detectTapGestures { startClosingAnimation() } },
       )
 
-      errorText?.let { message ->
-        Text(
-          text = message,
-          style = MaterialTheme.typography.bodySmall,
-          color = DipeTheme.colors.destructive,
-          modifier = Modifier.testTag("progress_validation_error"),
-        )
-      }
-
-      HairlineDivider()
-
-      // Column footer: secondary outlined "Finish reading" with check icon above full-width terracotta "Save"
-      Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+      // Bottom sheet aligned to absolute bottom edge
+      Box(
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
+        contentAlignment = Alignment.BottomCenter,
       ) {
-        OutlinedButton(
-          onClick = { showCompleteConfirmation = true },
-          shape = CircleShape,
-          border = BorderStroke(1.dp, DipeTheme.colors.controlBorder),
-          colors =
-            ButtonDefaults.outlinedButtonColors(
-              containerColor = Color.Transparent,
-              contentColor = DipeTheme.colors.textPrimary,
-            ),
-          contentPadding =
-            PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+        Surface(
           modifier =
-            Modifier.fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("progress_complete_button"),
+            Modifier.widthIn(max = 640.dp)
+              .fillMaxWidth()
+              .onSizeChanged { sheetHeightPx = it.height.toFloat().coerceAtLeast(1f) }
+              .graphicsLayer { translationY = offsetY.value.coerceAtLeast(0f) }
+              .pointerInput(Unit) {
+                awaitPointerEventScope {
+                  while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.type == PointerEventType.Press && isClosing) {
+                      isClosing = false
+                      scope.launch { offsetY.stop() }
+                    }
+                  }
+                }
+              }
+              .nestedScroll(sheetNestedScroll),
+          shape = TopSquircleShape(cornerRadius = 24.dp),
+          color = sheetBackgroundColor,
+          tonalElevation = DipeElevation.flat,
         ) {
-          Icon(
-            imageVector = Icons.Rounded.Check,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-          )
-          Spacer(modifier = Modifier.width(DipeSpacing.sm))
-          Text(
-            text = stringResource(R.string.progress_complete_short),
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-          )
-        }
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
+          ) {
+            // Dedicated drag handle area with touch-action: none semantics (consumes vertical drag)
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .heightIn(min = 38.dp)
+                  .testTag("quick_progress_drag_handle")
+                  .pointerInput(reduceMotion) {
+                    awaitEachGesture {
+                      val down = awaitFirstDown(requireUnconsumed = false)
+                      isClosing = false
+                      scope.launch { offsetY.stop() }
+                      var dragY = offsetY.value
+                      var lastDeltaY = 0f
+                      val velocityTracker = VelocityTracker()
+                      velocityTracker.addPosition(down.uptimeMillis, down.position)
+                      var activeId = down.id
 
-        Button(
-          onClick = {
-            val cleanNote = noteText.trim().takeIf { it.isNotEmpty() }
-            when {
-              currentPage < 0 -> errorText = invalidNegativeMsg
-              totalPages != null && currentPage > totalPages -> errorText = invalidExceedsMsg
-              else -> onSavePage(currentPage, cleanNote)
+                      while (true) {
+                        val event = awaitPointerEvent()
+                        val change =
+                          event.changes.firstOrNull { it.id == activeId }
+                            ?: event.changes.firstOrNull()
+                            ?: break
+                        activeId = change.id
+                        if (!change.pressed) {
+                          change.consume()
+                          break
+                        }
+                        val dy = change.positionChange().y
+                        if (abs(dy) > 0.5f) {
+                          lastDeltaY = dy
+                        }
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        change.consume()
+                        dragY = (dragY + dy).coerceAtLeast(0f)
+                        scope.launch { offsetY.snapTo(dragY) }
+                      }
+
+                      val velocityY = velocityTracker.calculateVelocity().y
+                      evaluateRelease(velocityY, lastDeltaY)
+                    }
+                  },
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.padding(top = 14.dp, bottom = 10.dp)
+                    .width(34.dp)
+                    .height(4.dp)
+                    .background(
+                      color = DipeTheme.colors.textSecondary.copy(alpha = 0.45f),
+                      shape = CircleShape,
+                    ),
+              )
             }
-          },
-          shape = CircleShape,
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = MaterialTheme.colorScheme.secondary,
-              contentColor = MaterialTheme.colorScheme.onSecondary,
-            ),
-          contentPadding =
-            PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
-          modifier =
-            Modifier.fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("progress_save_button"),
-        ) {
-          Text(
-            text = stringResource(R.string.book_save_action),
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-          )
+
+            Column(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .verticalScroll(rememberScrollState())
+                  .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.xs)
+                  .testTag("quick_progress_sheet"),
+              verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+            ) {
+              // Sheet masthead
+              Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+                Text(
+                  text = stringResource(R.string.progress_sheet_title),
+                  style = MaterialTheme.typography.headlineMedium,
+                  color = DipeTheme.colors.textPrimary,
+                )
+                Text(
+                  text = bookTitle,
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = DipeTheme.colors.textSecondary,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+
+              // Borderless tonal Hero Visualizer with flush-left percent + fixed-right page text + rounded bar
+              Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = DipeTheme.colors.surfaceTonal,
+                tonalElevation = DipeElevation.flat,
+              ) {
+                Column(
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.md),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom,
+                  ) {
+                    HeroPercentageDisplay(
+                      percent = roundedPercent,
+                      formattedDigits = LocaleManager.formatInteger(roundedPercent, language),
+                      accessibleText = formattedPercent,
+                      style = DipeTheme.typography.progressHeroNumber,
+                      color = DipeTheme.colors.readingProgress,
+                      reduceMotion = reduceMotion,
+                    )
+
+                    PageContextDisplay(
+                      currentPage = livePreview.currentPage,
+                      pagePrefix = pageUnitLabel,
+                      formattedPageDigits =
+                        LocaleManager.formatInteger(livePreview.currentPage, language),
+                      maxPageDigitsText = maxPageText,
+                      totalInlineSuffix = formattedTotalInline,
+                      style = DipeTheme.typography.monoMetadata,
+                      color = DipeTheme.colors.textSecondary,
+                      reduceMotion = reduceMotion,
+                      modifier = Modifier.weight(1f).padding(bottom = DipeSpacing.sm),
+                    )
+                  }
+
+                  VisualOnlyProgressTrack(
+                    progressPercent = livePreview.progressPercent,
+                    reduceMotion = reduceMotion,
+                  )
+                }
+              }
+
+              // Asymmetric hierarchy steppers: -1 and +1 prominent primary; -10 and +10 compact secondary
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                val steppers = listOf(-10, -1, 1, 10)
+                steppers.forEach { delta ->
+                  val isPrimary = delta == -1 || delta == 1
+                  val tagSuffix = if (delta < 0) "minus_${-delta}" else "plus_$delta"
+                  val label = if (delta > 0) "+$delta" else delta.toString()
+                  TonalStepperButton(
+                    label = label,
+                    isPrimary = isPrimary,
+                    reduceMotion = reduceMotion,
+                    onClick = { applyDelta(delta) },
+                    modifier =
+                      Modifier.weight(if (isPrimary) 1.35f else 0.75f)
+                        .heightIn(min = if (isPrimary) 56.dp else 48.dp)
+                        .testTag("progress_step_$tagSuffix"),
+                  )
+                }
+              }
+
+              // Borderless tonal short note field
+              val fieldShape = RoundedCornerShape(14.dp)
+              val noteFieldBorderColor =
+                if (isNoteFieldFocused) DipeTheme.colors.readingProgress.copy(alpha = 0.45f)
+                else Color.Transparent
+              TextField(
+                value = noteText,
+                onValueChange = { noteText = it },
+                label = { Text(stringResource(R.string.progress_field_note)) },
+                maxLines = 2,
+                shape = fieldShape,
+                colors = borderlessFieldColors,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .border(width = 1.dp, color = noteFieldBorderColor, shape = fieldShape)
+                    .onFocusChanged { isNoteFieldFocused = it.isFocused }
+                    .testTag("progress_note_input"),
+              )
+
+              errorText?.let { message ->
+                Text(
+                  text = message,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = DipeTheme.colors.destructive,
+                  modifier = Modifier.testTag("progress_validation_error"),
+                )
+              }
+
+              HairlineDivider()
+
+              // Column footer: secondary outlined "Finish reading" with check icon above full-width terracotta "Save"
+              Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+              ) {
+                OutlinedButton(
+                  onClick = { showCompleteConfirmation = true },
+                  shape = CircleShape,
+                  border = BorderStroke(1.dp, DipeTheme.colors.controlBorder),
+                  colors =
+                    ButtonDefaults.outlinedButtonColors(
+                      containerColor = Color.Transparent,
+                      contentColor = DipeTheme.colors.textPrimary,
+                    ),
+                  contentPadding =
+                    PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .heightIn(min = 48.dp)
+                      .testTag("progress_complete_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                  )
+                  Spacer(modifier = Modifier.width(DipeSpacing.sm))
+                  Text(
+                    text = stringResource(R.string.progress_complete_short),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                  )
+                }
+
+                Button(
+                  onClick = {
+                    val cleanNote = noteText.trim().takeIf { it.isNotEmpty() }
+                    when {
+                      currentPage < 0 -> errorText = invalidNegativeMsg
+                      totalPages != null && currentPage > totalPages -> errorText = invalidExceedsMsg
+                      else -> onSavePage(currentPage, cleanNote)
+                    }
+                  },
+                  shape = CircleShape,
+                  colors =
+                    ButtonDefaults.buttonColors(
+                      containerColor = MaterialTheme.colorScheme.secondary,
+                      contentColor = MaterialTheme.colorScheme.onSecondary,
+                    ),
+                  contentPadding =
+                    PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .heightIn(min = 48.dp)
+                      .testTag("progress_save_button"),
+                ) {
+                  Text(
+                    text = stringResource(R.string.book_save_action),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(DipeSpacing.sm))
+            }
+          }
         }
       }
-
-      Spacer(modifier = Modifier.height(DipeSpacing.sm))
     }
   }
 
@@ -520,56 +736,66 @@ fun QuickProgressSheet(
 }
 
 @Composable
-private fun UnifiedTabularNumber(
-  value: Int,
-  formattedValue: String,
-  maxChars: Int,
+private fun HeroPercentageDisplay(
+  percent: Int,
+  formattedDigits: String,
+  accessibleText: String,
   style: TextStyle,
   color: Color,
   reduceMotion: Boolean,
-  modifier: Modifier = Modifier,
 ) {
   val density = LocalDensity.current
   val textMeasurer = rememberTextMeasurer()
-  val tabularStyle = remember(style) { style.copy(fontFeatureSettings = "tnum") }
+  val liningTabularStyle = remember(style) { style.copy(fontFeatureSettings = "lnum, tnum") }
 
-  val slotMetrics =
-    remember(tabularStyle, textMeasurer) {
-      var maxWidthPx = 0
+  val metrics =
+    remember(liningTabularStyle, textMeasurer) {
+      var maxDigitWidthPx = 0
       var maxHeightPx = 0
       for (digit in 0..9) {
-        val result = textMeasurer.measure(text = digit.toString(), style = tabularStyle)
-        if (result.size.width > maxWidthPx) maxWidthPx = result.size.width
-        if (result.size.height > maxHeightPx) maxHeightPx = result.size.height
+        val res = textMeasurer.measure(text = digit.toString(), style = liningTabularStyle)
+        if (res.size.width > maxDigitWidthPx) maxDigitWidthPx = res.size.width
+        if (res.size.height > maxHeightPx) maxHeightPx = res.size.height
       }
-      val paddedWidthPx = ceil(maxWidthPx * 1.04f).toInt().coerceAtLeast(1)
-      paddedWidthPx to maxHeightPx.coerceAtLeast(1)
+      val pctRes = textMeasurer.measure(text = "%", style = liningTabularStyle)
+      if (pctRes.size.height > maxHeightPx) maxHeightPx = pctRes.size.height
+      val lineHeightPx = with(density) { liningTabularStyle.lineHeight.roundToPx() }
+      val cellWidthPx = ceil(maxDigitWidthPx * 1.02f).toInt().coerceAtLeast(1)
+      val fixedHeightPx = maxOf(maxHeightPx, lineHeightPx).coerceAtLeast(1)
+      val reservedWidthPx = cellWidthPx * 3 + pctRes.size.width + cellWidthPx / 4
+      Triple(cellWidthPx, fixedHeightPx, reservedWidthPx)
     }
 
-  val slotWidthDp = with(density) { slotMetrics.first.toDp() }
-  val slotHeightDp = with(density) { slotMetrics.second.toDp() }
-  val reservedCount = maxOf(maxChars, formattedValue.length)
-  val totalWidthDp = slotWidthDp * reservedCount
+  val cellWidthDp = with(density) { metrics.first.toDp() }
+  val fixedHeightDp = with(density) { metrics.second.toDp() }
+  val reservedWidthDp = with(density) { metrics.third.toDp() }
 
-  var previousValue by remember { mutableIntStateOf(value) }
-  val isIncreasing = value >= previousValue
-  SideEffect { previousValue = value }
+  var previousPercent by remember { mutableIntStateOf(percent) }
+  val isIncreasing = percent >= previousPercent
+  SideEffect { previousPercent = percent }
 
   Box(
-    modifier = modifier.width(totalWidthDp).height(slotHeightDp).clipToBounds(),
-    contentAlignment = Alignment.CenterEnd,
+    modifier =
+      Modifier.widthIn(min = reservedWidthDp)
+        .height(fixedHeightDp)
+        .clipToBounds()
+        .clearAndSetSemantics {
+          testTag = "progress_hero_percent"
+          contentDescription = accessibleText
+        },
+    contentAlignment = Alignment.CenterStart,
   ) {
     if (reduceMotion) {
-      FixedDigitColumns(
-        formattedValue = formattedValue,
-        slotWidthDp = slotWidthDp,
-        slotHeightDp = slotHeightDp,
-        style = tabularStyle,
+      HeroPercentRow(
+        digits = formattedDigits,
+        cellWidthDp = cellWidthDp,
+        fixedHeightDp = fixedHeightDp,
+        style = liningTabularStyle,
         color = color,
       )
     } else {
       AnimatedContent(
-        targetState = value to formattedValue,
+        targetState = percent to formattedDigits,
         transitionSpec = {
           val enter =
             slideInVertically(
@@ -591,13 +817,13 @@ private fun UnifiedTabularNumber(
               )
           (enter togetherWith exit).using(SizeTransform(clip = false))
         },
-        label = "unified_tabular_number",
-      ) { (_, targetFormatted) ->
-        FixedDigitColumns(
-          formattedValue = targetFormatted,
-          slotWidthDp = slotWidthDp,
-          slotHeightDp = slotHeightDp,
-          style = tabularStyle,
+        label = "unified_hero_percent",
+      ) { (_, targetDigits) ->
+        HeroPercentRow(
+          digits = targetDigits,
+          cellWidthDp = cellWidthDp,
+          fixedHeightDp = fixedHeightDp,
+          style = liningTabularStyle,
           color = color,
         )
       }
@@ -606,10 +832,175 @@ private fun UnifiedTabularNumber(
 }
 
 @Composable
-private fun FixedDigitColumns(
-  formattedValue: String,
-  slotWidthDp: androidx.compose.ui.unit.Dp,
-  slotHeightDp: androidx.compose.ui.unit.Dp,
+private fun HeroPercentRow(
+  digits: String,
+  cellWidthDp: androidx.compose.ui.unit.Dp,
+  fixedHeightDp: androidx.compose.ui.unit.Dp,
+  style: TextStyle,
+  color: Color,
+) {
+  Row(
+    horizontalArrangement = Arrangement.Start,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    digits.forEach { ch ->
+      Box(
+        modifier = Modifier.width(cellWidthDp).height(fixedHeightDp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = ch.toString(),
+          style = style,
+          color = color,
+          maxLines = 1,
+          softWrap = false,
+        )
+      }
+    }
+    Box(
+      modifier = Modifier.height(fixedHeightDp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = "%",
+        style = style,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
+  }
+}
+
+@Composable
+private fun PageContextDisplay(
+  currentPage: Int,
+  pagePrefix: String,
+  formattedPageDigits: String,
+  maxPageDigitsText: String,
+  totalInlineSuffix: String?,
+  style: TextStyle,
+  color: Color,
+  reduceMotion: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val density = LocalDensity.current
+  val textMeasurer = rememberTextMeasurer()
+  val liningTabularStyle = remember(style) { style.copy(fontFeatureSettings = "lnum, tnum") }
+
+  val metrics =
+    remember(liningTabularStyle, textMeasurer, pagePrefix, maxPageDigitsText) {
+      var maxDigitWidthPx = 0
+      var maxHeightPx = 0
+      for (digit in 0..9) {
+        val res = textMeasurer.measure(text = digit.toString(), style = liningTabularStyle)
+        if (res.size.width > maxDigitWidthPx) maxDigitWidthPx = res.size.width
+        if (res.size.height > maxHeightPx) maxHeightPx = res.size.height
+      }
+      val prefixRes = textMeasurer.measure(text = "$pagePrefix ", style = liningTabularStyle)
+      if (prefixRes.size.height > maxHeightPx) maxHeightPx = prefixRes.size.height
+      val lineHeightPx = with(density) { liningTabularStyle.lineHeight.roundToPx() }
+      val cellWidthPx = ceil(maxDigitWidthPx * 1.02f).toInt().coerceAtLeast(1)
+      val fixedHeightPx = maxOf(maxHeightPx, lineHeightPx).coerceAtLeast(1)
+      val reservedPrefixDigitsWidthPx =
+        prefixRes.size.width + cellWidthPx * maxPageDigitsText.length.coerceAtLeast(3)
+      Triple(cellWidthPx, fixedHeightPx, reservedPrefixDigitsWidthPx)
+    }
+
+  val cellWidthDp = with(density) { metrics.first.toDp() }
+  val fixedHeightDp = with(density) { metrics.second.toDp() }
+  val reservedPrefixDigitsWidthDp = with(density) { metrics.third.toDp() }
+
+  var previousPage by remember { mutableIntStateOf(currentPage) }
+  val isIncreasing = currentPage >= previousPage
+  SideEffect { previousPage = currentPage }
+
+  val fullAccessibleText =
+    if (totalInlineSuffix != null) "$pagePrefix $formattedPageDigits $totalInlineSuffix"
+    else "$pagePrefix $formattedPageDigits"
+
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.End,
+    modifier =
+      modifier.height(fixedHeightDp).clearAndSetSemantics {
+        testTag = "progress_hero_page"
+        contentDescription = fullAccessibleText
+      },
+  ) {
+    // Animate "p. X" right-aligned inside pre-reserved width so " de Y" stays completely stationary
+    // and there is always a single normal space between "p." and the number
+    Box(
+      modifier = Modifier.widthIn(min = reservedPrefixDigitsWidthDp).height(fixedHeightDp).clipToBounds(),
+      contentAlignment = Alignment.CenterEnd,
+    ) {
+      if (reduceMotion) {
+        PagePrefixDigitsRow(
+          prefix = pagePrefix,
+          digits = formattedPageDigits,
+          cellWidthDp = cellWidthDp,
+          fixedHeightDp = fixedHeightDp,
+          style = liningTabularStyle,
+          color = color,
+        )
+      } else {
+        AnimatedContent(
+          targetState = currentPage to formattedPageDigits,
+          transitionSpec = {
+            val enter =
+              slideInVertically(
+                animationSpec =
+                  tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
+              ) { height -> if (isIncreasing) height / 2 else -height / 2 } +
+                fadeIn(
+                  animationSpec =
+                    tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
+                )
+            val exit =
+              slideOutVertically(
+                animationSpec =
+                  tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
+              ) { height -> if (isIncreasing) -height / 2 else height / 2 } +
+                fadeOut(
+                  animationSpec =
+                    tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
+                )
+            (enter togetherWith exit).using(SizeTransform(clip = false))
+          },
+          label = "unified_page_context",
+        ) { (_, targetDigits) ->
+          PagePrefixDigitsRow(
+            prefix = pagePrefix,
+            digits = targetDigits,
+            cellWidthDp = cellWidthDp,
+            fixedHeightDp = fixedHeightDp,
+            style = liningTabularStyle,
+            color = color,
+          )
+        }
+      }
+    }
+
+    if (totalInlineSuffix != null) {
+      Box(modifier = Modifier.height(fixedHeightDp), contentAlignment = Alignment.Center) {
+        Text(
+          text = " $totalInlineSuffix",
+          style = liningTabularStyle,
+          color = color,
+          maxLines = 1,
+          softWrap = false,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun PagePrefixDigitsRow(
+  prefix: String,
+  digits: String,
+  cellWidthDp: androidx.compose.ui.unit.Dp,
+  fixedHeightDp: androidx.compose.ui.unit.Dp,
   style: TextStyle,
   color: Color,
 ) {
@@ -617,9 +1008,18 @@ private fun FixedDigitColumns(
     horizontalArrangement = Arrangement.End,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    formattedValue.forEach { ch ->
+    Box(modifier = Modifier.height(fixedHeightDp), contentAlignment = Alignment.Center) {
+      Text(
+        text = "$prefix ",
+        style = style,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
+    digits.forEach { ch ->
       Box(
-        modifier = Modifier.width(slotWidthDp).height(slotHeightDp),
+        modifier = Modifier.width(cellWidthDp).height(fixedHeightDp),
         contentAlignment = Alignment.Center,
       ) {
         Text(
@@ -637,7 +1037,6 @@ private fun FixedDigitColumns(
 @Composable
 private fun VisualOnlyProgressTrack(
   progressPercent: Float,
-  currentPage: Int,
   reduceMotion: Boolean,
 ) {
   val targetFraction = (progressPercent / 100f).coerceIn(0f, 1f)
@@ -650,86 +1049,32 @@ private fun VisualOnlyProgressTrack(
       label = "visual_track_fraction",
     )
 
-  val sheenProgress = remember { Animatable(0f) }
-  var lastAnimatedPage by remember { mutableIntStateOf(currentPage) }
-  LaunchedEffect(currentPage, reduceMotion) {
-    if (!reduceMotion && currentPage != lastAnimatedPage) {
-      lastAnimatedPage = currentPage
-      sheenProgress.snapTo(0f)
-      sheenProgress.animateTo(
-        targetValue = 1f,
-        animationSpec =
-          tween(durationMillis = PROGRESS_ANIM_DURATION_MS * 2, easing = ProgressAnimEasing),
-      )
-    } else {
-      lastAnimatedPage = currentPage
-    }
-  }
-
   val fillColor = DipeTheme.colors.readingProgress
   val trackBaseColor = DipeTheme.colors.textPrimary.copy(alpha = 0.12f)
-  val sheenTint = DipeTheme.colors.surfaceElevated.copy(alpha = 0.50f)
-  val markerCoreColor = DipeTheme.colors.surfaceElevated
   val density = LocalDensity.current
-  val markerRadiusDp = 5.5.dp
   val trackHeightDp = 5.dp
 
-  Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
+  Canvas(modifier = Modifier.fillMaxWidth().height(trackHeightDp)) {
     val trackHeightPx = with(density) { trackHeightDp.toPx() }
-    val markerRadiusPx = with(density) { markerRadiusDp.toPx() }
-    val centerY = size.height / 2f
-    val trackTop = centerY - trackHeightPx / 2f
     val corner = CornerRadius(trackHeightPx / 2f, trackHeightPx / 2f)
-    val usableSpanPx = (size.width - markerRadiusPx * 2f).coerceAtLeast(1f)
 
-    // Unfilled background track
+    // Gray/tonal track background
     drawRoundRect(
       color = trackBaseColor,
-      topLeft = Offset(0f, trackTop),
+      topLeft = Offset.Zero,
       size = Size(size.width, trackHeightPx),
       cornerRadius = corner,
     )
 
-    val markerX = markerRadiusPx + usableSpanPx * animatedFraction
-    val fillWidth = markerX.coerceIn(0f, size.width)
-
+    val fillWidth = (size.width * animatedFraction).coerceIn(0f, size.width)
     if (animatedFraction > 0.002f && fillWidth > 0f) {
       drawRoundRect(
         color = fillColor,
-        topLeft = Offset(0f, trackTop),
+        topLeft = Offset.Zero,
         size = Size(fillWidth, trackHeightPx),
         cornerRadius = corner,
       )
-
-      val sweep = sheenProgress.value
-      if (!reduceMotion && sweep > 0f && sweep < 1f) {
-        val glintWidth = (fillWidth * 0.42f).coerceAtLeast(trackHeightPx * 3f)
-        val glintStart = -glintWidth + (fillWidth + glintWidth * 1.4f) * sweep
-        drawRoundRect(
-          brush =
-            Brush.horizontalGradient(
-              colors = listOf(Color.Transparent, sheenTint, Color.Transparent),
-              startX = glintStart,
-              endX = glintStart + glintWidth,
-            ),
-          topLeft = Offset(0f, trackTop),
-          size = Size(fillWidth, trackHeightPx),
-          cornerRadius = corner,
-        )
-      }
     }
-
-    // Fixed visual endpoint marker on progress fill tip (no touch/drag interaction)
-    drawCircle(
-      color = fillColor,
-      radius = markerRadiusPx,
-      center = Offset(markerX, centerY),
-    )
-    drawCircle(
-      color = markerCoreColor,
-      radius = markerRadiusPx * 0.38f,
-      center = Offset(markerX, centerY),
-    )
   }
 }
 

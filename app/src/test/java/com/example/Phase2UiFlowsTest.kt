@@ -5,10 +5,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.down
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.moveBy
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -18,6 +22,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.up
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.core.data.local.db.DipeLibrisDatabase
@@ -225,7 +230,14 @@ class Phase2UiFlowsTest {
 
     // Stepper +1 moves page 50 -> 51 (and updates hero percentage 25% -> 26%)
     composeTestRule.onNodeWithTag("progress_step_plus_1").performScrollTo().performClick()
-    composeTestRule.onNodeWithTag("progress_hero_percent").assertIsDisplayed()
+    composeTestRule
+      .onNodeWithTag("progress_hero_percent")
+      .assertIsDisplayed()
+      .assertContentDescriptionEquals("26%")
+    composeTestRule
+      .onNodeWithTag("progress_hero_page")
+      .assertIsDisplayed()
+      .assertContentDescriptionEquals("p. 51 of 200")
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
     assertEquals(51, savedPage)
 
@@ -242,6 +254,51 @@ class Phase2UiFlowsTest {
     assertFalse(finishedCalled)
     composeTestRule.onNodeWithTag("progress_complete_confirm_button").performClick()
     assertTrue(finishedCalled)
+  }
+
+  @Test
+  @Config(qualifiers = "w360dp-h780dp")
+  fun quickProgressSheetDragCancelsOnUpwardReversalAndDismissesDownward() {
+    var dismissCount = 0
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          QuickProgressSheet(
+            bookTitle = "Vou te receitar outro gato",
+            initialPage = 5,
+            totalPages = 208,
+            initialPercent = 2.4f,
+            onDismiss = { dismissCount++ },
+            onSavePage = { _, _ -> },
+            onMarkFinished = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("quick_progress_sheet").assertIsDisplayed()
+
+    // Drag down past threshold and then reverse upward before releasing -> must NOT dismiss
+    composeTestRule.onNodeWithTag("quick_progress_drag_handle").performTouchInput {
+      down(center)
+      moveBy(Offset(0f, 320f))
+      moveBy(Offset(0f, -60f))
+      up()
+    }
+    composeTestRule.waitForIdle()
+    assertEquals(0, dismissCount)
+    composeTestRule.onNodeWithTag("quick_progress_sheet").assertIsDisplayed()
+
+    // Drag down past 30% cleanly and release downward -> must dismiss
+    composeTestRule.onNodeWithTag("quick_progress_drag_handle").performTouchInput {
+      down(center)
+      moveBy(Offset(0f, 400f))
+      up()
+    }
+    composeTestRule.waitUntil(timeoutMillis = 5_000) { dismissCount == 1 }
+    assertEquals(1, dismissCount)
   }
 
   @Test
