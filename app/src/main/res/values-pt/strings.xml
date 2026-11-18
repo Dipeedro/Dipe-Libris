@@ -3,7 +3,7 @@
     <string name="app_name" translatable="false">Dipe Libris</string>
 
     <!-- Navigation -->
-    <string name="nav_home">Início</string>
+    <string name="nav_home">Leitura</string>
     <string name="nav_library">Biblioteca</string>
     <string name="nav_diary">Diário</string>
     <string name="nav_statistics">Estatísticas</string>
@@ -41,7 +41,9 @@
     <string name="home_masthead_title">Leitura</string>
     <string name="home_masthead_empty_subtitle">Sua mesa de leitura</string>
     <string name="home_section_currently_reading">Em andamento</string>
+    <string name="home_section_also_reading">Também em leitura</string>
     <string name="home_section_recent_activity">Atividade recente</string>
+    <string name="cd_brand_seal" translatable="false">Dipe Libris</string>
     <string name="home_empty_reading_title">Nenhuma leitura em andamento</string>
     <string name="home_empty_reading_body">Marque uma obra como em leitura ou cadastre um novo livro.</string>
     <string name="home_empty_activity_title">Nenhuma atividade recente</string>
@@ -201,9 +203,20 @@
     <string name="progress_mode_page">Página</string>
     <string name="progress_mode_percent">Percentual</string>
     <string name="progress_field_page">Página atual</string>
+    <string name="progress_field_page_entry">Digitar página</string>
     <string name="progress_field_percent">Percentual (%)</string>
+    <string name="progress_field_percent_entry">Digitar percentual (%)</string>
     <string name="progress_field_note">Observação curta (opcional)</string>
+    <string name="progress_of_total_inline">de %1$s</string>
+    <string name="progress_page_unit">p.</string>
     <string name="progress_complete_action">Concluir leitura (100%)</string>
+    <string name="progress_complete_short">Concluir leitura</string>
+    <string name="progress_complete_confirm_title">Concluir leitura?</string>
+    <string name="progress_complete_confirm_message">Esta ação marca “%1$s” como concluída (100%%).</string>
+    <string name="progress_complete_confirm_action">Concluir</string>
+    <string name="progress_completed_snackbar">“%1$s” marcada como concluída.</string>
+    <string name="progress_updated_snackbar">Progresso atualizado.</string>
+    <string name="action_undo">Desfazer</string>
     <string name="progress_validation_page_negative">Informe uma página igual ou maior que 0.</string>
     <string name="progress_validation_page_exceeds">A página não pode ultrapassar %1$s nesta edição.</string>
     <string name="progress_validation_percent">Informe um percentual entre 0 e 100.</string>

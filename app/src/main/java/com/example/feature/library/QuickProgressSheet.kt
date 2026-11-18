@@ -1,36 +1,38 @@
 package com.example.feature.library
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,14 +41,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.core.designsystem.DipeElevation
+import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.LocalDipeTypography
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.components.EditorialProgressBar
+import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.model.ReadingProgressMath
@@ -57,7 +68,7 @@ enum class ProgressInputMode {
   PERCENT,
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickProgressSheet(
   bookTitle: String,
@@ -86,6 +97,7 @@ fun QuickProgressSheet(
   }
   var noteText by remember { mutableStateOf("") }
   var errorText by remember { mutableStateOf<String?>(null) }
+  var showCompleteConfirmation by remember { mutableStateOf(false) }
 
   val invalidNegativeMsg = stringResource(R.string.progress_validation_page_negative)
   val invalidPercentMsg = stringResource(R.string.progress_validation_percent)
@@ -122,18 +134,13 @@ fun QuickProgressSheet(
 
   val textFieldColors =
     OutlinedTextFieldDefaults.colors(
-      focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
-      unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-      focusedBorderColor = MaterialTheme.colorScheme.secondary,
-    )
-
-  val chipColors =
-    FilterChipDefaults.filterChipColors(
-      selectedContainerColor = MaterialTheme.colorScheme.primary,
-      selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-      containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-      labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+      focusedContainerColor = DipeTheme.colors.surfaceElevated,
+      unfocusedContainerColor = DipeTheme.colors.surfaceTonal,
+      unfocusedBorderColor = DipeTheme.colors.controlBorder,
+      focusedBorderColor = DipeTheme.colors.inkActionContainer,
+      focusedLabelColor = DipeTheme.colors.textPrimary,
+      unfocusedLabelColor = DipeTheme.colors.textSecondary,
+      cursorColor = DipeTheme.colors.inkActionContainer,
     )
 
   val applyDelta: (Int) -> Unit = { delta ->
@@ -158,7 +165,9 @@ fun QuickProgressSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
     properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
-    containerColor = MaterialTheme.colorScheme.surface,
+    shape = RoundedCornerShape(topStart = DipeRadii.surface, topEnd = DipeRadii.surface),
+    containerColor = DipeTheme.colors.surfaceElevated,
+    tonalElevation = DipeElevation.flat,
   ) {
     Column(
       modifier =
@@ -169,127 +178,208 @@ fun QuickProgressSheet(
           .testTag("quick_progress_sheet"),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
+      // Sheet masthead
+      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
         Text(
           text = stringResource(R.string.progress_sheet_title),
-          style = MaterialTheme.typography.headlineLarge,
-          color = MaterialTheme.colorScheme.onSurface,
+          style = MaterialTheme.typography.headlineMedium,
+          color = DipeTheme.colors.textPrimary,
         )
         Text(
           text = bookTitle,
           style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = DipeTheme.colors.textSecondary,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
         )
       }
 
-      // Segmented Page / Percent toggle
-      Row(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-        FilterChip(
-          selected = mode == ProgressInputMode.PAGE,
-          onClick = {
-            if (mode != ProgressInputMode.PAGE) {
-              val currentPct = valueText.toFloatOrNull() ?: livePreview.progressPercent
-              val converted =
-                ReadingProgressMath.calculateFromPercent(
-                  percent = currentPct.coerceIn(0f, 100f),
-                  totalPages = totalPages,
-                  fallbackPage = initialPage,
-                )
-              mode = ProgressInputMode.PAGE
-              valueText = converted.currentPage.toString()
-              errorText = null
-            }
-          },
-          label = { Text(stringResource(R.string.progress_mode_page)) },
-          shape = CircleShape,
-          colors = chipColors,
-          border =
-            FilterChipDefaults.filterChipBorder(
-              enabled = true,
-              selected = mode == ProgressInputMode.PAGE,
-              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-              borderWidth = 0.5.dp,
-            ),
-          modifier = Modifier.testTag("progress_mode_page"),
-        )
-        FilterChip(
-          selected = mode == ProgressInputMode.PERCENT,
-          onClick = {
-            if (mode != ProgressInputMode.PERCENT) {
-              val currentPg = valueText.toIntOrNull() ?: livePreview.currentPage
-              val converted =
-                ReadingProgressMath.calculateFromPage(
-                  page = currentPg.coerceAtLeast(0),
-                  totalPages = totalPages,
-                  fallbackPercent = initialPercent,
-                )
-              mode = ProgressInputMode.PERCENT
-              valueText = converted.progressPercent.roundToInt().toString()
-              errorText = null
-            }
-          },
-          label = { Text(stringResource(R.string.progress_mode_percent)) },
-          shape = CircleShape,
-          colors = chipColors,
-          border =
-            FilterChipDefaults.filterChipBorder(
-              enabled = true,
-              selected = mode == ProgressInputMode.PERCENT,
-              borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-              borderWidth = 0.5.dp,
-            ),
-          modifier = Modifier.testTag("progress_mode_percent"),
-        )
-      }
-
-      // Synchronized readout + progress bar
-      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
+      // Single-datum Hero Readout + Terracotta progress bar
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = DipeTheme.colors.surfaceTonal,
+        border = BorderStroke(0.5.dp, DipeTheme.colors.dividerHairline),
+        tonalElevation = DipeElevation.flat,
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(DipeSpacing.md),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
         ) {
-          val pageSummary =
-            if (totalPages != null) {
-              stringResource(
-                R.string.journey_page_of_total,
-                LocaleManager.formatInteger(livePreview.currentPage, language),
-                LocaleManager.formatInteger(totalPages, language),
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+          ) {
+            if (mode == ProgressInputMode.PAGE) {
+              Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+              ) {
+                Text(
+                  text = LocaleManager.formatInteger(livePreview.currentPage, language),
+                  style = DipeTheme.typography.progressHeroNumber,
+                  color = DipeTheme.colors.textPrimary,
+                )
+                val contextSuffix =
+                  if (totalPages != null) {
+                    stringResource(
+                      R.string.progress_of_total_inline,
+                      LocaleManager.formatInteger(totalPages, language),
+                    )
+                  } else {
+                    stringResource(R.string.progress_page_unit)
+                  }
+                Text(
+                  text = contextSuffix,
+                  style = MaterialTheme.typography.titleMedium,
+                  color = DipeTheme.colors.textSecondary,
+                  modifier = Modifier.padding(bottom = DipeSpacing.sm),
+                )
+              }
+              Text(
+                text = LocaleManager.formatPercent(livePreview.progressPercent, language),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = DipeTheme.colors.readingProgress,
+                modifier = Modifier.padding(bottom = DipeSpacing.sm),
               )
             } else {
-              stringResource(
-                R.string.journey_page_only,
-                LocaleManager.formatInteger(livePreview.currentPage, language),
+              Text(
+                text = LocaleManager.formatPercent(livePreview.progressPercent, language),
+                style = DipeTheme.typography.progressHeroNumber,
+                color = DipeTheme.colors.readingProgress,
               )
+              if (totalPages != null) {
+                Text(
+                  text =
+                    stringResource(
+                      R.string.journey_page_of_total,
+                      LocaleManager.formatInteger(livePreview.currentPage, language),
+                      LocaleManager.formatInteger(totalPages, language),
+                    ),
+                  style = DipeTheme.typography.monoMetadata,
+                  color = DipeTheme.colors.textSecondary,
+                  modifier = Modifier.padding(bottom = DipeSpacing.sm),
+                )
+              }
             }
-          Text(
-            text = pageSummary,
-            style = LocalDipeTypography.current.monoMetadata,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Text(
-            text = LocaleManager.formatPercent(livePreview.progressPercent, language),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.secondary,
+          }
+          EditorialProgressBar(
+            progressPercent = livePreview.progressPercent,
+            height = 4.dp,
           )
         }
-        EditorialProgressBar(
-          progressPercent = livePreview.progressPercent,
-          height = 4.dp,
-        )
       }
 
+      // Unified Ink segmented mode control (Page | Percent)
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = DipeTheme.colors.surfaceElevated,
+        border = BorderStroke(1.dp, DipeTheme.colors.controlBorder),
+        tonalElevation = DipeElevation.flat,
+      ) {
+        Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
+          val pageSelected = mode == ProgressInputMode.PAGE
+          val percentSelected = mode == ProgressInputMode.PERCENT
+
+          Box(
+            modifier =
+              Modifier.weight(1f)
+                .heightIn(min = 48.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .background(
+                  if (pageSelected) DipeTheme.colors.inkActionContainer else Color.Transparent
+                )
+                .selectable(
+                  selected = pageSelected,
+                  onClick = {
+                    if (!pageSelected) {
+                      val currentPct = valueText.toFloatOrNull() ?: livePreview.progressPercent
+                      val converted =
+                        ReadingProgressMath.calculateFromPercent(
+                          percent = currentPct.coerceIn(0f, 100f),
+                          totalPages = totalPages,
+                          fallbackPage = initialPage,
+                        )
+                      mode = ProgressInputMode.PAGE
+                      valueText = converted.currentPage.toString()
+                      errorText = null
+                    }
+                  },
+                  role = Role.Tab,
+                )
+                .padding(horizontal = DipeSpacing.compact)
+                .testTag("progress_mode_page"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = stringResource(R.string.progress_mode_page),
+              style = MaterialTheme.typography.labelLarge,
+              color =
+                if (pageSelected) DipeTheme.colors.inkActionContent
+                else DipeTheme.colors.textPrimary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+
+          Box(
+            modifier =
+              Modifier.weight(1f)
+                .heightIn(min = 48.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .background(
+                  if (percentSelected) DipeTheme.colors.inkActionContainer else Color.Transparent
+                )
+                .selectable(
+                  selected = percentSelected,
+                  onClick = {
+                    if (!percentSelected) {
+                      val currentPg = valueText.toIntOrNull() ?: livePreview.currentPage
+                      val converted =
+                        ReadingProgressMath.calculateFromPage(
+                          page = currentPg.coerceAtLeast(0),
+                          totalPages = totalPages,
+                          fallbackPercent = initialPercent,
+                        )
+                      mode = ProgressInputMode.PERCENT
+                      valueText = converted.progressPercent.roundToInt().toString()
+                      errorText = null
+                    }
+                  },
+                  role = Role.Tab,
+                )
+                .padding(horizontal = DipeSpacing.compact)
+                .testTag("progress_mode_percent"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = stringResource(R.string.progress_mode_percent),
+              style = MaterialTheme.typography.labelLarge,
+              color =
+                if (percentSelected) DipeTheme.colors.inkActionContent
+                else DipeTheme.colors.textPrimary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+
+      // Numeric entry field
       OutlinedTextField(
         value = valueText,
         onValueChange = { input ->
-          valueText = input.filter { it.isDigit() || (mode == ProgressInputMode.PERCENT && it == '.') }.take(6)
+          valueText =
+            input.filter { it.isDigit() || (mode == ProgressInputMode.PERCENT && it == '.') }.take(6)
           errorText = null
         },
         label = {
           Text(
             stringResource(
-              if (mode == ProgressInputMode.PAGE) R.string.progress_field_page
-              else R.string.progress_field_percent
+              if (mode == ProgressInputMode.PAGE) R.string.progress_field_page_entry
+              else R.string.progress_field_percent_entry
             )
           )
         },
@@ -300,34 +390,42 @@ fun QuickProgressSheet(
         keyboardOptions =
           KeyboardOptions(
             keyboardType =
-              if (mode == ProgressInputMode.PAGE) KeyboardType.Number
-              else KeyboardType.Decimal
+              if (mode == ProgressInputMode.PAGE) KeyboardType.Number else KeyboardType.Decimal,
+            imeAction = ImeAction.Next,
           ),
         modifier = Modifier.fillMaxWidth().testTag("progress_value_input"),
       )
 
-      // Quick steppers
-      FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      // 4 symmetric quick steppers (-10, -1, +1, +10), >= 48x48 dp each
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
       ) {
-        val steppers = listOf(-10, -1, 1, 5, 10)
+        val steppers = listOf(-10, -1, 1, 10)
         steppers.forEach { delta ->
           val tagSuffix = if (delta < 0) "minus_${-delta}" else "plus_$delta"
           val label = if (delta > 0) "+$delta" else delta.toString()
           OutlinedButton(
             onClick = { applyDelta(delta) },
-            shape = CircleShape,
-            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            shape = MaterialTheme.shapes.medium,
+            border = BorderStroke(1.dp, DipeTheme.colors.controlBorder),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = DipeTheme.colors.textPrimary),
+            contentPadding = PaddingValues(horizontal = DipeSpacing.xs, vertical = DipeSpacing.sm),
             modifier =
-              Modifier.minimumInteractiveComponentSize().testTag("progress_step_$tagSuffix"),
+              Modifier.weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("progress_step_$tagSuffix"),
           ) {
-            Text(text = label, style = LocalDipeTypography.current.monoMetadata)
+            Text(
+              text = label,
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+            )
           }
         }
       }
 
+      // Consistent short note field
       OutlinedTextField(
         value = noteText,
         onValueChange = { noteText = it },
@@ -335,6 +433,7 @@ fun QuickProgressSheet(
         maxLines = 2,
         shape = MaterialTheme.shapes.medium,
         colors = textFieldColors,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         modifier = Modifier.fillMaxWidth().testTag("progress_note_input"),
       )
 
@@ -342,75 +441,142 @@ fun QuickProgressSheet(
         Text(
           text = message,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
+          color = DipeTheme.colors.destructive,
           modifier = Modifier.testTag("progress_validation_error"),
         )
       }
 
-      OutlinedButton(
-        onClick = { onMarkFinished(noteText.trim().takeIf { it.isNotEmpty() }) },
-        shape = CircleShape,
-        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f)),
-        contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.sm),
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .testTag("progress_complete_button"),
-      ) {
-        Text(
-          text = stringResource(R.string.progress_complete_action),
-          style = MaterialTheme.typography.labelLarge,
-          color = MaterialTheme.colorScheme.secondary,
-        )
+      HairlineDivider()
+
+      // Separated secondary completion trigger & primary Save / Cancel footer
+      Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
+        TextButton(
+          onClick = { showCompleteConfirmation = true },
+          contentPadding = PaddingValues(horizontal = DipeSpacing.sm, vertical = DipeSpacing.xs),
+          modifier =
+            Modifier.align(Alignment.Start)
+              .heightIn(min = 48.dp)
+              .testTag("progress_complete_button"),
+        ) {
+          Text(
+            text = stringResource(R.string.progress_complete_short),
+            style = MaterialTheme.typography.labelLarge,
+            color = DipeTheme.colors.textPrimary,
+          )
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          TextButton(
+            onClick = onDismiss,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("progress_cancel_button"),
+          ) {
+            Text(
+              text = stringResource(R.string.book_cancel_action),
+              style = MaterialTheme.typography.labelLarge,
+              color = DipeTheme.colors.textSecondary,
+            )
+          }
+          Spacer(modifier = Modifier.width(DipeSpacing.sm))
+          Button(
+            onClick = {
+              val cleanNote = noteText.trim().takeIf { it.isNotEmpty() }
+              when (mode) {
+                ProgressInputMode.PAGE -> {
+                  val parsedPage = valueText.trim().toIntOrNull()
+                  when {
+                    parsedPage == null || parsedPage < 0 -> errorText = invalidNegativeMsg
+                    totalPages != null && parsedPage > totalPages -> errorText = invalidExceedsMsg
+                    else -> onSavePage(parsedPage, cleanNote)
+                  }
+                }
+                ProgressInputMode.PERCENT -> {
+                  val parsedPct = valueText.trim().toFloatOrNull()
+                  if (parsedPct == null || parsedPct < 0f || parsedPct > 100f) {
+                    errorText = invalidPercentMsg
+                  } else {
+                    onSavePercent(parsedPct, cleanNote)
+                  }
+                }
+              }
+            },
+            shape = MaterialTheme.shapes.medium,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = DipeTheme.colors.inkActionContainer,
+                contentColor = DipeTheme.colors.inkActionContent,
+              ),
+            contentPadding =
+              PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+            modifier = Modifier.heightIn(min = 48.dp).testTag("progress_save_button"),
+          ) {
+            Text(
+              text = stringResource(R.string.book_save_action),
+              style = MaterialTheme.typography.labelLarge,
+            )
+          }
+        }
       }
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-      ) {
-        TextButton(
-          onClick = onDismiss,
-          modifier = Modifier.minimumInteractiveComponentSize().testTag("progress_cancel_button"),
-        ) {
-          Text(stringResource(R.string.book_cancel_action))
-        }
-        Spacer(modifier = Modifier.width(DipeSpacing.sm))
+      Spacer(modifier = Modifier.height(DipeSpacing.sm))
+    }
+  }
+
+  if (showCompleteConfirmation) {
+    AlertDialog(
+      onDismissRequest = { showCompleteConfirmation = false },
+      shape = MaterialTheme.shapes.large,
+      containerColor = DipeTheme.colors.surfaceElevated,
+      title = {
+        Text(
+          text = stringResource(R.string.progress_complete_confirm_title),
+          style = MaterialTheme.typography.headlineSmall,
+          color = DipeTheme.colors.textPrimary,
+        )
+      },
+      text = {
+        Text(
+          text = stringResource(R.string.progress_complete_confirm_message, bookTitle),
+          style = MaterialTheme.typography.bodyMedium,
+          color = DipeTheme.colors.textSecondary,
+        )
+      },
+      confirmButton = {
         Button(
           onClick = {
-            val cleanNote = noteText.trim().takeIf { it.isNotEmpty() }
-            when (mode) {
-              ProgressInputMode.PAGE -> {
-                val parsedPage = valueText.trim().toIntOrNull()
-                when {
-                  parsedPage == null || parsedPage < 0 -> errorText = invalidNegativeMsg
-                  totalPages != null && parsedPage > totalPages -> errorText = invalidExceedsMsg
-                  else -> onSavePage(parsedPage, cleanNote)
-                }
-              }
-              ProgressInputMode.PERCENT -> {
-                val parsedPct = valueText.trim().toFloatOrNull()
-                if (parsedPct == null || parsedPct < 0f || parsedPct > 100f) {
-                  errorText = invalidPercentMsg
-                } else {
-                  onSavePercent(parsedPct, cleanNote)
-                }
-              }
-            }
+            showCompleteConfirmation = false
+            onMarkFinished(noteText.trim().takeIf { it.isNotEmpty() })
           },
-          shape = CircleShape,
+          shape = MaterialTheme.shapes.medium,
           colors =
             ButtonDefaults.buttonColors(
-              containerColor = MaterialTheme.colorScheme.secondary,
-              contentColor = MaterialTheme.colorScheme.onSecondary,
+              containerColor = DipeTheme.colors.inkActionContainer,
+              contentColor = DipeTheme.colors.inkActionContent,
             ),
-          contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm),
-          modifier = Modifier.minimumInteractiveComponentSize().testTag("progress_save_button"),
+          modifier = Modifier.heightIn(min = 48.dp).testTag("progress_complete_confirm_button"),
         ) {
-          Text(stringResource(R.string.book_save_action))
+          Text(
+            text = stringResource(R.string.progress_complete_confirm_action),
+            style = MaterialTheme.typography.labelLarge,
+          )
         }
-      }
-
-      Spacer(modifier = Modifier.height(DipeSpacing.lg))
-    }
+      },
+      dismissButton = {
+        TextButton(
+          onClick = { showCompleteConfirmation = false },
+          modifier = Modifier.heightIn(min = 48.dp).testTag("progress_complete_cancel_button"),
+        ) {
+          Text(
+            text = stringResource(R.string.book_cancel_action),
+            style = MaterialTheme.typography.labelLarge,
+            color = DipeTheme.colors.textSecondary,
+          )
+        }
+      },
+      modifier = Modifier.testTag("progress_complete_confirm_dialog"),
+    )
   }
 }

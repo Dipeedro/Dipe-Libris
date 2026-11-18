@@ -1,39 +1,69 @@
 package com.example.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -41,9 +71,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.R
+import com.example.core.designsystem.DipeElevation
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.LocalDipeMotion
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.WindowWidthClass
+import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.di.AppContainer
 import com.example.core.ui.dipeFactory
 import com.example.feature.diary.DiaryScreen
@@ -63,6 +96,7 @@ import com.example.feature.settings.SettingsScreen
 import com.example.feature.settings.SettingsViewModel
 import com.example.feature.statistics.StatisticsScreen
 import com.example.feature.statistics.StatisticsViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun DipeNavigationShell(
@@ -72,7 +106,39 @@ fun DipeNavigationShell(
   val navController = rememberNavController()
   val navBackStackEntry by navController.currentBackStackEntryAsState()
   val currentDestination = navBackStackEntry?.destination
-  val motion = LocalDipeMotion.current
+  val motion = DipeTheme.motion
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  val snackbarHostState = remember { SnackbarHostState() }
+  val progressUpdatedMessage = stringResource(R.string.progress_updated_snackbar)
+  val undoLabel = stringResource(R.string.action_undo)
+
+  val showProgressUpdatedSnackbar: () -> Unit = {
+    scope.launch {
+      snackbarHostState.currentSnackbarData?.dismiss()
+      snackbarHostState.showSnackbar(
+        message = progressUpdatedMessage,
+        duration = SnackbarDuration.Short,
+      )
+    }
+  }
+
+  val showCompletionUndoSnackbar: (bookTitle: String, onUndo: () -> Unit) -> Unit =
+    { bookTitle, onUndo ->
+      val message = context.resources.getString(R.string.progress_completed_snackbar, bookTitle)
+      scope.launch {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        val result =
+          snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = undoLabel,
+            duration = SnackbarDuration.Long,
+          )
+        if (result == SnackbarResult.ActionPerformed) {
+          onUndo()
+        }
+      }
+    }
 
   val homeViewModel: HomeViewModel =
     viewModel(
@@ -131,59 +197,36 @@ fun DipeNavigationShell(
     val useRail = widthClass != WindowWidthClass.COMPACT
 
     Scaffold(
-      containerColor = MaterialTheme.colorScheme.background,
+      containerColor = DipeTheme.colors.canvas,
       contentWindowInsets = WindowInsets.safeDrawing,
+      snackbarHost = {
+        SnackbarHost(hostState = snackbarHostState) { data ->
+          Snackbar(
+            snackbarData = data,
+            shape = MaterialTheme.shapes.medium,
+            containerColor = DipeTheme.colors.inkActionContainer,
+            contentColor = DipeTheme.colors.inkActionContent,
+            actionColor = DipeTheme.colors.inkActionContent,
+          )
+        }
+      },
       bottomBar = {
         if (isTopLevel && !useRail) {
-          NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 0.dp,
-          ) {
-            val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
-            TopLevelDestination.entries.forEach { dest ->
-              val selected = currentDestination?.hasRoute(dest.route::class) == true
-              val label = stringResource(dest.labelRes)
-              NavigationBarItem(
-                selected = selected,
-                onClick = { navigateToTopLevel(dest) },
-                icon = {
-                  Icon(
-                    imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                    contentDescription = label,
-                  )
-                },
-                label = {
-                  Text(
-                    text = label,
-                    style = navLabelStyle,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                  )
-                },
-                colors =
-                  NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.secondary,
-                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                  ),
-                modifier = Modifier.testTag("nav_tab_${dest.routeKey}"),
-              )
-            }
-          }
+          EditorialBottomNavBar(
+            currentDestination = currentDestination,
+            onNavigate = navigateToTopLevel,
+          )
         }
       },
     ) { innerPadding ->
       Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (isTopLevel && useRail) {
           NavigationRail(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = DipeTheme.colors.surfaceElevated,
             windowInsets = WindowInsets(0, 0, 0, 0),
             modifier = Modifier.fillMaxHeight().testTag("dipe_navigation_rail"),
           ) {
-            val navLabelStyle = com.example.core.designsystem.LocalDipeTypography.current.navBarLabel
+            Spacer(modifier = Modifier.height(DipeSpacing.md))
             TopLevelDestination.entries.forEach { dest ->
               val selected = currentDestination?.hasRoute(dest.route::class) == true
               val label = stringResource(dest.labelRes)
@@ -191,34 +234,53 @@ fun DipeNavigationShell(
                 selected = selected,
                 onClick = { navigateToTopLevel(dest) },
                 icon = {
-                  Icon(
-                    imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                    contentDescription = label,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+                  ) {
+                    Box(
+                      modifier =
+                        Modifier.width(2.5.dp)
+                          .height(18.dp)
+                          .background(
+                            color =
+                              if (selected) DipeTheme.colors.inkActionContainer
+                              else Color.Transparent,
+                            shape = CircleShape,
+                          )
+                    )
+                    Icon(
+                      imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                      contentDescription = label,
+                      modifier = Modifier.size(22.dp),
+                    )
+                  }
                 },
                 label = {
                   Text(
                     text = label,
-                    style = navLabelStyle,
+                    style =
+                      if (selected) DipeTheme.typography.navBarLabelActive
+                      else DipeTheme.typography.navBarLabel,
                     maxLines = 1,
                     softWrap = false,
-                    overflow = TextOverflow.Clip,
+                    overflow = TextOverflow.Ellipsis,
                   )
                 },
                 colors =
                   NavigationRailItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.secondary,
-                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    selectedIconColor = DipeTheme.colors.textPrimary,
+                    selectedTextColor = DipeTheme.colors.textPrimary,
+                    indicatorColor = Color.Transparent,
+                    unselectedIconColor = DipeTheme.colors.textSecondary,
+                    unselectedTextColor = DipeTheme.colors.textSecondary,
                   ),
                 modifier =
                   Modifier.padding(vertical = DipeSpacing.xs).testTag("nav_rail_${dest.routeKey}"),
               )
             }
           }
-          VerticalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+          VerticalDivider(thickness = 0.5.dp, color = DipeTheme.colors.dividerHairline)
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -238,11 +300,20 @@ fun DipeNavigationShell(
                 onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
                 onUpdateProgressByPage = { book, page, note ->
                   homeViewModel.updateProgressByPage(book = book, page = page, note = note)
+                  showProgressUpdatedSnackbar()
                 },
                 onUpdateProgressByPercent = { book, percent, note ->
                   homeViewModel.updateProgressByPercent(book = book, percent = percent, note = note)
+                  showProgressUpdatedSnackbar()
                 },
                 onCompleteReading = { book -> homeViewModel.completeReading(book) },
+                onCompleteReadingWithUndo = { book, note ->
+                  homeViewModel.completeReadingWithUndo(book = book, note = note) { snapshot ->
+                    showCompletionUndoSnackbar(book.title) {
+                      homeViewModel.undoCompletion(snapshot)
+                    }
+                  }
+                },
               )
             }
 
@@ -432,6 +503,21 @@ fun DipeNavigationShell(
                 onPauseJourney = bookDetailViewModel::pauseJourney,
                 onResumeJourney = bookDetailViewModel::resumeJourney,
                 onCompleteJourney = bookDetailViewModel::completeJourney,
+                onCompleteJourneyWithUndo = { sessionId, note ->
+                  val loadedTitle =
+                    (bookDetailState as? com.example.feature.library.BookDetailUiState.Loaded)
+                      ?.detail
+                      ?.work
+                      ?.title
+                      .orEmpty()
+                  bookDetailViewModel.completeJourneyWithUndo(sessionId = sessionId, note = note) {
+                    snapshot ->
+                    showCompletionUndoSnackbar(loadedTitle) {
+                      bookDetailViewModel.restoreCompletion(snapshot)
+                    }
+                  }
+                },
+                onProgressUpdated = showProgressUpdatedSnackbar,
                 onSwitchActiveCopy = bookDetailViewModel::switchActiveCopy,
               )
             }
@@ -483,5 +569,104 @@ fun DipeNavigationShell(
         }
       },
     )
+  }
+}
+
+@Composable
+private fun EditorialBottomNavBar(
+  currentDestination: NavDestination?,
+  onNavigate: (TopLevelDestination) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val motion = DipeTheme.motion
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    color = DipeTheme.colors.surfaceElevated,
+    tonalElevation = DipeElevation.flat,
+    shadowElevation = DipeElevation.flat,
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .windowInsetsPadding(
+            WindowInsets.navigationBars.union(
+              WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+            )
+          )
+    ) {
+      HairlineDivider()
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .padding(horizontal = DipeSpacing.xs)
+            .selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        TopLevelDestination.entries.forEach { dest ->
+          val selected = currentDestination?.hasRoute(dest.route::class) == true
+          val label = stringResource(dest.labelRes)
+          val indicatorFraction by
+            animateFloatAsState(
+              targetValue = if (selected) 1f else 0f,
+              animationSpec = motion.standardTween(180),
+              label = "nav_tab_indicator_${dest.routeKey}",
+            )
+          val contentColor =
+            if (selected) DipeTheme.colors.textPrimary else DipeTheme.colors.textSecondary
+          val labelStyle =
+            if (selected) DipeTheme.typography.navBarLabelActive
+            else DipeTheme.typography.navBarLabel
+
+          Column(
+            modifier =
+              Modifier.weight(1f)
+                .defaultMinSize(minWidth = 48.dp, minHeight = 56.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .selectable(
+                  selected = selected,
+                  onClick = { onNavigate(dest) },
+                  role = Role.Tab,
+                )
+                .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.xs)
+                .testTag("nav_tab_${dest.routeKey}"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs, Alignment.CenterVertically),
+          ) {
+            Box(
+              modifier = Modifier.height(2.dp).fillMaxWidth(),
+              contentAlignment = Alignment.Center,
+            ) {
+              if (indicatorFraction > 0.01f) {
+                Box(
+                  modifier =
+                    Modifier.width(24.dp * indicatorFraction)
+                      .height(2.dp)
+                      .background(
+                        color = DipeTheme.colors.inkActionContainer,
+                        shape = CircleShape,
+                      )
+                )
+              }
+            }
+            Icon(
+              imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+              contentDescription = label,
+              tint = contentColor,
+              modifier = Modifier.size(22.dp),
+            )
+            Text(
+              text = label,
+              style = labelStyle,
+              color = contentColor,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+              textAlign = TextAlign.Center,
+            )
+          }
+        }
+      }
+    }
   }
 }

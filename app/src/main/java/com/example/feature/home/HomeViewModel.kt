@@ -3,6 +3,7 @@ package com.example.feature.home
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.data.repository.JourneyCompletionSnapshot
 import com.example.core.data.repository.LibraryRepository
 import com.example.core.data.repository.ReadingJourneyRepository
 import com.example.core.data.repository.StatisticsRepository
@@ -90,5 +91,27 @@ class HomeViewModel(
         book.activeSessionId ?: journeyRepo.startJourney(book.id, book.primaryCopy?.id)
       journeyRepo.completeJourney(sessionId)
     }
+  }
+
+  fun completeReadingWithUndo(
+    book: CatalogBook,
+    note: String? = null,
+    onCompleted: (JourneyCompletionSnapshot) -> Unit,
+  ) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch {
+      val sessionId =
+        book.activeSessionId ?: journeyRepo.startJourney(book.id, book.primaryCopy?.id)
+      val snapshot =
+        journeyRepo.completeJourneyWithUndoSnapshot(sessionId = sessionId, note = note)
+      if (snapshot != null) {
+        onCompleted(snapshot)
+      }
+    }
+  }
+
+  fun undoCompletion(snapshot: JourneyCompletionSnapshot) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch { journeyRepo.restoreJourneyCompletion(snapshot) }
   }
 }

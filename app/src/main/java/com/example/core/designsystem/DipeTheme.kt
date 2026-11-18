@@ -78,7 +78,10 @@ fun DipeLibrisTheme(
     }
   }
 
+  val semanticColors = remember(colorScheme) { resolveSemanticColors(colorScheme) }
+
   CompositionLocalProvider(
+    LocalDipeColors provides semanticColors,
     LocalDipeTypography provides typographyExtensions,
     LocalDipeMotion provides motionConfig,
     LocalDipeBrandTokens provides brandTokens,
@@ -91,6 +94,20 @@ fun DipeLibrisTheme(
       content = content,
     )
   }
+}
+
+object DipeTheme {
+  val colors: DipeSemanticColors
+    @Composable get() = LocalDipeColors.current
+
+  val typography: DipeTypographyExtensions
+    @Composable get() = LocalDipeTypography.current
+
+  val brand: DipeBrandTokens
+    @Composable get() = LocalDipeBrandTokens.current
+
+  val motion: DipeMotionConfig
+    @Composable get() = LocalDipeMotion.current
 }
 
 /**

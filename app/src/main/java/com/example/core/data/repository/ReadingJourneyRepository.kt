@@ -11,6 +11,21 @@ import com.example.core.data.local.db.ReadingSessionEntity
 import com.example.core.model.ReadingProgressMath
 import com.example.core.model.ReadingStatus
 
+data class JourneyCompletionSnapshot(
+  val sessionId: Long,
+  val workId: Long,
+  val copyId: Long?,
+  val previousSessionStatus: ReadingStatus,
+  val previousWorkStatus: ReadingStatus,
+  val previousPage: Int,
+  val previousPercent: Float,
+  val previousTotalPagesSnapshot: Int?,
+  val previousEndEpochMillis: Long?,
+  val previousPausedAtEpochMillis: Long?,
+  val previousAccumulatedPausedMillis: Long,
+  val createdLogId: Long?,
+)
+
 interface ReadingJourneyRepository {
   suspend fun startJourney(workId: Long, copyId: Long?, notes: String? = null): Long
 
@@ -35,6 +50,13 @@ interface ReadingJourneyRepository {
   suspend fun resumeJourney(sessionId: Long)
 
   suspend fun completeJourney(sessionId: Long, note: String? = null)
+
+  suspend fun completeJourneyWithUndoSnapshot(
+    sessionId: Long,
+    note: String? = null,
+  ): JourneyCompletionSnapshot?
+
+  suspend fun restoreJourneyCompletion(snapshot: JourneyCompletionSnapshot)
 
   suspend fun abandonJourney(sessionId: Long)
 
@@ -271,9 +293,17 @@ class RoomReadingJourneyRepository(
   }
 
   override suspend fun completeJourney(sessionId: Long, note: String?) {
+    completeJourneyWithUndoSnapshot(sessionId = sessionId, note = note)
+  }
+
+  override suspend fun completeJourneyWithUndoSnapshot(
+    sessionId: Long,
+    note: String?,
+  ): JourneyCompletionSnapshot? =
     runInTransaction {
       val now = System.currentTimeMillis()
-      val session = journeyDao.getSessionById(sessionId) ?: return@runInTransaction
+      val session = journeyDao.getSessionById(sessionId) ?: return@runInTransaction null
+      val work = bookDao.getWorkById(session.workId)
       val copy = session.copyId?.let { copyDao.getCopyById(it) }
       val edition = copy?.let { editionDao.getEditionById(it.editionId) }
       val totalPages =
@@ -294,20 +324,60 @@ class RoomReadingJourneyRepository(
           accumulatedPausedMillis = session.accumulatedPausedMillis + pauseDelta,
         )
       )
-      journeyDao.insertProgressLog(
-        ReadingProgressLogEntity(
-          sessionId = session.id,
-          recordedAtEpochMillis = now,
-          pageNumber = totalPages,
-          progressPercent = 100f,
-          deltaPages = deltaPages,
-          note = note?.trim()?.takeIf { it.isNotEmpty() },
+      val logId =
+        journeyDao.insertProgressLog(
+          ReadingProgressLogEntity(
+            sessionId = session.id,
+            recordedAtEpochMillis = now,
+            pageNumber = totalPages,
+            progressPercent = 100f,
+            deltaPages = deltaPages,
+            note = note?.trim()?.takeIf { it.isNotEmpty() },
+          )
         )
-      )
       if (copy != null && totalPages != null) {
         copyDao.updateCopyCurrentPage(copy.id, finalPage)
       }
       bookDao.updateWorkStatus(session.workId, ReadingStatus.FINISHED, now)
+
+      JourneyCompletionSnapshot(
+        sessionId = session.id,
+        workId = session.workId,
+        copyId = session.copyId,
+        previousSessionStatus = session.status,
+        previousWorkStatus = work?.status ?: session.status,
+        previousPage = session.currentPage,
+        previousPercent = session.progressPercent,
+        previousTotalPagesSnapshot = session.totalPagesSnapshot,
+        previousEndEpochMillis = session.endEpochMillis,
+        previousPausedAtEpochMillis = session.pausedAtEpochMillis,
+        previousAccumulatedPausedMillis = session.accumulatedPausedMillis,
+        createdLogId = logId,
+      )
+    }
+
+  override suspend fun restoreJourneyCompletion(snapshot: JourneyCompletionSnapshot) {
+    runInTransaction {
+      val now = System.currentTimeMillis()
+      val currentSession = journeyDao.getSessionById(snapshot.sessionId) ?: return@runInTransaction
+      journeyDao.updateSession(
+        currentSession.copy(
+          status = snapshot.previousSessionStatus,
+          currentPage = snapshot.previousPage,
+          totalPagesSnapshot = snapshot.previousTotalPagesSnapshot,
+          progressPercent = snapshot.previousPercent,
+          endEpochMillis = snapshot.previousEndEpochMillis,
+          pausedAtEpochMillis = snapshot.previousPausedAtEpochMillis,
+          accumulatedPausedMillis = snapshot.previousAccumulatedPausedMillis,
+        )
+      )
+      snapshot.createdLogId?.let { logId ->
+        journeyDao.deleteProgressLogById(logId)
+      }
+      snapshot.copyId?.let { copyId ->
+        copyDao.updateCopyCurrentPage(copyId, snapshot.previousPage)
+      }
+      bookDao.updateWorkStatus(snapshot.workId, snapshot.previousWorkStatus, now)
     }
   }
 

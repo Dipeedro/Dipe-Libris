@@ -121,6 +121,10 @@ fun BookDetailScreen(
   onPauseJourney: (Long) -> Unit = {},
   onResumeJourney: (Long) -> Unit = {},
   onCompleteJourney: (Long) -> Unit = {},
+  onCompleteJourneyWithUndo: (sessionId: Long, note: String?) -> Unit = { id, _ ->
+    onCompleteJourney(id)
+  },
+  onProgressUpdated: () -> Unit = {},
   onSwitchActiveCopy: (sessionId: Long, copyId: Long) -> Unit = { _, _ -> },
 ) {
   val language = LocalAppLanguage.current
@@ -908,13 +912,15 @@ fun BookDetailScreen(
           onSavePage = { page, note ->
             onUpdateProgressByPage(activeJourney.session.id, page, note)
             showQuickProgressSheet = false
+            onProgressUpdated()
           },
           onSavePercent = { percent, note ->
             onUpdateProgressByPercent(activeJourney.session.id, percent, note)
             showQuickProgressSheet = false
+            onProgressUpdated()
           },
-          onMarkFinished = {
-            onCompleteJourney(activeJourney.session.id)
+          onMarkFinished = { note ->
+            onCompleteJourneyWithUndo(activeJourney.session.id, note)
             showQuickProgressSheet = false
           },
         )

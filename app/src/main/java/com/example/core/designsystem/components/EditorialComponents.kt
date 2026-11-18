@@ -1,6 +1,8 @@
 package com.example.core.designsystem.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,16 +40,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.model.ReadingStatus
 
@@ -56,8 +69,101 @@ fun HairlineDivider(modifier: Modifier = Modifier) {
   HorizontalDivider(
     modifier = modifier,
     thickness = 0.5.dp,
-    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+    color = DipeTheme.colors.dividerHairline,
   )
+}
+
+/**
+ * Circular monochrome colophon seal combining a capital 'D' with a bound book & open page.
+ * Strictly monochrome via DipeBrandTokens, independent from Paper/Ink/Sepia reading themes.
+ */
+@Composable
+fun DipeBrandSeal(
+  modifier: Modifier = Modifier,
+  size: Dp = 36.dp,
+  contentDescription: String? = null,
+) {
+  val brand = DipeTheme.brand
+  val cdModifier =
+    if (contentDescription != null) {
+      Modifier.semantics {
+        this.contentDescription = contentDescription
+        this.role = Role.Image
+      }
+    } else {
+      Modifier
+    }
+
+  Canvas(modifier = modifier.size(size).then(cdModifier)) {
+    val w = this.size.width
+    val h = this.size.height
+    val radius = minOf(w, h) * 0.5f
+
+    // Monochrome circular disc + hairline perimeter ring
+    drawCircle(color = brand.badgeContainer, radius = radius)
+    drawCircle(
+      color = brand.badgeBorder,
+      radius = radius - 0.5.dp.toPx(),
+      style = Stroke(width = 1.dp.toPx()),
+    )
+
+    // Normalize 24x24 vector space inside the seal
+    val unit = minOf(w, h) / 24f
+    val strokeW = (1.65f * unit).coerceAtLeast(1.2.dp.toPx())
+    val thinStrokeW = (1.15f * unit).coerceAtLeast(0.9.dp.toPx())
+
+    // Book-D silhouette: left bound spine + D-curved outer cover
+    val dBookPath =
+      Path().apply {
+        moveTo(7.4f * unit, 6.4f * unit)
+        lineTo(11.6f * unit, 6.4f * unit)
+        cubicTo(
+          15.7f * unit,
+          6.4f * unit,
+          17.8f * unit,
+          8.7f * unit,
+          17.8f * unit,
+          12.0f * unit,
+        )
+        cubicTo(
+          17.8f * unit,
+          15.3f * unit,
+          15.7f * unit,
+          17.6f * unit,
+          11.6f * unit,
+          17.6f * unit,
+        )
+        lineTo(7.4f * unit, 17.6f * unit)
+        close()
+      }
+
+    drawPath(
+      path = dBookPath,
+      color = brand.badgeContent,
+      style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+
+    // Spine crease + turning inner page line referencing a bound book
+    drawLine(
+      color = brand.badgeContent,
+      start = Offset(9.8f * unit, 6.7f * unit),
+      end = Offset(9.8f * unit, 17.3f * unit),
+      strokeWidth = thinStrokeW,
+      cap = StrokeCap.Round,
+    )
+    val pageLeafPath =
+      Path().apply {
+        moveTo(9.8f * unit, 8.6f * unit)
+        lineTo(13.6f * unit, 9.6f * unit)
+        lineTo(13.6f * unit, 14.4f * unit)
+        lineTo(9.8f * unit, 15.4f * unit)
+      }
+    drawPath(
+      path = pageLeafPath,
+      color = brand.badgeContent,
+      style = Stroke(width = thinStrokeW, cap = StrokeCap.Round, join = StrokeJoin.Round),
+    )
+  }
 }
 
 /**
@@ -397,11 +503,17 @@ fun readingStatusAccentColor(status: ReadingStatus): Color =
 fun EditorialProgressBar(
   progressPercent: Float,
   modifier: Modifier = Modifier,
-  height: androidx.compose.ui.unit.Dp = 3.dp,
-  fillColor: Color = MaterialTheme.colorScheme.secondary,
-  trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+  height: Dp = 3.dp,
+  fillColor: Color = DipeTheme.colors.readingProgress,
+  trackColor: Color = DipeTheme.colors.readingProgressTrack,
 ) {
-  val fraction = (progressPercent / 100f).coerceIn(0f, 1f)
+  val targetFraction = (progressPercent / 100f).coerceIn(0f, 1f)
+  val animatedFraction by
+    animateFloatAsState(
+      targetValue = targetFraction,
+      animationSpec = DipeTheme.motion.standardTween(200),
+      label = "editorial_progress_fraction",
+    )
   Box(
     modifier =
       modifier
@@ -410,10 +522,10 @@ fun EditorialProgressBar(
         .clip(CircleShape)
         .background(trackColor),
   ) {
-    if (fraction > 0f) {
+    if (animatedFraction > 0f) {
       Box(
         modifier =
-          Modifier.fillMaxWidth(fraction)
+          Modifier.fillMaxWidth(animatedFraction)
             .fillMaxHeight()
             .clip(CircleShape)
             .background(fillColor),

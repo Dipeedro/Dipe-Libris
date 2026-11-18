@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.data.local.media.CoverStorageManager
 import com.example.core.data.repository.DiaryRepository
+import com.example.core.data.repository.JourneyCompletionSnapshot
 import com.example.core.data.repository.LibraryRepository
 import com.example.core.data.repository.ReadingJourneyRepository
 import com.example.core.model.BookCopy
@@ -330,6 +331,26 @@ class BookDetailViewModel(
   fun completeJourney(sessionId: Long) {
     val journeyRepo = readingJourneyRepository ?: return
     viewModelScope.launch { journeyRepo.completeJourney(sessionId) }
+  }
+
+  fun completeJourneyWithUndo(
+    sessionId: Long,
+    note: String? = null,
+    onCompleted: (JourneyCompletionSnapshot) -> Unit,
+  ) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch {
+      val snapshot =
+        journeyRepo.completeJourneyWithUndoSnapshot(sessionId = sessionId, note = note)
+      if (snapshot != null) {
+        onCompleted(snapshot)
+      }
+    }
+  }
+
+  fun restoreCompletion(snapshot: JourneyCompletionSnapshot) {
+    val journeyRepo = readingJourneyRepository ?: return
+    viewModelScope.launch { journeyRepo.restoreJourneyCompletion(snapshot) }
   }
 
   fun abandonJourney(sessionId: Long) {

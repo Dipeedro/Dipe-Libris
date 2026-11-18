@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,11 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.example.core.data.local.db.DipeLibrisDatabase
+import com.example.core.data.repository.RoomLibraryRepository
+import com.example.core.data.repository.RoomReadingJourneyRepository
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.localization.LocalAppLanguage
@@ -34,6 +40,8 @@ import com.example.core.model.ReadingJourneySummary
 import com.example.core.model.ReadingSession
 import com.example.core.model.ReadingStatus
 import com.example.core.model.Work
+import com.example.feature.home.HomeScreen
+import com.example.feature.home.HomeUiState
 import com.example.feature.library.AddBookSheet
 import com.example.feature.library.AddBookSubmission
 import com.example.feature.library.BookDetailScreen
@@ -42,7 +50,11 @@ import com.example.feature.library.LibraryScreen
 import com.example.feature.library.LibraryUiState
 import com.example.feature.library.QuickProgressSheet
 import com.example.feature.statistics.StatisticsScreen
+import com.example.navigation.DipeNavigationShell
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -196,20 +208,29 @@ class Phase2UiFlowsTest {
       }
     }
 
-    // Stepper +5 moves page 50 -> 55
-    composeTestRule.onNodeWithTag("progress_step_plus_5").performScrollTo().performClick()
+    // 4 symmetric steppers (-10, -1, +1, +10), without +5
+    composeTestRule.onNodeWithTag("progress_step_plus_5").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("progress_step_minus_10").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("progress_step_minus_1").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("progress_step_plus_10").performScrollTo().assertIsDisplayed()
+
+    // Stepper +1 moves page 50 -> 51
+    composeTestRule.onNodeWithTag("progress_step_plus_1").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
-    assertEquals(55, savedPage)
+    assertEquals(51, savedPage)
 
     // Exceeding page count displays validation error
-    composeTestRule.onNodeWithTag("progress_value_input").performTextClearance()
+    composeTestRule.onNodeWithTag("progress_value_input").performScrollTo().performTextClearance()
     composeTestRule.onNodeWithTag("progress_value_input").performTextInput("999")
     composeTestRule.onNodeWithTag("progress_save_button").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("progress_validation_error").assertIsDisplayed()
 
-    // Switching to Percent mode converts and renders cleanly
-    composeTestRule.onNodeWithTag("progress_mode_percent").performClick()
+    // Switching to Percent mode and completing requires confirmation dialog
+    composeTestRule.onNodeWithTag("progress_mode_percent").performScrollTo().performClick()
     composeTestRule.onNodeWithTag("progress_complete_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("progress_complete_confirm_dialog").assertIsDisplayed()
+    assertFalse(finishedCalled)
+    composeTestRule.onNodeWithTag("progress_complete_confirm_button").performClick()
     assertTrue(finishedCalled)
   }
 
@@ -384,5 +405,181 @@ class Phase2UiFlowsTest {
     composeTestRule.onNodeWithTag("statistics_pages_read").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("statistics_completed_journeys").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("statistics_rereads").performScrollTo().assertIsDisplayed()
+  }
+
+  @Test
+  @Config(qualifiers = "w360dp-h780dp")
+  fun homeScreenRendersEmptySingleAndMultiBookStatesWithBrandSealAndProgressSheet() {
+    val bookOne =
+      CatalogBook(
+        work = Work(id = 1L, title = "Dom Casmurro", author = "Machado de Assis", status = ReadingStatus.READING),
+        primaryEdition = Edition(id = 10L, workId = 1L, totalPages = 208, publicationYear = 2022, isPrimary = true),
+        primaryCopy = BookCopy(id = 20L, editionId = 10L, currentPage = 116),
+        activeSessionId = 50L,
+        activeProgressPercent = 55.8f,
+        activeCurrentPage = 116,
+        activeTotalPages = 208,
+      )
+    val bookTwo =
+      CatalogBook(
+        work = Work(id = 2L, title = "Memórias Póstumas", author = "Machado de Assis", status = ReadingStatus.READING),
+        primaryEdition = Edition(id = 11L, workId = 2L, totalPages = 320, publicationYear = 2019, isPrimary = true),
+        primaryCopy = BookCopy(id = 21L, editionId = 11L, currentPage = 80),
+        activeSessionId = 51L,
+        activeProgressPercent = 25f,
+        activeCurrentPage = 80,
+        activeTotalPages = 320,
+      )
+
+    var uiState by mutableStateOf(HomeUiState())
+    composeTestRule.setContent {
+      val baseContext = androidx.compose.ui.platform.LocalContext.current
+      val ptContext =
+        com.example.core.localization.LocaleManager.createLocalizedContext(
+          baseContext,
+          AppLanguage.PORTUGUESE_BR,
+        )
+      CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalContext provides ptContext,
+        LocalAppLanguage provides AppLanguage.PORTUGUESE_BR,
+      ) {
+        DipeLibrisTheme {
+          HomeScreen(
+            uiState = uiState,
+            widthClass = WindowWidthClass.COMPACT,
+            onOpenBook = {},
+          )
+        }
+      }
+    }
+
+    // Empty state shows brand seal and empty stage without text logo clutter
+    composeTestRule.onNodeWithTag("home_brand_seal").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("home_empty_stage").assertIsDisplayed()
+    composeTestRule.onNodeWithText("DL", ignoreCase = true).assertDoesNotExist()
+    composeTestRule.onNodeWithText("Dipe Libris", ignoreCase = true).assertDoesNotExist()
+
+    // Single book showcase shows metadata, progress label, and opens QuickProgressSheet
+    uiState =
+      HomeUiState(
+        currentlyReading = listOf(bookOne),
+        snapshot = ArchiveSnapshot(readingCount = 1),
+      )
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("home_reading_book_1").assertIsDisplayed()
+    composeTestRule
+      .onNodeWithTag("home_featured_progress_label", useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule
+      .onNodeWithTag("home_lazy_column")
+      .performScrollToNode(hasTestTag("home_update_progress_button"))
+    composeTestRule.onNodeWithTag("home_update_progress_button").performClick()
+    composeTestRule.onNodeWithTag("quick_progress_sheet").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("progress_cancel_button").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("quick_progress_sheet").assertDoesNotExist()
+
+    // Multi-book state displays secondary horizontal reading strip
+    uiState =
+      HomeUiState(
+        currentlyReading = listOf(bookOne, bookTwo),
+        snapshot = ArchiveSnapshot(readingCount = 2),
+      )
+    composeTestRule.waitForIdle()
+    composeTestRule
+      .onNodeWithTag("home_lazy_column")
+      .performScrollToNode(hasTestTag("home_reading_book_2"))
+    composeTestRule.onNodeWithTag("home_reading_book_2").assertIsDisplayed()
+  }
+
+  @Test
+  fun bottomNavigationUsesConsistentReadingLabelInEnglishAndPortuguese() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val container = com.example.core.di.DefaultAppContainer(context)
+    var language by mutableStateOf(AppLanguage.PORTUGUESE_BR)
+
+    composeTestRule.setContent {
+      val localizedContext =
+        com.example.core.localization.LocaleManager.createLocalizedContext(context, language)
+      CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalContext provides localizedContext,
+        LocalAppLanguage provides language,
+      ) {
+        DipeLibrisTheme {
+          DipeNavigationShell(container = container)
+        }
+      }
+    }
+
+    composeTestRule.onNodeWithTag("nav_tab_home").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Início").assertDoesNotExist()
+    composeTestRule.onNodeWithText("Biblioteca").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Estatísticas").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Perfil").assertIsDisplayed()
+
+    language = AppLanguage.ENGLISH
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Home").assertDoesNotExist()
+    composeTestRule.onNodeWithText("Library").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Statistics").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Profile").assertIsDisplayed()
+  }
+
+  @Test
+  fun roomReadingJourneyCompleteWithUndoSnapshotRestoresPreviousProgress() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db =
+      Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java)
+        .allowMainThreadQueries()
+        .build()
+
+    val libraryRepo =
+      RoomLibraryRepository(
+        bookDao = db.bookDao(),
+        shelfDao = db.shelfDao(),
+        editionDao = db.editionDao(),
+        copyDao = db.copyDao(),
+        readingJourneyDao = db.readingJourneyDao(),
+        database = db,
+      )
+    val journeyRepo =
+      RoomReadingJourneyRepository(
+        bookDao = db.bookDao(),
+        editionDao = db.editionDao(),
+        copyDao = db.copyDao(),
+        journeyDao = db.readingJourneyDao(),
+        database = db,
+      )
+
+    val workId =
+      libraryRepo.addBook(
+        title = "A Hora da Estrela",
+        author = "Clarice Lispector",
+        totalPages = 208,
+        publicationYear = 1977,
+        editionNote = "Rocco",
+        status = ReadingStatus.READING,
+      )
+    val initialDetail = libraryRepo.observeBookDetail(workId).first()!!
+    val copyId = initialDetail.editions.first().copies.first().id
+    val sessionId = journeyRepo.startJourney(workId = workId, copyId = copyId)
+    journeyRepo.updateProgressByPage(sessionId = sessionId, page = 116)
+
+    val beforeComplete = libraryRepo.observeBookDetail(workId).first()!!
+    val snapshot = journeyRepo.completeJourneyWithUndoSnapshot(sessionId = sessionId, note = "Fim")
+    assertNotNull(snapshot)
+
+    val completedDetail = libraryRepo.observeBookDetail(workId).first()!!
+    assertEquals(ReadingStatus.FINISHED, completedDetail.work.status)
+    assertEquals(1, beforeComplete.journeys.first().logs.size)
+    assertEquals(2, completedDetail.journeys.first().logs.size)
+
+    journeyRepo.restoreJourneyCompletion(snapshot!!)
+    val restoredDetail = libraryRepo.observeBookDetail(workId).first()!!
+    assertEquals(ReadingStatus.READING, restoredDetail.work.status)
+    assertNotNull(restoredDetail.activeJourney)
+    assertEquals(116, restoredDetail.activeJourney!!.session.currentPage)
+    assertEquals(1, restoredDetail.activeJourney!!.logs.size)
+
+    db.close()
   }
 }

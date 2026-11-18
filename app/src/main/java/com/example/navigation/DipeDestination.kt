@@ -2,16 +2,15 @@ package com.example.navigation
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.R
+import com.example.core.designsystem.components.DipeIcons
 import kotlinx.serialization.Serializable
 
 @Serializable data object HomeRoute
@@ -39,15 +38,15 @@ enum class TopLevelDestination(
     route = HomeRoute,
     routeKey = "home",
     labelRes = R.string.nav_home,
-    selectedIcon = Icons.Filled.Home,
-    unselectedIcon = Icons.Outlined.Home,
+    selectedIcon = Icons.Filled.AutoStories,
+    unselectedIcon = Icons.Outlined.AutoStories,
   ),
   LIBRARY(
     route = LibraryRoute,
     routeKey = "library",
     labelRes = R.string.nav_library,
-    selectedIcon = Icons.Filled.LibraryBooks,
-    unselectedIcon = Icons.Outlined.LibraryBooks,
+    selectedIcon = DipeIcons.BookshelfFilled,
+    unselectedIcon = DipeIcons.BookshelfOutlined,
   ),
   STATISTICS(
     route = StatisticsRoute,

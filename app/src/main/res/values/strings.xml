@@ -3,7 +3,7 @@
     <string name="app_name" translatable="false">Dipe Libris</string>
 
     <!-- Navigation -->
-    <string name="nav_home">Home</string>
+    <string name="nav_home">Reading</string>
     <string name="nav_library">Library</string>
     <string name="nav_diary">Diary</string>
     <string name="nav_statistics">Statistics</string>
@@ -41,7 +41,9 @@
     <string name="home_masthead_title">Reading</string>
     <string name="home_masthead_empty_subtitle">Your quiet reading desk</string>
     <string name="home_section_currently_reading">Currently reading</string>
+    <string name="home_section_also_reading">Also reading</string>
     <string name="home_section_recent_activity">Recent activity</string>
+    <string name="cd_brand_seal" translatable="false">Dipe Libris</string>
     <string name="home_empty_reading_title">No books in progress</string>
     <string name="home_empty_reading_body">Mark a book as reading or add a new volume to follow it here.</string>
     <string name="home_empty_activity_title">No recent activity</string>
@@ -201,9 +203,20 @@
     <string name="progress_mode_page">Page</string>
     <string name="progress_mode_percent">Percent</string>
     <string name="progress_field_page">Current page</string>
+    <string name="progress_field_page_entry">Enter page</string>
     <string name="progress_field_percent">Completion (%)</string>
-    <string name="progress_field_note">Milestone note (optional)</string>
+    <string name="progress_field_percent_entry">Enter percentage (%)</string>
+    <string name="progress_field_note">Short note (optional)</string>
+    <string name="progress_of_total_inline">of %1$s</string>
+    <string name="progress_page_unit">p.</string>
     <string name="progress_complete_action">Mark as finished (100%)</string>
+    <string name="progress_complete_short">Finish reading</string>
+    <string name="progress_complete_confirm_title">Finish reading?</string>
+    <string name="progress_complete_confirm_message">This marks “%1$s” as finished (100%%).</string>
+    <string name="progress_complete_confirm_action">Finish</string>
+    <string name="progress_completed_snackbar">Marked “%1$s” as finished.</string>
+    <string name="progress_updated_snackbar">Progress updated.</string>
+    <string name="action_undo">Undo</string>
     <string name="progress_validation_page_negative">Enter page 0 or higher.</string>
     <string name="progress_validation_page_exceeds">Page cannot exceed %1$s pages in this edition.</string>
     <string name="progress_validation_percent">Enter a percentage between 0 and 100.</string>

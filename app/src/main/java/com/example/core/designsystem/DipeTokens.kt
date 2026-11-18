@@ -18,6 +18,7 @@ object DipeSpacing {
   val xxs: Dp = 2.dp
   val xs: Dp = 4.dp
   val sm: Dp = 8.dp
+  val compact: Dp = 12.dp
   val md: Dp = 16.dp
   val lg: Dp = 24.dp
   val xl: Dp = 32.dp
@@ -30,25 +31,31 @@ object DipeSpacing {
 object DipeRadii {
   val none: Dp = 0.dp
   val sharp: Dp = 2.dp
-  val subtle: Dp = 6.dp
-  val card: Dp = 12.dp
+  val control: Dp = 10.dp
   val surface: Dp = 16.dp
-  val sheet: Dp = 24.dp
+
+  // Compatibility aliases for existing screens
+  val subtle: Dp = control
+  val card: Dp = control
+  val sheet: Dp = surface
 }
 
 object DipeElevation {
   val flat: Dp = 0.dp
-  val whisper: Dp = 1.dp
-  val subtle: Dp = 2.dp
+  val raised: Dp = 2.dp
+
+  // Compatibility aliases for existing screens
+  val whisper: Dp = flat
+  val subtle: Dp = raised
 }
 
 val DipeShapes =
   Shapes(
     extraSmall = RoundedCornerShape(DipeRadii.sharp),
-    small = RoundedCornerShape(DipeRadii.subtle),
-    medium = RoundedCornerShape(DipeRadii.card),
+    small = RoundedCornerShape(DipeRadii.control),
+    medium = RoundedCornerShape(DipeRadii.control),
     large = RoundedCornerShape(DipeRadii.surface),
-    extraLarge = RoundedCornerShape(DipeRadii.sheet),
+    extraLarge = RoundedCornerShape(DipeRadii.surface),
   )
 
 @Immutable

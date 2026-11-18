@@ -329,6 +329,9 @@ interface ReadingJourneyDao {
 
   @Insert(onConflict = OnConflictStrategy.ABORT)
   suspend fun insertProgressLog(log: ReadingProgressLogEntity): Long
+
+  @Query("DELETE FROM reading_progress_logs WHERE id = :logId")
+  suspend fun deleteProgressLogById(logId: Long)
 }
 
 @Dao

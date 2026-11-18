@@ -209,6 +209,44 @@ val SepiaColorScheme: ColorScheme =
     onError = Color(0xFFF3ECDC),
   )
 
+@Immutable
+data class DipeSemanticColors(
+  val canvas: Color,
+  val surfaceElevated: Color,
+  val surfaceTonal: Color,
+  val textPrimary: Color,
+  val textSecondary: Color,
+  val inkActionContainer: Color,
+  val inkActionContent: Color,
+  val selectedContainer: Color,
+  val selectedContent: Color,
+  val readingProgress: Color,
+  val readingProgressTrack: Color,
+  val controlBorder: Color,
+  val dividerHairline: Color,
+  val destructive: Color,
+)
+
+fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors =
+  DipeSemanticColors(
+    canvas = scheme.background,
+    surfaceElevated = scheme.surfaceContainerLowest,
+    surfaceTonal = scheme.surfaceContainerLow,
+    textPrimary = scheme.onBackground,
+    textSecondary = scheme.onSurfaceVariant,
+    inkActionContainer = scheme.primary,
+    inkActionContent = scheme.onPrimary,
+    selectedContainer = scheme.primary,
+    selectedContent = scheme.onPrimary,
+    readingProgress = scheme.secondary,
+    readingProgressTrack = scheme.surfaceContainerHigh,
+    controlBorder = scheme.outline,
+    dividerHairline = scheme.outlineVariant,
+    destructive = scheme.error,
+  )
+
+val LocalDipeColors = staticCompositionLocalOf { resolveSemanticColors(PaperColorScheme) }
+
 fun resolveColorScheme(themeMode: AppThemeMode, isSystemDark: Boolean): Pair<ColorScheme, Boolean> =
   when (themeMode) {
     AppThemeMode.PAPER -> PaperColorScheme to false
