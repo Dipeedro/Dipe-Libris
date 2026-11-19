@@ -90,16 +90,15 @@ class GoogleBooksAdapter(
   private suspend fun executeQuery(qParam: String, maxResults: Int): SourceAdapterResult =
     withContext(Dispatchers.IO) {
       val key = apiKeyProvider().trim()
-      if (key.isEmpty() || key == "MY_GOOGLE_BOOKS_API_KEY") {
-        return@withContext SourceAdapterResult(
-          status = SourceQueryStatus(source = source, state = ProviderOutcomeState.SKIPPED_NO_API_KEY),
-          candidates = emptyList(),
-        )
-      }
+      val hasValidKey = key.isNotEmpty() && key != "MY_GOOGLE_BOOKS_API_KEY"
       runCatching {
           val encodedQ = URLEncoder.encode(qParam, "UTF-8")
-          val encodedKey = URLEncoder.encode(key, "UTF-8")
-          val url = "$baseUrl/volumes?q=$encodedQ&maxResults=$maxResults&printType=books&key=$encodedKey"
+          val url = if (hasValidKey) {
+            val encodedKey = URLEncoder.encode(key, "UTF-8")
+            "$baseUrl/volumes?q=$encodedQ&maxResults=$maxResults&printType=books&key=$encodedKey"
+          } else {
+            "$baseUrl/volumes?q=$encodedQ&maxResults=$maxResults&printType=books"
+          }
           val request = Request.Builder().url(url).get().build()
           client.newCall(request).execute().use { response ->
             val body = response.body?.string()

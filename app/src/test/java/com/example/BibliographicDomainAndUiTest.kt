@@ -775,11 +775,11 @@ class BibliographicDomainAndUiTest {
         }
         .build()
 
-    // 1. Placeholder or blank key skips with SKIPPED_NO_API_KEY
+    // 1. Placeholder or blank key falls back to keyless search successfully
     val skippedAdapter =
       GoogleBooksAdapter(client = fakeClient, apiKeyProvider = { "MY_GOOGLE_BOOKS_API_KEY" })
     assertEquals(
-      ProviderOutcomeState.SKIPPED_NO_API_KEY,
+      ProviderOutcomeState.SUCCESS,
       skippedAdapter.searchByQuery("Vou te receitar um gato").status.state,
     )
 
