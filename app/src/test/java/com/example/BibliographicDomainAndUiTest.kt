@@ -6,7 +6,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -26,6 +28,7 @@ import com.example.core.bibliographic.domain.SynopsisSelector
 import com.example.core.bibliographic.domain.WorkGroupingEngine
 import com.example.core.bibliographic.network.BibliographicSourceAdapter
 import com.example.core.bibliographic.network.ConnectivityChecker
+import com.example.core.bibliographic.network.GoogleBooksAdapter
 import com.example.core.bibliographic.network.SourceAdapterResult
 import com.example.core.data.local.db.DipeLibrisDatabase
 import com.example.core.data.local.db.EditionEntity
@@ -72,8 +75,14 @@ import com.example.feature.library.BookReviewScreen
 import com.example.feature.library.BookReviewViewModel
 import com.example.feature.library.BookSearchScreen
 import com.example.feature.library.BookSearchUiState
+import com.example.feature.library.BookSearchViewModel
 import com.example.feature.library.IsbnScannerScreen
 import com.example.feature.library.MetadataSuggestionsSheet
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -714,5 +723,203 @@ class BibliographicDomainAndUiTest {
     composeTestRule.onNodeWithTag("scanner_manual_isbn_input").performTextInput("978-85-359-1484-9")
     composeTestRule.onNodeWithTag("scanner_manual_isbn_submit").performScrollTo().performClick()
     assertEquals("9788535914849", detected)
+  }
+
+  @Test
+  fun googleBooksAdapterParsesVolumesDistinguishesErrorsAndSkipsOnlyWithoutKey() = runBlocking {
+    val sampleJson =
+      """
+      {
+        "kind": "books#volumes",
+        "totalItems": 1,
+        "items": [
+          {
+            "id": "wQIKEQAAQBAJ",
+            "volumeInfo": {
+              "title": "Vou te receitar um gato",
+              "authors": ["Syou Ishida"],
+              "publisher": "Editora Intrinseca",
+              "publishedDate": "2024-07-03",
+              "description": "<p>Best-seller japonês na Clínica Kokoro.</p>",
+              "industryIdentifiers": [
+                {"type": "ISBN_13", "identifier": "9788551009796"},
+                {"type": "ISBN_10", "identifier": "8551009796"}
+              ],
+              "pageCount": 209,
+              "categories": ["Fiction"],
+              "imageLinks": {
+                "thumbnail": "http://books.google.com/books/content?id=wQIKEQAAQBAJ&zoom=1&edge=curl"
+              },
+              "language": "pt-BR"
+            }
+          }
+        ]
+      }
+      """
+        .trimIndent()
+
+    var capturedUrl: String? = null
+    var nextCode = 200
+    var nextBody = sampleJson
+    val fakeClient =
+      OkHttpClient.Builder()
+        .addInterceptor { chain ->
+          capturedUrl = chain.request().url.toString()
+          Response.Builder()
+            .request(chain.request())
+            .protocol(Protocol.HTTP_1_1)
+            .code(nextCode)
+            .message(if (nextCode == 200) "OK" else "Error")
+            .body(nextBody.toResponseBody("application/json".toMediaType()))
+            .build()
+        }
+        .build()
+
+    // 1. Placeholder or blank key skips with SKIPPED_NO_API_KEY
+    val skippedAdapter =
+      GoogleBooksAdapter(client = fakeClient, apiKeyProvider = { "MY_GOOGLE_BOOKS_API_KEY" })
+    assertEquals(
+      ProviderOutcomeState.SKIPPED_NO_API_KEY,
+      skippedAdapter.searchByQuery("Vou te receitar um gato").status.state,
+    )
+
+    // 2. Valid key executes GET with &key=... and parses full volume metadata
+    val activeAdapter = GoogleBooksAdapter(client = fakeClient, apiKeyProvider = { "test-key-123" })
+    val okResult = activeAdapter.searchByQuery("Vou te receitar um gato")
+    assertEquals(ProviderOutcomeState.SUCCESS, okResult.status.state)
+    assertEquals(1, okResult.candidates.size)
+    assertTrue(capturedUrl.orEmpty().contains("key=test-key-123"))
+    val candidate = okResult.candidates.first()
+    assertEquals("Vou te receitar um gato", candidate.workTitle)
+    assertEquals("Syou Ishida", candidate.contributors.first().name)
+    assertEquals("Editora Intrinseca", candidate.publisher)
+    assertEquals(2024, candidate.publicationYear)
+    assertEquals(209, candidate.totalPages)
+    assertEquals("9788551009796", candidate.isbn13)
+    assertEquals("8551009796", candidate.isbn10)
+    assertTrue(candidate.coverCandidates.first().imageUrl.startsWith("https://"))
+    assertFalse(candidate.coverCandidates.first().imageUrl.contains("edge=curl"))
+    assertEquals("Best-seller japonês na Clínica Kokoro.", candidate.synopsisCandidates.first().text)
+
+    // 3. HTTP 403 quota -> RATE_LIMITED, HTTP 403 invalid key -> ERROR
+    nextCode = 403
+    nextBody = """{"error":{"code":403,"message":"Quota exceeded"}}"""
+    assertEquals(
+      ProviderOutcomeState.RATE_LIMITED,
+      activeAdapter.searchByQuery("gato").status.state,
+    )
+
+    nextBody = """{"error":{"code":403,"message":"Books API has not been used in project"}}"""
+    val errResult = activeAdapter.searchByQuery("gato")
+    assertEquals(ProviderOutcomeState.ERROR, errResult.status.state)
+    assertEquals("HTTP 403", errResult.status.message)
+  }
+
+  @Test
+  fun bookSearchScreenWithGoogleBooksAdapterDisplaysResultsAndStatusChip() {
+    val sampleJson =
+      """
+      {
+        "kind": "books#volumes",
+        "totalItems": 1,
+        "items": [
+          {
+            "id": "wQIKEQAAQBAJ",
+            "volumeInfo": {
+              "title": "Vou te receitar um gato",
+              "authors": ["Syou Ishida"],
+              "publisher": "Editora Intrinseca",
+              "publishedDate": "2024-07-03",
+              "industryIdentifiers": [
+                {"type": "ISBN_13", "identifier": "9788551009796"}
+              ],
+              "pageCount": 209,
+              "language": "pt-BR"
+            }
+          }
+        ]
+      }
+      """
+        .trimIndent()
+    val fakeClient =
+      OkHttpClient.Builder()
+        .addInterceptor { chain ->
+          Response.Builder()
+            .request(chain.request())
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .body(sampleJson.toResponseBody("application/json".toMediaType()))
+            .build()
+        }
+        .build()
+
+    val draftStore = BibliographicDraftStore()
+    val orchestrator =
+      HybridSearchOrchestrator(
+        openLibraryAdapter = FakeSourceAdapter(MetadataSource.OPEN_LIBRARY),
+        googleBooksAdapter = GoogleBooksAdapter(client = fakeClient, apiKeyProvider = { "test-key" }),
+        crossrefAdapter = FakeSourceAdapter(MetadataSource.CROSSREF),
+        wikidataAdapter = FakeSourceAdapter(MetadataSource.WIKIDATA),
+        brasilApiAdapter = FakeSourceAdapter(MetadataSource.BRASIL_API),
+        connectivityChecker = object : ConnectivityChecker { override fun isOnline(): Boolean = true },
+        searchCacheDao = db.searchCacheDao(),
+        editionDao = db.editionDao(),
+        bookDao = db.bookDao(),
+        libraryRepository = libraryRepo,
+      )
+    val vm =
+      BookSearchViewModel(
+        initialQuery = null,
+        orchestrator = orchestrator,
+        libraryRepository = libraryRepo,
+        preferencesRepository = FakeBibPrefsRepository(),
+        draftStore = draftStore,
+      )
+
+    var navigatedToReview = false
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH) {
+        DipeLibrisTheme {
+          val state by vm.uiState.collectAsState()
+          BookSearchScreen(
+            uiState = state,
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = vm::setQuery,
+            onSubmitSearch = { vm.submitSearch(false) },
+            onExpandSecondarySources = { vm.submitSearch(true) },
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = vm::toggleGroupExpanded,
+            onLoadMoreEditions = vm::loadMoreEditionsForWork,
+            onSelectEdition = { cand ->
+              vm.selectEditionCandidate(cand) { navigatedToReview = true }
+            },
+            onOpenExistingBook = {},
+            onDismissDuplicate = vm::dismissDuplicatePrompt,
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.onNodeWithTag("search_query_input").performTextInput("Vou te receitar um gato")
+    composeTestRule.onNodeWithTag("search_submit_button").performClick()
+
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("search_work_card_0")).fetchSemanticsNodes().isNotEmpty()
+    }
+    composeTestRule.onNodeWithText("Google Books (1)").assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("Vou te receitar um gato") and hasAnyAncestor(hasTestTag("search_work_card_0")))
+      .assertIsDisplayed()
+    composeTestRule.onNodeWithText("Syou Ishida").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performScrollTo().performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) { navigatedToReview }
+    assertEquals("Vou te receitar um gato", draftStore.pendingReviewDraft.value?.candidate?.workTitle)
   }
 }

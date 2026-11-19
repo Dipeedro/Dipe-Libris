@@ -362,6 +362,7 @@
     <string name="search_source_no_key">%1$s (no key)</string>
     <string name="search_source_offline">%1$s (offline)</string>
     <string name="search_source_rate_limit">%1$s (limit)</string>
+    <string name="search_source_error">%1$s (error)</string>
     <string name="cd_scan_isbn">Scan ISBN barcode</string>
 
     <!-- ISBN Scanner -->

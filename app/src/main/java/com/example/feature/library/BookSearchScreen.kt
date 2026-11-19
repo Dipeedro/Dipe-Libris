@@ -274,8 +274,9 @@ fun BookSearchScreen(
                         R.string.search_source_rate_limit,
                         metadataSourceLabel(st.source),
                       )
-                    ProviderOutcomeState.EMPTY,
-                    ProviderOutcomeState.ERROR -> "${metadataSourceLabel(st.source)} (${st.count})"
+                    ProviderOutcomeState.EMPTY -> "${metadataSourceLabel(st.source)} (${st.count})"
+                    ProviderOutcomeState.ERROR ->
+                      stringResource(R.string.search_source_error, metadataSourceLabel(st.source))
                   }
                 Surface(
                   shape = CircleShape,
