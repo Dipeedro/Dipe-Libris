@@ -2,6 +2,7 @@ package com.example.feature.library
 
 import android.os.Build
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
@@ -27,11 +28,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -84,7 +87,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -204,11 +206,6 @@ fun QuickProgressSheet(
         R.string.progress_of_total_inline,
         LocaleManager.formatInteger(it, language),
       )
-    }
-  val maxPageText =
-    remember(totalPages, livePreview.currentPage, language) {
-      totalPages?.let { LocaleManager.formatInteger(it, language) }
-        ?: LocaleManager.formatInteger(livePreview.currentPage.coerceAtLeast(100), language)
     }
 
   val sheetBackgroundColor = DipeTheme.colors.surfaceElevated
@@ -348,7 +345,7 @@ fun QuickProgressSheet(
         decorFitsSystemWindows = false,
       ),
   ) {
-    // Extend sheet background seamlessly behind Android's system navigation bar without gray scrim
+    // Configure the Dialog window for true edge-to-edge full-bleed scrim behind status and navigation bars
     val dialogView = LocalView.current
     if (!dialogView.isInEditMode) {
       SideEffect {
@@ -359,21 +356,45 @@ fun QuickProgressSheet(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
           )
+          dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+          dialogWindow.setDimAmount(0f)
+          dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+          val attrs = dialogWindow.attributes
+          var attrsModified = false
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val desiredCutoutMode =
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+              } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+              }
+            if (attrs.layoutInDisplayCutoutMode != desiredCutoutMode) {
+              attrs.layoutInDisplayCutoutMode = desiredCutoutMode
+              attrsModified = true
+            }
+          }
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (attrs.fitInsetsTypes != 0 || attrs.fitInsetsSides != 0) {
+              attrs.fitInsetsTypes = 0
+              attrs.fitInsetsSides = 0
+              attrsModified = true
+            }
+          }
+          if (attrsModified) {
+            dialogWindow.attributes = attrs
+          }
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             dialogWindow.isNavigationBarContrastEnforced = false
+            @Suppress("DEPRECATION")
             dialogWindow.isStatusBarContrastEnforced = false
-            @Suppress("DEPRECATION")
-            dialogWindow.navigationBarColor = android.graphics.Color.TRANSPARENT
-            @Suppress("DEPRECATION")
-            dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
-          } else {
-            @Suppress("DEPRECATION")
-            dialogWindow.navigationBarColor = sheetBackgroundColor.toArgb()
-            @Suppress("DEPRECATION")
-            dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
           }
-          WindowCompat.getInsetsController(dialogWindow, dialogView)
-            .isAppearanceLightNavigationBars = isLightSheetBackground
+          @Suppress("DEPRECATION")
+          dialogWindow.navigationBarColor = android.graphics.Color.TRANSPARENT
+          @Suppress("DEPRECATION")
+          dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
+          val insetsController = WindowCompat.getInsetsController(dialogWindow, dialogView)
+          insetsController.isAppearanceLightNavigationBars = isLightSheetBackground
+          insetsController.isAppearanceLightStatusBars = false
         }
       }
     }
@@ -381,26 +402,31 @@ fun QuickProgressSheet(
     val dragFraction =
       if (sheetHeightPx > 1f) (offsetY.value / sheetHeightPx).coerceIn(0f, 1f) else 0f
     val scrimOpacity = (1f - dragFraction).coerceIn(0f, 1f)
+    val warmScrimColor = Color(0xFF211A14).copy(alpha = 0.33f)
 
-    Box(modifier = Modifier.fillMaxSize()) {
-      // Backdrop scrim synchronized smoothly with sheet offsetY
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+      val statusTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+      val sheetMaxHeight = (maxHeight - statusTopPadding - 24.dp).coerceAtLeast(240.dp)
+
+      // Uniform warm translucent brown scrim covering 100% of screen behind status & nav bars
       Box(
         modifier =
           Modifier.fillMaxSize()
             .graphicsLayer { alpha = scrimOpacity }
-            .background(Color.Black.copy(alpha = 0.36f))
+            .background(warmScrimColor)
             .pointerInput(Unit) { detectTapGestures { startClosingAnimation() } },
       )
 
-      // Bottom sheet aligned to absolute bottom edge
+      // Bottom sheet anchored at absolute bottom edge; internal padding preserves nav bar + 28dp cream margin
       Box(
-        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
       ) {
         Surface(
           modifier =
             Modifier.widthIn(max = 640.dp)
               .fillMaxWidth()
+              .heightIn(max = sheetMaxHeight)
               .onSizeChanged { sheetHeightPx = it.height.toFloat().coerceAtLeast(1f) }
               .graphicsLayer { translationY = offsetY.value.coerceAtLeast(0f) }
               .pointerInput(Unit) {
@@ -419,11 +445,7 @@ fun QuickProgressSheet(
           color = sheetBackgroundColor,
           tonalElevation = DipeElevation.flat,
         ) {
-          Column(
-            modifier =
-              Modifier.fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
-          ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
             // Dedicated drag handle area with touch-action: none semantics (consumes vertical drag)
             Box(
               modifier =
@@ -483,8 +505,11 @@ fun QuickProgressSheet(
             Column(
               modifier =
                 Modifier.fillMaxWidth()
+                  .weight(1f, fill = false)
                   .verticalScroll(rememberScrollState())
-                  .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.xs)
+                  .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                  .padding(horizontal = DipeSpacing.lg)
+                  .padding(top = DipeSpacing.xs, bottom = 28.dp)
                   .testTag("quick_progress_sheet"),
               verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
             ) {
@@ -536,7 +561,6 @@ fun QuickProgressSheet(
                       pagePrefix = pageUnitLabel,
                       formattedPageDigits =
                         LocaleManager.formatInteger(livePreview.currentPage, language),
-                      maxPageDigitsText = maxPageText,
                       totalInlineSuffix = formattedTotalInline,
                       style = DipeTheme.typography.monoMetadata,
                       color = DipeTheme.colors.textSecondary,
@@ -671,7 +695,7 @@ fun QuickProgressSheet(
                 }
               }
 
-              Spacer(modifier = Modifier.height(DipeSpacing.sm))
+              // Remove extra Spacer at bottom since Column bottom padding already provides 28.dp + safe area
             }
           }
         }
@@ -796,6 +820,7 @@ private fun HeroPercentageDisplay(
     } else {
       AnimatedContent(
         targetState = percent to formattedDigits,
+        contentAlignment = Alignment.CenterStart,
         transitionSpec = {
           val enter =
             slideInVertically(
@@ -877,7 +902,6 @@ private fun PageContextDisplay(
   currentPage: Int,
   pagePrefix: String,
   formattedPageDigits: String,
-  maxPageDigitsText: String,
   totalInlineSuffix: String?,
   style: TextStyle,
   color: Color,
@@ -889,7 +913,7 @@ private fun PageContextDisplay(
   val liningTabularStyle = remember(style) { style.copy(fontFeatureSettings = "lnum, tnum") }
 
   val metrics =
-    remember(liningTabularStyle, textMeasurer, pagePrefix, maxPageDigitsText) {
+    remember(liningTabularStyle, textMeasurer) {
       var maxDigitWidthPx = 0
       var maxHeightPx = 0
       for (digit in 0..9) {
@@ -897,19 +921,16 @@ private fun PageContextDisplay(
         if (res.size.width > maxDigitWidthPx) maxDigitWidthPx = res.size.width
         if (res.size.height > maxHeightPx) maxHeightPx = res.size.height
       }
-      val prefixRes = textMeasurer.measure(text = "$pagePrefix ", style = liningTabularStyle)
-      if (prefixRes.size.height > maxHeightPx) maxHeightPx = prefixRes.size.height
       val lineHeightPx = with(density) { liningTabularStyle.lineHeight.roundToPx() }
-      val cellWidthPx = ceil(maxDigitWidthPx * 1.02f).toInt().coerceAtLeast(1)
+      val cellWidthPx = ceil(maxDigitWidthPx.toDouble()).toInt().coerceAtLeast(1)
       val fixedHeightPx = maxOf(maxHeightPx, lineHeightPx).coerceAtLeast(1)
-      val reservedPrefixDigitsWidthPx =
-        prefixRes.size.width + cellWidthPx * maxPageDigitsText.length.coerceAtLeast(3)
-      Triple(cellWidthPx, fixedHeightPx, reservedPrefixDigitsWidthPx)
+      cellWidthPx to fixedHeightPx
     }
 
   val cellWidthDp = with(density) { metrics.first.toDp() }
   val fixedHeightDp = with(density) { metrics.second.toDp() }
-  val reservedPrefixDigitsWidthDp = with(density) { metrics.third.toDp() }
+  // Width depends ONLY on the number of digits in formattedPageDigits; never varies across numbers with same digit count
+  val numberWidthDp = cellWidthDp * formattedPageDigits.length.coerceAtLeast(1)
 
   var previousPage by remember { mutableIntStateOf(currentPage) }
   val isIncreasing = currentPage >= previousPage
@@ -928,15 +949,24 @@ private fun PageContextDisplay(
         contentDescription = fullAccessibleText
       },
   ) {
-    // Animate "p. X" right-aligned inside pre-reserved width so " de Y" stays completely stationary
-    // and there is always a single normal space between "p." and the number
+    // Separate static "p. " element: never moves during roll animation unless digit count changes
+    Box(modifier = Modifier.height(fixedHeightDp), contentAlignment = Alignment.Center) {
+      Text(
+        text = "$pagePrefix ",
+        style = liningTabularStyle,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
+
+    // Separate rolling page number box: exact width = digitCount * cellWidthDp, tabular monospace cells
     Box(
-      modifier = Modifier.widthIn(min = reservedPrefixDigitsWidthDp).height(fixedHeightDp).clipToBounds(),
+      modifier = Modifier.width(numberWidthDp).height(fixedHeightDp).clipToBounds(),
       contentAlignment = Alignment.CenterEnd,
     ) {
       if (reduceMotion) {
-        PagePrefixDigitsRow(
-          prefix = pagePrefix,
+        FixedWidthPageDigitsRow(
           digits = formattedPageDigits,
           cellWidthDp = cellWidthDp,
           fixedHeightDp = fixedHeightDp,
@@ -946,6 +976,7 @@ private fun PageContextDisplay(
       } else {
         AnimatedContent(
           targetState = currentPage to formattedPageDigits,
+          contentAlignment = Alignment.CenterEnd,
           transitionSpec = {
             val enter =
               slideInVertically(
@@ -967,10 +998,9 @@ private fun PageContextDisplay(
                 )
             (enter togetherWith exit).using(SizeTransform(clip = false))
           },
-          label = "unified_page_context",
+          label = "unified_page_digits",
         ) { (_, targetDigits) ->
-          PagePrefixDigitsRow(
-            prefix = pagePrefix,
+          FixedWidthPageDigitsRow(
             digits = targetDigits,
             cellWidthDp = cellWidthDp,
             fixedHeightDp = fixedHeightDp,
@@ -981,6 +1011,7 @@ private fun PageContextDisplay(
       }
     }
 
+    // Separate static " de Y" element anchored at right edge: never shifts when digits roll or grow
     if (totalInlineSuffix != null) {
       Box(modifier = Modifier.height(fixedHeightDp), contentAlignment = Alignment.Center) {
         Text(
@@ -996,8 +1027,7 @@ private fun PageContextDisplay(
 }
 
 @Composable
-private fun PagePrefixDigitsRow(
-  prefix: String,
+private fun FixedWidthPageDigitsRow(
   digits: String,
   cellWidthDp: androidx.compose.ui.unit.Dp,
   fixedHeightDp: androidx.compose.ui.unit.Dp,
@@ -1008,15 +1038,6 @@ private fun PagePrefixDigitsRow(
     horizontalArrangement = Arrangement.End,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Box(modifier = Modifier.height(fixedHeightDp), contentAlignment = Alignment.Center) {
-      Text(
-        text = "$prefix ",
-        style = style,
-        color = color,
-        maxLines = 1,
-        softWrap = false,
-      )
-    }
     digits.forEach { ch ->
       Box(
         modifier = Modifier.width(cellWidthDp).height(fixedHeightDp),
