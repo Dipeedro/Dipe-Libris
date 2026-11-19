@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.TabletAndroid
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -78,6 +79,7 @@ import com.example.core.designsystem.components.EditorialProgressBar
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSubscreenTopBar
 import com.example.core.designsystem.components.EditorialSurfaceCard
+import com.example.core.designsystem.components.contributorRoleLabel
 import com.example.core.designsystem.components.copyMediaTypeLabel
 import com.example.core.designsystem.components.editionFormatLabel
 import com.example.core.designsystem.components.readingStatusAccentColor
@@ -92,6 +94,7 @@ import com.example.core.model.EditionWithBookCopies
 import com.example.core.model.ReadingJourneySummary
 import com.example.core.model.ReadingProgressMath
 import com.example.core.model.ReadingStatus
+import com.example.core.model.Work
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -126,6 +129,10 @@ fun BookDetailScreen(
   },
   onProgressUpdated: () -> Unit = {},
   onSwitchActiveCopy: (sessionId: Long, copyId: Long) -> Unit = { _, _ -> },
+  onCheckMetadataUpdates: () -> Unit = {},
+  onAcceptSuggestion: (Long) -> Unit = {},
+  onRejectSuggestion: (Long) -> Unit = {},
+  onUpdateWorkDetails: (Work) -> Unit = {},
 ) {
   val language = LocalAppLanguage.current
   val resources = LocalContext.current.resources
@@ -142,6 +149,7 @@ fun BookDetailScreen(
   var showQuickProgressSheet by remember { mutableStateOf(false) }
   var startJourneyModeIsReread by remember { mutableStateOf<Boolean?>(null) }
   var showComparisonSheet by remember { mutableStateOf(false) }
+  var showSuggestionsSheet by remember { mutableStateOf(false) }
 
   when (uiState) {
     BookDetailUiState.Loading -> {
@@ -245,12 +253,20 @@ fun BookDetailScreen(
       val editionDisplay =
         focusedEdition?.publisherOrNote?.takeIf { it.isNotBlank() } ?: unspecified
 
+      val seriesDisplay =
+        focusedEdition?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+          val vol = focusedEdition.seriesVolume?.takeIf { it.isNotBlank() }
+          if (vol != null) "$series #$vol" else series
+        }
+
       val secondaryMetaLine =
         listOfNotNull(
+            focusedEdition?.editionLabel?.takeIf { it.isNotBlank() },
             focusedEdition?.format?.let { editionFormatLabel(it) },
             focusedEdition?.language?.takeIf { it.isNotBlank() },
             focusedEdition?.translator?.takeIf { it.isNotBlank() },
-            focusedEdition?.isbn?.takeIf { it.isNotBlank() }?.let { "ISBN $it" },
+            seriesDisplay,
+            (focusedEdition?.isbn13 ?: focusedEdition?.isbn)?.takeIf { it.isNotBlank() }?.let { "ISBN $it" },
           )
           .joinToString(" · ")
 
@@ -489,6 +505,16 @@ fun BookDetailScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = horizontalPadding),
                   )
+                  work.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = sub,
+                      style = MaterialTheme.typography.titleMedium,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      textAlign = TextAlign.Center,
+                      modifier = Modifier.padding(horizontal = horizontalPadding),
+                    )
+                  }
                   Spacer(modifier = Modifier.height(DipeSpacing.xs))
                   Text(
                     text = work.author,
@@ -497,6 +523,20 @@ fun BookDetailScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = horizontalPadding),
                   )
+                  work.primaryGenre?.let { genre ->
+                    Spacer(modifier = Modifier.height(DipeSpacing.sm))
+                    Surface(
+                      shape = CircleShape,
+                      color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                      Text(
+                        text = genre.localizedName(language),
+                        style = LocalDipeTypography.current.monoMetadata,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                      )
+                    }
+                  }
 
                   Spacer(modifier = Modifier.height(DipeSpacing.lg))
 
@@ -536,6 +576,69 @@ fun BookDetailScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                       )
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(DipeSpacing.xs))
+                  TextButton(
+                    onClick = onCheckMetadataUpdates,
+                    enabled = !uiState.isCheckingUpdates,
+                    modifier =
+                      Modifier.minimumInteractiveComponentSize()
+                        .testTag("book_detail_check_updates_button"),
+                  ) {
+                    Icon(
+                      imageVector = Icons.Outlined.AutoAwesome,
+                      contentDescription = null,
+                      modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                      text =
+                        if (uiState.isCheckingUpdates) "…"
+                        else stringResource(R.string.detail_check_updates),
+                      style = MaterialTheme.typography.labelLarge,
+                    )
+                  }
+                }
+              }
+            }
+
+            if (detail.pendingSuggestions.isNotEmpty()) {
+              item(key = "detail_pending_suggestions", contentType = "suggestions_banner") {
+                EditorialSurfaceCard(
+                  containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                  contentPadding = PaddingValues(DipeSpacing.md),
+                  modifier =
+                    Modifier.padding(horizontal = horizontalPadding)
+                      .testTag("book_detail_suggestions_banner"),
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Text(
+                      text =
+                        stringResource(
+                          R.string.detail_suggestions_banner,
+                          detail.pendingSuggestions.size,
+                        ),
+                      style = MaterialTheme.typography.titleSmall,
+                      color = MaterialTheme.colorScheme.onSecondaryContainer,
+                      modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                      onClick = { showSuggestionsSheet = true },
+                      shape = CircleShape,
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = MaterialTheme.colorScheme.secondary,
+                          contentColor = MaterialTheme.colorScheme.onSecondary,
+                        ),
+                      modifier = Modifier.testTag("book_detail_review_suggestions_button"),
+                    ) {
+                      Text(stringResource(R.string.detail_review_suggestions))
                     }
                   }
                 }
@@ -626,6 +729,60 @@ fun BookDetailScreen(
                           onSwitchToCopy = {
                             activeJourney?.let { onSwitchActiveCopy(it.session.id, copy.id) }
                           },
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (!work.activeSynopsis.isNullOrBlank()) {
+              item(key = "detail_synopsis", contentType = "synopsis_section") {
+                Column(
+                  modifier =
+                    Modifier.padding(horizontal = horizontalPadding)
+                      .testTag("book_detail_synopsis_section"),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                ) {
+                  EditorialSectionHeader(title = stringResource(R.string.detail_synopsis_section))
+                  EditorialSurfaceCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    contentPadding = PaddingValues(DipeSpacing.md),
+                  ) {
+                    Text(
+                      text = work.activeSynopsis,
+                      style = MaterialTheme.typography.bodyMedium,
+                      color = MaterialTheme.colorScheme.onSurface,
+                    )
+                  }
+                }
+              }
+            }
+
+            if (detail.contributors.isNotEmpty()) {
+              item(key = "detail_contributors", contentType = "contributors_section") {
+                Column(
+                  modifier =
+                    Modifier.padding(horizontal = horizontalPadding)
+                      .testTag("book_detail_contributors_section"),
+                  verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                ) {
+                  EditorialSectionHeader(title = stringResource(R.string.detail_contributors_section))
+                  FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+                  ) {
+                    detail.contributors.forEach { contrib ->
+                      Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                      ) {
+                        Text(
+                          text = "${contrib.name} · ${contributorRoleLabel(contrib.role)}",
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurface,
+                          modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         )
                       }
                     }
@@ -885,6 +1042,11 @@ fun BookDetailScreen(
                 physicalFormat = submission.physicalFormat,
                 locationOrPlatform = submission.locationOrPlatform,
                 personalNote = submission.personalNote,
+                condition = submission.condition,
+                acquisitionOrigin = submission.acquisitionOrigin,
+                customCopyCode = submission.customCopyCode,
+                pricePaidMinorUnits = submission.pricePaidMinorUnits,
+                currencyCode = submission.currencyCode,
               ),
               submission.setAsActiveReadingCopy,
             )
@@ -1047,6 +1209,15 @@ fun BookDetailScreen(
             }
           },
           modifier = Modifier.testTag("book_delete_confirm_dialog"),
+        )
+      }
+
+      if (showSuggestionsSheet && detail.pendingSuggestions.isNotEmpty()) {
+        MetadataSuggestionsSheet(
+          suggestions = detail.pendingSuggestions,
+          onAccept = onAcceptSuggestion,
+          onReject = onRejectSuggestion,
+          onDismiss = { showSuggestionsSheet = false },
         )
       }
     }

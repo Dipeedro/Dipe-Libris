@@ -462,13 +462,204 @@ class DipeLibrisDatabaseIntegrityTest {
   }
 
   @Test
+  fun migration3To4BackfillsContributorsSeedsGenresAndBuildsFts() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val dbName = "migration_v3_v4_test.db"
+    context.deleteDatabase(dbName)
+
+    val dbFile = context.getDatabasePath(dbName)
+    dbFile.parentFile?.mkdirs()
+    val rawV3 = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+    try {
+      rawV3.execSQL(
+        """
+        CREATE TABLE works (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          title TEXT NOT NULL,
+          author TEXT NOT NULL,
+          status TEXT NOT NULL,
+          isFavorite INTEGER NOT NULL,
+          typographyPresetOverride TEXT,
+          createdAtEpochMillis INTEGER NOT NULL,
+          updatedAtEpochMillis INTEGER NOT NULL
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL(
+        """
+        CREATE TABLE editions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          publisherOrNote TEXT,
+          publicationYear INTEGER,
+          totalPages INTEGER,
+          isbn TEXT,
+          coverUri TEXT,
+          language TEXT,
+          format TEXT,
+          translator TEXT,
+          isPrimary INTEGER NOT NULL DEFAULT 0,
+          createdAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_editions_workId ON editions (workId)")
+      rawV3.execSQL(
+        """
+        CREATE TABLE book_copies (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          editionId INTEGER NOT NULL,
+          currentPage INTEGER NOT NULL,
+          physicalFormat TEXT,
+          personalNote TEXT,
+          label TEXT,
+          mediaType TEXT NOT NULL DEFAULT 'PHYSICAL',
+          locationOrPlatform TEXT,
+          acquisitionEpochMillis INTEGER,
+          createdAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY(editionId) REFERENCES editions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_book_copies_editionId ON book_copies (editionId)")
+      rawV3.execSQL(
+        """
+        CREATE TABLE shelves (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          type TEXT NOT NULL,
+          isFeatured INTEGER NOT NULL,
+          createdAtEpochMillis INTEGER NOT NULL
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL(
+        """
+        CREATE TABLE book_shelf_cross_ref (
+          workId INTEGER NOT NULL,
+          shelfId INTEGER NOT NULL,
+          PRIMARY KEY(workId, shelfId),
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+          FOREIGN KEY(shelfId) REFERENCES shelves(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_book_shelf_cross_ref_shelfId ON book_shelf_cross_ref (shelfId)")
+      rawV3.execSQL(
+        """
+        CREATE TABLE diary_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          createdAtEpochMillis INTEGER NOT NULL,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_diary_entries_workId ON diary_entries (workId)")
+      rawV3.execSQL(
+        """
+        CREATE TABLE reading_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          workId INTEGER NOT NULL,
+          copyId INTEGER,
+          status TEXT NOT NULL,
+          rereadNumber INTEGER NOT NULL,
+          currentPage INTEGER NOT NULL,
+          totalPagesSnapshot INTEGER,
+          progressPercent REAL NOT NULL,
+          startEpochMillis INTEGER NOT NULL,
+          endEpochMillis INTEGER,
+          pausedAtEpochMillis INTEGER,
+          accumulatedPausedMillis INTEGER NOT NULL,
+          notes TEXT,
+          FOREIGN KEY(workId) REFERENCES works(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+          FOREIGN KEY(copyId) REFERENCES book_copies(id) ON UPDATE NO ACTION ON DELETE SET NULL
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_reading_sessions_workId ON reading_sessions (workId)")
+      rawV3.execSQL("CREATE INDEX index_reading_sessions_copyId ON reading_sessions (copyId)")
+      rawV3.execSQL(
+        """
+        CREATE TABLE reading_progress_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          sessionId INTEGER NOT NULL,
+          recordedAtEpochMillis INTEGER NOT NULL,
+          pageNumber INTEGER,
+          progressPercent REAL NOT NULL,
+          deltaPages INTEGER NOT NULL,
+          note TEXT,
+          FOREIGN KEY(sessionId) REFERENCES reading_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+      )
+      rawV3.execSQL("CREATE INDEX index_reading_progress_logs_sessionId ON reading_progress_logs (sessionId)")
+      rawV3.execSQL(
+        "CREATE INDEX index_reading_progress_logs_recordedAtEpochMillis ON reading_progress_logs (recordedAtEpochMillis)"
+      )
+
+      rawV3.execSQL(
+        "INSERT INTO works (id, title, author, status, isFavorite, createdAtEpochMillis, updatedAtEpochMillis) VALUES (1, 'Dom Casmurro', 'Machado de Assis, Outro Autor', 'READING', 1, 1000, 2000)"
+      )
+      rawV3.execSQL(
+        "INSERT INTO editions (id, workId, publisherOrNote, publicationYear, totalPages, isbn, coverUri, language, format, translator, isPrimary, createdAtEpochMillis) VALUES (10, 1, 'Penguin', 2020, 280, '978-85-359-1484-9', NULL, 'en', 'PAPERBACK', 'Flora Thomson-DeVeaux', 1, 1000)"
+      )
+      rawV3.execSQL(
+        "INSERT INTO book_copies (id, editionId, currentPage, physicalFormat, personalNote, label, mediaType, locationOrPlatform, acquisitionEpochMillis, createdAtEpochMillis) VALUES (20, 10, 50, 'Brochura', 'Original v3 copy', 'Estante A', 'PHYSICAL', 'Sala', NULL, 1000)"
+      )
+      rawV3.version = 3
+    } finally {
+      rawV3.close()
+    }
+
+    val migratedDb =
+      Room.databaseBuilder(context, DipeLibrisDatabase::class.java, dbName)
+        .addMigrations(*DipeLibrisDatabase.MIGRATIONS)
+        .allowMainThreadQueries()
+        .build()
+    try {
+      val genres = migratedDb.genreDao().observeAllGenres().first()
+      assertEquals(17, genres.size)
+
+      val repo =
+        RoomLibraryRepository(
+          bookDao = migratedDb.bookDao(),
+          shelfDao = migratedDb.shelfDao(),
+          editionDao = migratedDb.editionDao(),
+          copyDao = migratedDb.copyDao(),
+          readingJourneyDao = migratedDb.readingJourneyDao(),
+          genreDao = migratedDb.genreDao(),
+          contributorDao = migratedDb.contributorDao(),
+          database = migratedDb,
+        )
+      val detail = repo.observeBookDetail(1L).first()!!
+      assertEquals("Dom Casmurro", detail.work.title)
+      assertEquals("9788535914849", detail.editions.first().edition.isbn13)
+      assertEquals("8535914846", detail.editions.first().edition.isbn10)
+      assertEquals(1, detail.editions.first().copies.size)
+      assertTrue(detail.contributors.any { it.name == "Machado de Assis" })
+      assertTrue(detail.contributors.any { it.name == "Outro Autor" })
+      assertTrue(detail.editions.first().contributors.any { it.name == "Flora Thomson-DeVeaux" })
+
+      val ftsHits = migratedDb.bookDao().searchWorkIdsFts("Machado*")
+      assertTrue(1L in ftsHits)
+    } finally {
+      migratedDb.close()
+      context.deleteDatabase(dbName)
+    }
+  }
+
+  @Test
   fun productionDatabaseBuilderOpensWithoutDestructiveMigration() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val builtDb = DipeLibrisDatabase.build(context)
     try {
       val writable = builtDb.openHelper.writableDatabase
       assertTrue(writable.isOpen)
-      assertEquals(3, writable.version)
+      assertEquals(4, writable.version)
     } finally {
       builtDb.close()
       context.deleteDatabase(DipeLibrisDatabase.DATABASE_NAME)

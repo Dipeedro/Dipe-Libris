@@ -46,9 +46,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.components.copyConditionLabel
 import com.example.core.designsystem.components.copyMediaTypeLabel
+import com.example.core.designsystem.components.copyOriginLabel
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import com.example.core.model.BookCopy
+import com.example.core.model.CopyCondition
 import com.example.core.model.CopyMediaType
+import com.example.core.model.CopyOrigin
 
 @Immutable
 data class CopyEditorSubmission(
@@ -58,9 +64,14 @@ data class CopyEditorSubmission(
   val locationOrPlatform: String?,
   val personalNote: String?,
   val setAsActiveReadingCopy: Boolean,
+  val condition: CopyCondition? = null,
+  val acquisitionOrigin: CopyOrigin? = null,
+  val customCopyCode: String? = null,
+  val pricePaidMinorUnits: Long? = null,
+  val currencyCode: String? = null,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CopyEditorSheet(
   initialCopy: BookCopy?,
@@ -82,6 +93,22 @@ fun CopyEditorSheet(
   var personalNote by remember(initialCopy) { mutableStateOf(initialCopy?.personalNote.orEmpty()) }
   var setAsActive by remember(initialCopy, isCurrentlyActiveCopy) {
     mutableStateOf(isCurrentlyActiveCopy)
+  }
+  var showCollectorExtras by remember(initialCopy) {
+    mutableStateOf(
+      initialCopy?.condition != null ||
+        initialCopy?.acquisitionOrigin != null ||
+        initialCopy?.customCopyCode != null ||
+        initialCopy?.pricePaidMinorUnits != null
+    )
+  }
+  var condition by remember(initialCopy) { mutableStateOf(initialCopy?.condition) }
+  var acquisitionOrigin by remember(initialCopy) { mutableStateOf(initialCopy?.acquisitionOrigin) }
+  var customCopyCode by remember(initialCopy) { mutableStateOf(initialCopy?.customCopyCode.orEmpty()) }
+  var priceText by remember(initialCopy) {
+    mutableStateOf(
+      initialCopy?.pricePaidMinorUnits?.let { "%.2f".format(it / 100.0) }.orEmpty()
+    )
   }
   var showDeleteConfirmation by remember { mutableStateOf(false) }
 
@@ -190,6 +217,79 @@ fun CopyEditorSheet(
         modifier = Modifier.fillMaxWidth().testTag("copy_note_input"),
       )
 
+      TextButton(
+        onClick = { showCollectorExtras = !showCollectorExtras },
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("copy_collector_toggle"),
+      ) {
+        Text(stringResource(R.string.review_copy_collector_toggle))
+      }
+
+      if (showCollectorExtras) {
+        Text(
+          text = stringResource(R.string.review_copy_condition),
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        androidx.compose.foundation.layout.FlowRow(
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        ) {
+          CopyCondition.entries.forEach { cond ->
+            val selected = condition == cond
+            FilterChip(
+              selected = selected,
+              onClick = { condition = if (selected) null else cond },
+              label = { Text(copyConditionLabel(cond)) },
+              shape = CircleShape,
+              colors = chipColors,
+            )
+          }
+        }
+        Text(
+          text = stringResource(R.string.review_copy_origin),
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        androidx.compose.foundation.layout.FlowRow(
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+        ) {
+          CopyOrigin.entries.forEach { orig ->
+            val selected = acquisitionOrigin == orig
+            FilterChip(
+              selected = selected,
+              onClick = { acquisitionOrigin = if (selected) null else orig },
+              label = { Text(copyOriginLabel(orig)) },
+              shape = CircleShape,
+              colors = chipColors,
+            )
+          }
+        }
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+        ) {
+          OutlinedTextField(
+            value = priceText,
+            onValueChange = { priceText = it },
+            label = { Text(stringResource(R.string.review_copy_price)) },
+            singleLine = true,
+            shape = MaterialTheme.shapes.medium,
+            colors = textFieldColors,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+            value = customCopyCode,
+            onValueChange = { customCopyCode = it },
+            label = { Text(stringResource(R.string.review_copy_code)) },
+            singleLine = true,
+            shape = MaterialTheme.shapes.medium,
+            colors = textFieldColors,
+            modifier = Modifier.weight(1f),
+          )
+        }
+      }
+
       if (hasActiveJourney && !isCurrentlyActiveCopy) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -246,6 +346,8 @@ fun CopyEditorSheet(
           Spacer(modifier = Modifier.width(DipeSpacing.sm))
           Button(
             onClick = {
+              val parsedPrice =
+                priceText.trim().replace(",", ".").toDoubleOrNull()?.let { Math.round(it * 100.0) }
               onSave(
                 CopyEditorSubmission(
                   mediaType = mediaType,
@@ -254,6 +356,11 @@ fun CopyEditorSheet(
                   locationOrPlatform = location.trim().takeIf { it.isNotEmpty() },
                   personalNote = personalNote.trim().takeIf { it.isNotEmpty() },
                   setAsActiveReadingCopy = setAsActive,
+                  condition = condition,
+                  acquisitionOrigin = acquisitionOrigin,
+                  customCopyCode = customCopyCode.trim().takeIf { it.isNotEmpty() },
+                  pricePaidMinorUnits = parsedPrice,
+                  currencyCode = if (parsedPrice != null) (initialCopy?.currencyCode ?: "BRL") else null,
                 )
               )
             },

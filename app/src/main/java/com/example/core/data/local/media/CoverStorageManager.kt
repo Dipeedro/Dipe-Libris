@@ -15,10 +15,16 @@ import kotlinx.coroutines.withContext
 interface CoverStorageManager {
   suspend fun importCoverFromUri(sourceUri: Uri): String?
 
+  suspend fun downloadAndImportCover(imageUrl: String): String? = null
+
   suspend fun deleteCoverIfManaged(coverUri: String?)
 }
 
-class InternalCoverStorageManager(private val context: Context) : CoverStorageManager {
+class InternalCoverStorageManager(
+  private val context: Context,
+  private val okHttpClient: okhttp3.OkHttpClient =
+    com.example.core.bibliographic.network.BibliographicHttpClients.okHttpClient,
+) : CoverStorageManager {
 
   private val coversDir: File
     get() = File(context.filesDir, "covers")
@@ -40,34 +46,78 @@ class InternalCoverStorageManager(private val context: Context) : CoverStorageMa
           return@withContext null
         }
 
-        val decoded =
-          decodeScaledBitmap(tempFile) ?: return@withContext null
-
-        val targetDir = coversDir.apply { mkdirs() }
-        val outFile = File(targetDir, "cover_${UUID.randomUUID()}.jpg")
-        try {
-          val scaled = downscaleIfNeeded(decoded, MAX_DIMENSION_PX)
-          try {
-            FileOutputStream(outFile).use { out ->
-              scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-            }
-          } finally {
-            if (scaled !== decoded) {
-              scaled.recycle()
-            }
-            decoded.recycle()
-          }
-          if (outFile.exists() && outFile.length() > 0L) outFile.absolutePath else null
-        } catch (t: Throwable) {
-          outFile.delete()
-          throw t
-        }
+        decodeAndSaveTempFile(tempFile, minWidth = 1, minHeight = 1)
       } catch (_: Throwable) {
         null
       } finally {
         tempSourceFile?.delete()
       }
     }
+
+  override suspend fun downloadAndImportCover(imageUrl: String): String? =
+    withContext(Dispatchers.IO) {
+      val cleanUrl = imageUrl.trim()
+      if (!cleanUrl.startsWith("https://") && !cleanUrl.startsWith("http://")) {
+        return@withContext null
+      }
+      var tempSourceFile: File? = null
+      try {
+        val request =
+          okhttp3.Request.Builder()
+            .url(cleanUrl)
+            .header("Accept", "image/*")
+            .get()
+            .build()
+        val tempFile = File.createTempFile("cover_dl_", ".tmp", context.cacheDir)
+        tempSourceFile = tempFile
+        okHttpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@withContext null
+          val body = response.body ?: return@withContext null
+          body.byteStream().use { input ->
+            FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+          }
+        }
+        if (!tempFile.exists() || tempFile.length() < 256L) {
+          return@withContext null
+        }
+        decodeAndSaveTempFile(tempFile, minWidth = 50, minHeight = 60)
+      } catch (_: Throwable) {
+        null
+      } finally {
+        tempSourceFile?.delete()
+      }
+    }
+
+  private fun decodeAndSaveTempFile(
+    tempFile: File,
+    minWidth: Int,
+    minHeight: Int,
+  ): String? {
+    val decoded = decodeScaledBitmap(tempFile) ?: return null
+    if (decoded.width < minWidth || decoded.height < minHeight) {
+      decoded.recycle()
+      return null
+    }
+    val targetDir = coversDir.apply { mkdirs() }
+    val outFile = File(targetDir, "cover_${UUID.randomUUID()}.jpg")
+    return try {
+      val scaled = downscaleIfNeeded(decoded, MAX_DIMENSION_PX)
+      try {
+        FileOutputStream(outFile).use { out ->
+          scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+        }
+      } finally {
+        if (scaled !== decoded) {
+          scaled.recycle()
+        }
+        decoded.recycle()
+      }
+      if (outFile.exists() && outFile.length() > 0L) outFile.absolutePath else null
+    } catch (t: Throwable) {
+      outFile.delete()
+      throw t
+    }
+  }
 
   private fun decodeScaledBitmap(sourceFile: File): Bitmap? {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

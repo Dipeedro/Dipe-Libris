@@ -5,9 +5,11 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.data.local.media.CoverStorageManager
+import com.example.core.data.local.preferences.PreferencesRepository
 import com.example.core.data.repository.DiaryRepository
 import com.example.core.data.repository.JourneyCompletionSnapshot
 import com.example.core.data.repository.LibraryRepository
+import com.example.core.data.repository.MetadataUpdateRepository
 import com.example.core.data.repository.ReadingJourneyRepository
 import com.example.core.model.BookCopy
 import com.example.core.model.BookDetailAggregate
@@ -18,11 +20,13 @@ import com.example.core.model.Edition
 import com.example.core.model.EditionFormat
 import com.example.core.model.EditionWithBookCopies
 import com.example.core.model.ReadingStatus
+import com.example.core.model.Work
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -37,6 +41,7 @@ sealed interface BookDetailUiState {
     val diaryNotes: List<DiaryEntry>,
     val focusedEditionId: Long? = null,
     val isDeleting: Boolean = false,
+    val isCheckingUpdates: Boolean = false,
   ) : BookDetailUiState {
     constructor(
       book: CatalogBook,
@@ -61,6 +66,7 @@ sealed interface BookDetailUiState {
       diaryNotes = diaryNotes,
       focusedEditionId = book.primaryEdition?.id,
       isDeleting = isDeleting,
+      isCheckingUpdates = false,
     )
 
     val book: CatalogBook
@@ -85,6 +91,8 @@ sealed interface BookDetailUiState {
           activeRereadNumber = detail.activeJourney?.session?.rereadNumber,
           activeCopyMediaType = activeCopy?.mediaType,
           activeCopyLabel = activeCopy?.label,
+          primaryGenre = detail.work.primaryGenre,
+          pendingSuggestionsCount = detail.pendingSuggestions.size,
         )
       }
   }
@@ -98,9 +106,12 @@ class BookDetailViewModel(
   diaryRepository: DiaryRepository,
   private val readingJourneyRepository: ReadingJourneyRepository? = null,
   private val coverStorageManager: CoverStorageManager? = null,
+  private val metadataUpdateRepository: MetadataUpdateRepository? = null,
+  private val preferencesRepository: PreferencesRepository? = null,
 ) : ViewModel() {
 
   private val isDeleting = MutableStateFlow(false)
+  private val isCheckingUpdates = MutableStateFlow(false)
   private val focusedEditionId = MutableStateFlow<Long?>(null)
 
   val uiState: StateFlow<BookDetailUiState> =
@@ -109,7 +120,8 @@ class BookDetailViewModel(
         diaryRepository.observeEntriesForWork(workId),
         focusedEditionId,
         isDeleting,
-      ) { detail, notes, requestedEditionId, deleting ->
+        isCheckingUpdates,
+      ) { detail, notes, requestedEditionId, deleting, checkingUpdates ->
         if (detail == null) {
           BookDetailUiState.NotFound
         } else {
@@ -124,6 +136,7 @@ class BookDetailViewModel(
             diaryNotes = notes,
             focusedEditionId = resolvedEditionId,
             isDeleting = deleting,
+            isCheckingUpdates = checkingUpdates,
           )
         }
       }
@@ -151,6 +164,38 @@ class BookDetailViewModel(
       libraryRepository.updateWorkMetadata(workId = workId, title = title, author = author)
       onDone()
     }
+  }
+
+  fun updateWorkDetails(work: Work, editedMaskDelta: Long = 0L, onDone: () -> Unit = {}) {
+    viewModelScope.launch {
+      libraryRepository.updateWorkDetails(work = work, editedMaskDelta = editedMaskDelta)
+      onDone()
+    }
+  }
+
+  fun checkMetadataUpdates(onResult: (Int) -> Unit = {}) {
+    val updater = metadataUpdateRepository ?: return
+    if (isCheckingUpdates.value) return
+    viewModelScope.launch {
+      isCheckingUpdates.value = true
+      try {
+        val preferredLang = preferencesRepository?.preferences?.first()?.language?.tag
+        val count = updater.checkUpdatesForWork(workId = workId, preferredLanguage = preferredLang)
+        onResult(count)
+      } finally {
+        isCheckingUpdates.value = false
+      }
+    }
+  }
+
+  fun acceptMetadataSuggestion(suggestionId: Long) {
+    val updater = metadataUpdateRepository ?: return
+    viewModelScope.launch { updater.acceptSuggestion(suggestionId) }
+  }
+
+  fun rejectMetadataSuggestion(suggestionId: Long) {
+    val updater = metadataUpdateRepository ?: return
+    viewModelScope.launch { updater.rejectSuggestion(suggestionId) }
   }
 
   fun addEdition(

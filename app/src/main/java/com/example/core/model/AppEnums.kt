@@ -104,3 +104,87 @@ enum class ShelfType {
   CUSTOM,
   SMART,
 }
+
+enum class ContributorRole {
+  AUTHOR,
+  CO_AUTHOR,
+  EDITOR_ORGANIZER,
+  TRANSLATOR,
+  ILLUSTRATOR,
+  PREFACE_BY,
+  OTHER;
+
+  val isPrimaryWorkRole: Boolean
+    get() = this == AUTHOR || this == CO_AUTHOR || this == EDITOR_ORGANIZER
+
+  val isEditionSpecificByDefault: Boolean
+    get() = this == TRANSLATOR || this == ILLUSTRATOR || this == PREFACE_BY
+
+  companion object {
+    fun fromName(name: String?): ContributorRole =
+      name?.let { value -> entries.firstOrNull { it.name == value } } ?: AUTHOR
+  }
+}
+
+enum class CopyCondition {
+  NEW,
+  LIKE_NEW,
+  GOOD,
+  FAIR,
+  WORN,
+  DAMAGED;
+
+  companion object {
+    fun fromName(name: String?): CopyCondition? =
+      name?.let { value -> entries.firstOrNull { it.name == value } }
+  }
+}
+
+enum class CopyOrigin {
+  PURCHASED,
+  GIFT,
+  BORROWED,
+  EXCHANGE,
+  INHERITED,
+  OTHER;
+
+  companion object {
+    fun fromName(name: String?): CopyOrigin? =
+      name?.let { value -> entries.firstOrNull { it.name == value } }
+  }
+}
+
+enum class MetadataSource(val displayName: String) {
+  OPEN_LIBRARY("Open Library"),
+  GOOGLE_BOOKS("Google Books"),
+  CROSSREF("Crossref"),
+  WIKIDATA("Wikidata"),
+  BRASIL_API("BrasilAPI / CBL"),
+  MANUAL("Manual");
+
+  companion object {
+    fun fromName(name: String?): MetadataSource =
+      name?.let { value -> entries.firstOrNull { it.name == value } } ?: MANUAL
+  }
+}
+
+enum class MetadataSuggestionStatus {
+  PENDING,
+  ACCEPTED,
+  REJECTED;
+
+  companion object {
+    fun fromName(name: String?): MetadataSuggestionStatus =
+      name?.let { value -> entries.firstOrNull { it.name == value } } ?: PENDING
+  }
+}
+
+enum class MetadataSuggestionScope {
+  WORK,
+  EDITION;
+
+  companion object {
+    fun fromName(name: String?): MetadataSuggestionScope =
+      name?.let { value -> entries.firstOrNull { it.name == value } } ?: WORK
+  }
+}

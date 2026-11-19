@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.example.core.model.CopyMediaType
 import com.example.core.model.EditionFormat
+import com.example.core.model.MetadataSuggestionStatus
 import com.example.core.model.ReadingStatus
 import kotlinx.coroutines.flow.Flow
 
@@ -20,10 +21,21 @@ private const val LIBRARY_BOOK_SUMMARY_SELECT = """
     pe.publicationYear AS pe_publicationYear,
     pe.totalPages AS pe_totalPages,
     pe.isbn AS pe_isbn,
+    pe.isbn10 AS pe_isbn10,
+    pe.isbn13 AS pe_isbn13,
     pe.coverUri AS pe_coverUri,
+    pe.coverSource AS pe_coverSource,
+    pe.isCoverCustomized AS pe_isCoverCustomized,
     pe.language AS pe_language,
     pe.format AS pe_format,
     pe.translator AS pe_translator,
+    pe.editionLabel AS pe_editionLabel,
+    pe.seriesName AS pe_seriesName,
+    pe.seriesVolume AS pe_seriesVolume,
+    pe.synopsis AS pe_synopsis,
+    pe.synopsisSource AS pe_synopsisSource,
+    pe.categoriesJson AS pe_categoriesJson,
+    pe.externalIdsJson AS pe_externalIdsJson,
     pe.isPrimary AS pe_isPrimary,
     pe.createdAtEpochMillis AS pe_createdAtEpochMillis,
     pc.id AS pc_id,
@@ -35,7 +47,19 @@ private const val LIBRARY_BOOK_SUMMARY_SELECT = """
     pc.mediaType AS pc_mediaType,
     pc.locationOrPlatform AS pc_locationOrPlatform,
     pc.acquisitionEpochMillis AS pc_acquisitionEpochMillis,
+    pc.condition AS pc_condition,
+    pc.acquisitionOrigin AS pc_acquisitionOrigin,
+    pc.pricePaidMinorUnits AS pc_pricePaidMinorUnits,
+    pc.currencyCode AS pc_currencyCode,
+    pc.customCopyCode AS pc_customCopyCode,
+    pc.customAttributesJson AS pc_customAttributesJson,
     pc.createdAtEpochMillis AS pc_createdAtEpochMillis,
+    g.id AS g_id,
+    g.slug AS g_slug,
+    g.namePt AS g_namePt,
+    g.nameEn AS g_nameEn,
+    g.isCustom AS g_isCustom,
+    g.createdAtEpochMillis AS g_createdAtEpochMillis,
     (SELECT COUNT(*) FROM editions e_cnt WHERE e_cnt.workId = w.id) AS editionCount,
     (
       SELECT COUNT(*)
@@ -49,8 +73,14 @@ private const val LIBRARY_BOOK_SUMMARY_SELECT = """
     COALESCE(pe.totalPages, rs.totalPagesSnapshot) AS activeTotalPages,
     rs.rereadNumber AS activeRereadNumber,
     pc.mediaType AS activeCopyMediaType,
-    pc.label AS activeCopyLabel
+    pc.label AS activeCopyLabel,
+    (
+      SELECT COUNT(*)
+      FROM metadata_update_suggestions ms
+      WHERE ms.workId = w.id AND ms.status = 'PENDING'
+    ) AS pendingSuggestionsCount
   FROM works w
+  LEFT JOIN genres g ON g.id = w.primaryGenreId
   LEFT JOIN reading_sessions rs ON rs.id = (
     SELECT rs_sub.id
     FROM reading_sessions rs_sub
@@ -95,11 +125,20 @@ interface BookDao {
   @Query("$LIBRARY_BOOK_SUMMARY_SELECT WHERE w.id = :workId LIMIT 1")
   fun observeCatalogBookSummary(workId: Long): Flow<LibraryBookSummaryRow?>
 
+  @Query("$LIBRARY_BOOK_SUMMARY_SELECT WHERE w.id IN (:workIds)")
+  suspend fun getCatalogBookSummariesByIds(workIds: List<Long>): List<LibraryBookSummaryRow>
+
+  @Query("$LIBRARY_BOOK_SUMMARY_SELECT ORDER BY w.updatedAtEpochMillis DESC")
+  suspend fun getAllCatalogBookSummariesSnapshot(): List<LibraryBookSummaryRow>
+
   @Query("SELECT * FROM works WHERE id = :workId LIMIT 1")
   fun observeWork(workId: Long): Flow<WorkEntity?>
 
   @Query("SELECT * FROM works WHERE id = :workId LIMIT 1")
   suspend fun getWorkById(workId: Long): WorkEntity?
+
+  @Query("SELECT * FROM works WHERE externalWorkKey = :externalWorkKey LIMIT 1")
+  suspend fun findWorkByExternalKey(externalWorkKey: String): WorkEntity?
 
   @Query("SELECT COUNT(*) FROM works")
   fun observeTotalWorksCount(): Flow<Int>
@@ -116,6 +155,9 @@ interface BookDao {
   @Insert(onConflict = OnConflictStrategy.ABORT)
   suspend fun insertWork(work: WorkEntity): Long
 
+  @Update
+  suspend fun updateWork(work: WorkEntity)
+
   @Insert(onConflict = OnConflictStrategy.ABORT)
   suspend fun insertEdition(edition: EditionEntity): Long
 
@@ -125,6 +167,15 @@ interface BookDao {
   @Insert(onConflict = OnConflictStrategy.ABORT)
   suspend fun insertReadingSession(session: ReadingSessionEntity): Long
 
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertFts(entry: LibraryFtsEntity)
+
+  @Query("DELETE FROM library_fts WHERE rowid = :workId")
+  suspend fun deleteFtsByWorkId(workId: Long)
+
+  @Query("SELECT rowid FROM library_fts WHERE library_fts MATCH :ftsQuery")
+  suspend fun searchWorkIdsFts(ftsQuery: String): List<Long>
+
   @Transaction
   suspend fun insertBookAggregate(
     work: WorkEntity,
@@ -132,13 +183,32 @@ interface BookDao {
     publicationYear: Int?,
     totalPages: Int?,
     isbn: String? = null,
+    isbn10: String? = null,
+    isbn13: String? = null,
     coverUri: String? = null,
+    coverSource: String? = null,
+    isCoverCustomized: Boolean = false,
     language: String? = null,
     format: EditionFormat? = null,
     translator: String? = null,
+    editionLabel: String? = null,
+    seriesName: String? = null,
+    seriesVolume: String? = null,
+    editionSynopsis: String? = null,
+    editionSynopsisSource: String? = null,
+    categoriesJson: String? = null,
+    externalIdsJson: String? = null,
     initialCopyMediaType: CopyMediaType = CopyMediaType.PHYSICAL,
     initialCopyLabel: String? = null,
+    initialCopyPhysicalFormat: String? = null,
     initialCopyLocation: String? = null,
+    initialCopyCondition: com.example.core.model.CopyCondition? = null,
+    initialCopyOrigin: com.example.core.model.CopyOrigin? = null,
+    initialCopyAcquisitionMillis: Long? = null,
+    initialCopyPriceMinorUnits: Long? = null,
+    initialCopyCurrencyCode: String? = null,
+    initialCopyCustomCode: String? = null,
+    initialCopyPersonalNote: String? = null,
   ): Long {
     val workId = insertWork(work)
     val editionId =
@@ -149,10 +219,21 @@ interface BookDao {
           publicationYear = publicationYear,
           totalPages = totalPages,
           isbn = isbn,
+          isbn10 = isbn10,
+          isbn13 = isbn13,
           coverUri = coverUri,
+          coverSource = coverSource,
+          isCoverCustomized = isCoverCustomized,
           language = language,
           format = format,
           translator = translator,
+          editionLabel = editionLabel,
+          seriesName = seriesName,
+          seriesVolume = seriesVolume,
+          synopsis = editionSynopsis,
+          synopsisSource = editionSynopsisSource,
+          categoriesJson = categoriesJson,
+          externalIdsJson = externalIdsJson,
           isPrimary = true,
           createdAtEpochMillis = work.createdAtEpochMillis,
         )
@@ -162,12 +243,24 @@ interface BookDao {
         BookCopyEntity(
           editionId = editionId,
           label = initialCopyLabel,
+          physicalFormat = initialCopyPhysicalFormat,
           mediaType = initialCopyMediaType,
           locationOrPlatform = initialCopyLocation,
+          acquisitionEpochMillis = initialCopyAcquisitionMillis,
+          condition = initialCopyCondition,
+          acquisitionOrigin = initialCopyOrigin,
+          pricePaidMinorUnits = initialCopyPriceMinorUnits,
+          currencyCode = initialCopyCurrencyCode,
+          customCopyCode = initialCopyCustomCode,
+          personalNote = initialCopyPersonalNote,
           createdAtEpochMillis = work.createdAtEpochMillis,
         )
       )
-    if (work.status == ReadingStatus.READING || work.status == ReadingStatus.PAUSED || work.status == ReadingStatus.FINISHED) {
+    if (
+      work.status == ReadingStatus.READING ||
+        work.status == ReadingStatus.PAUSED ||
+        work.status == ReadingStatus.FINISHED
+    ) {
       val pct = if (work.status == ReadingStatus.FINISHED) 100f else 0f
       val currentPage = if (work.status == ReadingStatus.FINISHED) (totalPages ?: 0) else 0
       insertReadingSession(
@@ -206,14 +299,35 @@ interface EditionDao {
   @Query("SELECT * FROM editions WHERE workId = :workId ORDER BY isPrimary DESC, id ASC")
   fun observeEditionsForWork(workId: Long): Flow<List<EditionEntity>>
 
+  @Query("SELECT * FROM editions WHERE workId = :workId ORDER BY isPrimary DESC, id ASC")
+  suspend fun getEditionsForWork(workId: Long): List<EditionEntity>
+
   @Query("SELECT * FROM editions WHERE id = :editionId LIMIT 1")
   suspend fun getEditionById(editionId: Long): EditionEntity?
+
+  @Query(
+    """
+    SELECT * FROM editions
+    WHERE (:isbn13 IS NOT NULL AND isbn13 = :isbn13)
+       OR (:isbn10 IS NOT NULL AND isbn10 = :isbn10)
+       OR (:cleanedRaw IS NOT NULL AND REPLACE(REPLACE(UPPER(isbn), '-', ''), ' ', '') = :cleanedRaw)
+    ORDER BY isPrimary DESC, id ASC
+    """
+  )
+  suspend fun findEditionsByIsbn(
+    isbn13: String?,
+    isbn10: String?,
+    cleanedRaw: String?,
+  ): List<EditionEntity>
 
   @Query("SELECT coverUri FROM editions WHERE workId = :workId AND coverUri IS NOT NULL")
   suspend fun getCoverUrisForWork(workId: Long): List<String>
 
   @Query("SELECT COUNT(*) FROM editions WHERE workId = :workId")
   suspend fun countEditionsForWork(workId: Long): Int
+
+  @Query("SELECT COUNT(*) FROM book_copies WHERE editionId = :editionId")
+  suspend fun countCopiesForEdition(editionId: Long): Int
 
   @Insert(onConflict = OnConflictStrategy.ABORT)
   suspend fun insertEdition(edition: EditionEntity): Long
@@ -241,6 +355,17 @@ interface CopyDao {
   )
   fun observeCopiesForWork(workId: Long): Flow<List<BookCopyEntity>>
 
+  @Query(
+    """
+    SELECT c.*
+    FROM book_copies c
+    INNER JOIN editions e ON c.editionId = e.id
+    WHERE e.workId = :workId
+    ORDER BY c.createdAtEpochMillis ASC, c.id ASC
+    """
+  )
+  suspend fun getCopiesForWork(workId: Long): List<BookCopyEntity>
+
   @Query("SELECT * FROM book_copies WHERE id = :copyId LIMIT 1")
   suspend fun getCopyById(copyId: Long): BookCopyEntity?
 
@@ -267,6 +392,124 @@ interface CopyDao {
 
   @Query("DELETE FROM book_copies WHERE id = :copyId")
   suspend fun deleteCopyById(copyId: Long)
+}
+
+@Dao
+interface GenreDao {
+  @Query("SELECT * FROM genres ORDER BY isCustom ASC, namePt ASC")
+  fun observeAllGenres(): Flow<List<GenreEntity>>
+
+  @Query("SELECT * FROM genres ORDER BY isCustom ASC, namePt ASC")
+  suspend fun getAllGenres(): List<GenreEntity>
+
+  @Query("SELECT * FROM genres WHERE id = :genreId LIMIT 1")
+  suspend fun getGenreById(genreId: Long): GenreEntity?
+
+  @Query("SELECT * FROM genres WHERE slug = :slug LIMIT 1")
+  suspend fun getGenreBySlug(slug: String): GenreEntity?
+
+  @Insert(onConflict = OnConflictStrategy.IGNORE)
+  suspend fun insertGenre(genre: GenreEntity): Long
+}
+
+@Dao
+interface ContributorDao {
+  @Query(
+    """
+    SELECT cl.id AS linkId, cl.workId, cl.editionId, cl.contributorId, c.name, cl.role, cl.displayOrder
+    FROM contribution_links cl
+    INNER JOIN contributors c ON cl.contributorId = c.id
+    WHERE cl.workId = :workId
+    ORDER BY cl.displayOrder ASC, cl.id ASC
+    """
+  )
+  fun observeContributorsForWork(workId: Long): Flow<List<ContributorLinkWithNameRow>>
+
+  @Query(
+    """
+    SELECT cl.id AS linkId, cl.workId, cl.editionId, cl.contributorId, c.name, cl.role, cl.displayOrder
+    FROM contribution_links cl
+    INNER JOIN contributors c ON cl.contributorId = c.id
+    WHERE cl.workId = :workId
+    ORDER BY cl.displayOrder ASC, cl.id ASC
+    """
+  )
+  suspend fun getContributorsForWork(workId: Long): List<ContributorLinkWithNameRow>
+
+  @Query("SELECT * FROM contributors WHERE normalizedName = :normalizedName LIMIT 1")
+  suspend fun findByNormalizedName(normalizedName: String): ContributorEntity?
+
+  @Insert(onConflict = OnConflictStrategy.ABORT)
+  suspend fun insertContributor(contributor: ContributorEntity): Long
+
+  @Insert(onConflict = OnConflictStrategy.ABORT)
+  suspend fun insertContributionLink(link: ContributionLinkEntity): Long
+
+  @Query("DELETE FROM contribution_links WHERE workId = :workId AND editionId IS NULL")
+  suspend fun deleteWorkLevelLinks(workId: Long)
+
+  @Query("DELETE FROM contribution_links WHERE editionId = :editionId")
+  suspend fun deleteEditionLevelLinks(editionId: Long)
+}
+
+@Dao
+interface SearchCacheDao {
+  @Query("SELECT * FROM search_cache_entries WHERE cacheKey = :cacheKey AND expiresAtEpochMillis >= :nowMillis LIMIT 1")
+  suspend fun getValidEntry(cacheKey: String, nowMillis: Long): SearchCacheEntity?
+
+  @Query("SELECT * FROM search_cache_entries WHERE cacheKey = :cacheKey LIMIT 1")
+  suspend fun getAnyEntry(cacheKey: String): SearchCacheEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertEntry(entry: SearchCacheEntity)
+
+  @Query("UPDATE search_cache_entries SET lastAccessedEpochMillis = :accessedAt WHERE cacheKey = :cacheKey")
+  suspend fun touchEntry(cacheKey: String, accessedAt: Long)
+
+  @Query("DELETE FROM search_cache_entries WHERE expiresAtEpochMillis < :nowMillis")
+  suspend fun deleteExpired(nowMillis: Long)
+
+  @Query(
+    """
+    DELETE FROM search_cache_entries
+    WHERE cacheKey NOT IN (
+      SELECT cacheKey FROM search_cache_entries
+      ORDER BY lastAccessedEpochMillis DESC
+      LIMIT :keepLimit
+    )
+    """
+  )
+  suspend fun trimBeyond(keepLimit: Int)
+}
+
+@Dao
+interface MetadataSuggestionDao {
+  @Query(
+    """
+    SELECT * FROM metadata_update_suggestions
+    WHERE workId = :workId AND status = 'PENDING'
+    ORDER BY confidenceScore DESC, createdAtEpochMillis DESC
+    """
+  )
+  fun observePendingForWork(workId: Long): Flow<List<MetadataSuggestionEntity>>
+
+  @Query("SELECT * FROM metadata_update_suggestions WHERE workId = :workId")
+  suspend fun getAllForWork(workId: Long): List<MetadataSuggestionEntity>
+
+  @Query("SELECT * FROM metadata_update_suggestions WHERE id = :suggestionId LIMIT 1")
+  suspend fun getById(suggestionId: Long): MetadataSuggestionEntity?
+
+  @Query("SELECT COUNT(*) FROM metadata_update_suggestions WHERE status = 'PENDING'")
+  fun observeTotalPendingCount(): Flow<Int>
+
+  @Insert(onConflict = OnConflictStrategy.ABORT)
+  suspend fun insertSuggestions(entries: List<MetadataSuggestionEntity>)
+
+  @Query("UPDATE metadata_update_suggestions SET status = :status WHERE id = :suggestionId")
+  suspend fun updateStatus(suggestionId: Long, status: MetadataSuggestionStatus)
+
+  @Query("DELETE FROM metadata_update_suggestions WHERE workId = :workId AND status = 'PENDING'")
+  suspend fun clearPendingForWork(workId: Long)
 }
 
 @Dao

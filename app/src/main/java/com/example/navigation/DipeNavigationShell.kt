@@ -94,6 +94,11 @@ import com.example.feature.home.HomeViewModel
 import com.example.feature.library.AddBookSheet
 import com.example.feature.library.BookDetailScreen
 import com.example.feature.library.BookDetailViewModel
+import com.example.feature.library.BookReviewScreen
+import com.example.feature.library.BookReviewViewModel
+import com.example.feature.library.BookSearchScreen
+import com.example.feature.library.BookSearchViewModel
+import com.example.feature.library.IsbnScannerScreen
 import com.example.feature.library.LibraryScreen
 import com.example.feature.library.LibraryViewModel
 import com.example.feature.profile.EditProfileSheet
@@ -166,6 +171,7 @@ fun DipeNavigationShell(
             libraryRepository = it.libraryRepository,
             preferencesRepository = it.preferencesRepository,
             coverStorageManager = it.coverStorageManager,
+            metadataUpdateRepository = it.metadataUpdateRepository,
           )
         }
     )
@@ -357,11 +363,148 @@ fun DipeNavigationShell(
                 widthClass = widthClass,
                 onSearchChange = libraryViewModel::setSearchQuery,
                 onStatusFilterChange = libraryViewModel::setStatusFilter,
+                onGenreFilterChange = libraryViewModel::setGenreFilter,
                 onSortOrderChange = libraryViewModel::setSortOrder,
                 onViewModeChange = libraryViewModel::setViewMode,
-                onOpenAddBook = { showAddBookSheet = true },
+                onOpenAddBook = { navController.navigate(BookSearchRoute()) },
                 onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
                 onToggleFavorite = libraryViewModel::toggleFavorite,
+                onCheckUpdates = {
+                  libraryViewModel.checkLibraryMetadataUpdates { summary ->
+                    val message =
+                      if (summary.newSuggestionsCount > 0) {
+                        context.resources.getString(
+                          R.string.library_updates_found,
+                          summary.newSuggestionsCount,
+                        )
+                      } else {
+                        context.resources.getString(
+                          R.string.library_updates_checked_none,
+                          summary.booksChecked,
+                        )
+                      }
+                    scope.launch {
+                      snackbarHostState.currentSnackbarData?.dismiss()
+                      snackbarHostState.showSnackbar(
+                        message = message,
+                        duration = SnackbarDuration.Short,
+                      )
+                    }
+                  }
+                },
+              )
+            }
+
+            composable<BookSearchRoute> { backStackEntry ->
+              val route = backStackEntry.toRoute<BookSearchRoute>()
+              val searchViewModel: BookSearchViewModel =
+                viewModel(
+                  factory =
+                    dipeFactory(container) {
+                      BookSearchViewModel(
+                        initialQuery = route.initialQuery,
+                        orchestrator = it.hybridSearchOrchestrator,
+                        libraryRepository = it.libraryRepository,
+                        preferencesRepository = it.preferencesRepository,
+                        draftStore = it.bibliographicDraftStore,
+                      )
+                    }
+                )
+              androidx.compose.runtime.LaunchedEffect(navBackStackEntry) {
+                searchViewModel.onResumeCheckScannedIsbn()
+              }
+              val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
+              BookSearchScreen(
+                uiState = searchState,
+                widthClass = widthClass,
+                onQueryChange = searchViewModel::setQuery,
+                onSubmitSearch = { searchViewModel.submitSearch(expandSecondarySources = false) },
+                onExpandSecondarySources = {
+                  searchViewModel.submitSearch(expandSecondarySources = true)
+                },
+                onOpenScanner = { navController.navigate(IsbnScannerRoute) },
+                onManualCatalog = {
+                  searchViewModel.startManualRegistration {
+                    navController.navigate(BookReviewRoute(mode = "manual"))
+                  }
+                },
+                onToggleGroupExpanded = searchViewModel::toggleGroupExpanded,
+                onLoadMoreEditions = searchViewModel::loadMoreEditionsForWork,
+                onSelectEdition = { candidate ->
+                  searchViewModel.selectEditionCandidate(candidate) {
+                    navController.navigate(BookReviewRoute(mode = "imported"))
+                  }
+                },
+                onOpenExistingBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
+                onDismissDuplicate = searchViewModel::dismissDuplicatePrompt,
+                onDuplicateAddCopy = { candidate, editionId, workId ->
+                  searchViewModel.proceedAddCopyToExistingEdition(
+                    candidate = candidate,
+                    existingEditionId = editionId,
+                    existingWorkId = workId,
+                  ) {
+                    navController.navigate(BookReviewRoute(mode = "add_copy", targetWorkId = workId))
+                  }
+                },
+                onDuplicateAddEdition = { candidate, workId ->
+                  searchViewModel.proceedAddEditionToExistingWork(
+                    candidate = candidate,
+                    existingWorkId = workId,
+                  ) {
+                    navController.navigate(
+                      BookReviewRoute(mode = "add_edition", targetWorkId = workId)
+                    )
+                  }
+                },
+                onDuplicateSaveSeparately = { candidate ->
+                  searchViewModel.proceedSaveAsSeparateWork(candidate) {
+                    navController.navigate(BookReviewRoute(mode = "imported"))
+                  }
+                },
+                onNavigateBack = { navController.popBackStack() },
+              )
+            }
+
+            composable<IsbnScannerRoute> {
+              IsbnScannerScreen(
+                widthClass = widthClass,
+                onIsbnDetected = { detectedIsbn ->
+                  container.bibliographicDraftStore.setScannedIsbn(detectedIsbn)
+                  navController.popBackStack()
+                },
+                onNavigateBack = { navController.popBackStack() },
+              )
+            }
+
+            composable<BookReviewRoute> { backStackEntry ->
+              val route = backStackEntry.toRoute<BookReviewRoute>()
+              val reviewViewModel: BookReviewViewModel =
+                viewModel(
+                  factory =
+                    dipeFactory(container) {
+                      BookReviewViewModel(
+                        modeArg = route.mode,
+                        targetWorkIdArg = route.targetWorkId.takeIf { it > 0L },
+                        prefillArg = route.prefill,
+                        libraryRepository = it.libraryRepository,
+                        coverStorageManager = it.coverStorageManager,
+                        preferencesRepository = it.preferencesRepository,
+                        draftStore = it.bibliographicDraftStore,
+                      )
+                    }
+                )
+              val reviewState by reviewViewModel.uiState.collectAsStateWithLifecycle()
+              BookReviewScreen(
+                uiState = reviewState,
+                widthClass = widthClass,
+                viewModel = reviewViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onSavedWork = { savedWorkId ->
+                  navController.navigate(BookDetailRoute(savedWorkId)) {
+                    popUpTo(LibraryRoute) { inclusive = false }
+                    launchSingleTop = true
+                  }
+                },
               )
             }
 
@@ -455,6 +598,8 @@ fun DipeNavigationShell(
                         diaryRepository = it.diaryRepository,
                         readingJourneyRepository = it.readingJourneyRepository,
                         coverStorageManager = it.coverStorageManager,
+                        metadataUpdateRepository = it.metadataUpdateRepository,
+                        preferencesRepository = it.preferencesRepository,
                       )
                     },
                 )
@@ -552,6 +697,25 @@ fun DipeNavigationShell(
                 },
                 onProgressUpdated = showProgressUpdatedSnackbar,
                 onSwitchActiveCopy = bookDetailViewModel::switchActiveCopy,
+                onCheckMetadataUpdates = {
+                  bookDetailViewModel.checkMetadataUpdates { foundCount ->
+                    val message =
+                      if (foundCount > 0) {
+                        context.resources.getString(R.string.library_updates_found, foundCount)
+                      } else {
+                        context.resources.getString(R.string.library_updates_checked_none, 1)
+                      }
+                    scope.launch {
+                      snackbarHostState.currentSnackbarData?.dismiss()
+                      snackbarHostState.showSnackbar(
+                        message = message,
+                        duration = SnackbarDuration.Short,
+                      )
+                    }
+                  }
+                },
+                onAcceptSuggestion = bookDetailViewModel::acceptMetadataSuggestion,
+                onRejectSuggestion = bookDetailViewModel::rejectMetadataSuggestion,
               )
             }
           }

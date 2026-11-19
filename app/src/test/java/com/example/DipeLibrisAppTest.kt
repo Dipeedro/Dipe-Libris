@@ -133,22 +133,23 @@ class DipeLibrisAppTest {
     composeTestRule.waitForIdle()
 
     composeTestRule.onNodeWithTag("library_add_book_button").performClick()
-    composeTestRule.waitForIdle()
-
-    composeTestRule.onNodeWithTag("add_book_title_input").performScrollTo().performTextInput("Dom Casmurro")
-    composeTestRule.onNodeWithTag("add_book_author_input").performScrollTo().performTextInput("Machado de Assis")
-    composeTestRule.onNodeWithTag("add_book_save_button").performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
-      composeTestRule.onAllNodes(hasTestTag("add_book_save_button")).fetchSemanticsNodes().isEmpty() &&
-        composeTestRule.onAllNodes(hasTestTag("library_grid")).fetchSemanticsNodes().isNotEmpty()
+      composeTestRule.onAllNodes(hasTestTag("search_manual_button")).fetchSemanticsNodes().isNotEmpty()
+    }
+    composeTestRule.onNodeWithTag("search_manual_button").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("review_title_input")).fetchSemanticsNodes().isNotEmpty()
     }
 
+    composeTestRule.onNodeWithTag("review_title_input").performScrollTo().performTextInput("Dom Casmurro")
     composeTestRule
-      .onNodeWithTag("library_grid")
-      .performScrollToNode(hasTestTag("library_grid_book_1"))
-    composeTestRule.onNodeWithTag("library_grid_book_1").performClick()
+      .onNodeWithTag("review_contributor_name_0")
+      .performScrollTo()
+      .performTextInput("Machado de Assis")
+    composeTestRule.onNodeWithTag("review_save_button").performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
-      composeTestRule.onAllNodes(hasTestTag("book_detail_lazy_column")).fetchSemanticsNodes().isNotEmpty()
+      composeTestRule.onAllNodes(hasTestTag("review_save_button")).fetchSemanticsNodes().isEmpty() &&
+        composeTestRule.onAllNodes(hasTestTag("book_detail_lazy_column")).fetchSemanticsNodes().isNotEmpty()
     }
 
     composeTestRule
@@ -171,5 +172,22 @@ class DipeLibrisAppTest {
     }
 
     composeTestRule.onNodeWithText("Olhos de ressaca.").assertIsDisplayed()
+
+    // Navigate back to BookDetail -> Library grid and confirm the book appears in the catalog
+    composeTestRule.onNodeWithTag("diary_back_button").performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("book_detail_lazy_column")).fetchSemanticsNodes().isNotEmpty()
+    }
+    composeTestRule
+      .onNodeWithTag("book_detail_lazy_column")
+      .performScrollToNode(hasTestTag("book_detail_back_button"))
+    composeTestRule.onNodeWithTag("book_detail_back_button").performScrollTo().performClick()
+    composeTestRule.waitUntil(timeoutMillis = 5_000) {
+      composeTestRule.onAllNodes(hasTestTag("library_grid")).fetchSemanticsNodes().isNotEmpty()
+    }
+    composeTestRule
+      .onNodeWithTag("library_grid")
+      .performScrollToNode(hasTestTag("library_grid_book_1"))
+    composeTestRule.onNodeWithTag("library_grid_book_1").assertIsDisplayed()
   }
 }

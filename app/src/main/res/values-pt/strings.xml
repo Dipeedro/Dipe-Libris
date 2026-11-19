@@ -312,4 +312,149 @@
     <string name="settings_section_app_info">Aplicativo</string>
     <string name="settings_about_version">Versão %1$s</string>
     <string name="settings_about_privacy">Armazenamento offline no dispositivo.</string>
+
+    <!-- Contributor Roles -->
+    <string name="role_author">Autor(a)</string>
+    <string name="role_co_author">Coautor(a)</string>
+    <string name="role_editor_organizer">Organizador(a) / Editor(a)</string>
+    <string name="role_translator">Tradutor(a)</string>
+    <string name="role_illustrator">Ilustrador(a)</string>
+    <string name="role_preface_by">Prefácio / Introdução</string>
+    <string name="role_other">Colaborador(a)</string>
+
+    <!-- Copy Conditions & Origins -->
+    <string name="condition_new">Novo</string>
+    <string name="condition_like_new">Seminovo</string>
+    <string name="condition_good">Bom estado</string>
+    <string name="condition_fair">Regular</string>
+    <string name="condition_worn">Desgastado</string>
+    <string name="condition_damaged">Danificado</string>
+    <string name="origin_purchased">Comprado</string>
+    <string name="origin_gift">Presente</string>
+    <string name="origin_borrowed">Empréstimo</string>
+    <string name="origin_exchange">Troca</string>
+    <string name="origin_inherited">Herdado</string>
+    <string name="origin_other">Outro</string>
+
+    <!-- Book Search -->
+    <string name="search_screen_title">Pesquisar e catalogar</string>
+    <string name="search_query_placeholder">Título, autor ou ISBN</string>
+    <string name="search_action_submit">Pesquisar</string>
+    <string name="search_action_scan_isbn">Ler ISBN</string>
+    <string name="search_action_manual">Cadastrar manualmente</string>
+    <string name="search_action_expand_sources">Ampliar pesquisa em outras fontes</string>
+    <string name="search_offline_banner">Modo offline — buscando na biblioteca e cache local</string>
+    <string name="search_cache_banner">Resultados recuperados do cache local</string>
+    <string name="search_local_matches_section">Já está na sua biblioteca</string>
+    <string name="search_results_works_section">Obras e edições</string>
+    <plurals name="search_work_editions_count">
+        <item quantity="one">%1$d edição</item>
+        <item quantity="other">%1$d edições</item>
+    </plurals>
+    <string name="search_work_in_library_badge">Na biblioteca</string>
+    <string name="search_edition_select_action">Selecionar e revisar</string>
+    <string name="search_edition_load_more">Buscar mais edições</string>
+    <string name="search_empty_prompt_title">Pesquise antes de cadastrar</string>
+    <string name="search_empty_prompt_body">Busque por título, autor ou ISBN, escaneie o código de barras do livro ou preencha manualmente.</string>
+    <string name="search_no_results_title">Nenhuma edição encontrada</string>
+    <string name="search_no_results_body">Amplie a pesquisa em outras fontes, simplifique os termos ou cadastre manualmente.</string>
+    <string name="search_source_active">%1$s (%2$d)</string>
+    <string name="search_source_no_key">%1$s (sem chave)</string>
+    <string name="search_source_offline">%1$s (offline)</string>
+    <string name="search_source_rate_limit">%1$s (limite)</string>
+    <string name="cd_scan_isbn">Escanear código de barras ISBN</string>
+
+    <!-- ISBN Scanner -->
+    <string name="scanner_title">Escanear código ISBN</string>
+    <string name="scanner_hint">Aponte a câmera para o código de barras ISBN-10 ou ISBN-13 do livro.</string>
+    <string name="scanner_torch_toggle">Alternar lanterna</string>
+    <string name="scanner_permission_title">Acesso à câmera necessário</string>
+    <string name="scanner_permission_body">Permita o acesso à câmera para ler códigos ISBN automaticamente ou digite o código abaixo.</string>
+    <string name="scanner_permission_grant">Permitir câmera</string>
+    <string name="scanner_manual_isbn_label">Digitar ISBN manualmente</string>
+    <string name="scanner_manual_isbn_submit">Pesquisar ISBN</string>
+    <string name="scanner_detected_isbn">ISBN identificado: %1$s</string>
+    <string name="scanner_retry_action">Tentar novamente</string>
+
+    <!-- Duplicate Resolution -->
+    <string name="duplicate_exact_title">Esta edição já está na biblioteca</string>
+    <string name="duplicate_exact_body">“%1$s” (ISBN %2$s) já possui %3$d exemplar(es) cadastrado(s).</string>
+    <string name="duplicate_add_copy_action">Adicionar novo exemplar a esta edição</string>
+    <string name="duplicate_same_work_title">Obra já cadastrada na biblioteca</string>
+    <string name="duplicate_same_work_body">“%1$s”, de %2$s, já está no catálogo. Deseja vincular como nova edição ou salvar separadamente?</string>
+    <string name="duplicate_add_edition_action">Adicionar nova edição à obra</string>
+    <string name="duplicate_open_existing_action">Abrir livro existente</string>
+    <string name="duplicate_uncertain_title">Possível duplicidade detectada</string>
+    <string name="duplicate_uncertain_body">Encontramos obras com título parecido no seu catálogo. Confirme se é uma obra diferente.</string>
+    <string name="duplicate_save_as_new_work">Salvar como nova obra separada</string>
+
+    <!-- Editorial Review Screen -->
+    <string name="review_screen_title_imported">Revisar dados do livro</string>
+    <string name="review_screen_title_manual">Cadastro manual</string>
+    <string name="review_screen_title_new_edition">Revisar nova edição</string>
+    <string name="review_section_work_contributors">1. Obra e Colaboradores</string>
+    <string name="review_section_cover">2. Capa</string>
+    <string name="review_section_edition">3. Edição</string>
+    <string name="review_section_genre">4. Gênero e Categorias</string>
+    <string name="review_section_synopsis">5. Sinopse</string>
+    <string name="review_section_copy">6. Exemplar</string>
+    <string name="review_field_subtitle">Subtítulo (opcional)</string>
+    <string name="review_field_original_title">Título original (opcional)</string>
+    <string name="review_contributors_label">Colaboradores e funções</string>
+    <string name="review_contributor_name_hint">Nome</string>
+    <string name="review_add_contributor">Adicionar colaborador</string>
+    <string name="review_cover_alternatives">Capas encontradas</string>
+    <string name="review_cover_no_photo">Manter capa tipográfica (sem foto)</string>
+    <string name="review_cover_badge_isbn">Confere ISBN</string>
+    <string name="review_field_publisher">Editora</string>
+    <string name="review_field_edition_label">Identificação da edição (ex.: 2ª ed., Ilustrada)</string>
+    <string name="review_field_isbn13">ISBN-13</string>
+    <string name="review_field_isbn10">ISBN-10</string>
+    <string name="review_field_series">Coleção / Série</string>
+    <string name="review_field_volume">Volume</string>
+    <string name="review_genre_primary_label">Gênero principal</string>
+    <string name="review_genre_suggested">Sugerido</string>
+    <string name="review_genre_create_new">+ Novo gênero</string>
+    <string name="review_genre_custom_dialog_title">Criar gênero personalizado</string>
+    <string name="review_genre_custom_name_label">Nome do gênero</string>
+    <string name="review_categories_secondary">Assuntos e categorias secundárias</string>
+    <string name="review_synopsis_label">Sinopse</string>
+    <string name="review_synopsis_alternatives">Ver outras sinopses (%1$d)</string>
+    <string name="review_synopsis_source_tag">Fonte: %1$s</string>
+    <string name="review_synopsis_customized">Editada</string>
+    <string name="review_copy_collector_toggle">Aquisição e coleção</string>
+    <string name="review_copy_condition">Estado de conservação</string>
+    <string name="review_copy_origin">Origem do exemplar</string>
+    <string name="review_copy_price">Preço pago</string>
+    <string name="review_copy_code">Código próprio / tombo</string>
+    <string name="review_copy_acquired_today">Registrar aquisição hoje</string>
+    <string name="review_copy_acquired_clear">Limpar data</string>
+    <string name="review_save_catalog">Salvar na biblioteca</string>
+    <string name="review_validation_isbn13">Dígito verificador do ISBN-13 inválido.</string>
+    <string name="review_validation_isbn10">Dígito verificador do ISBN-10 inválido.</string>
+    <string name="cd_expand_section">Expandir seção</string>
+    <string name="cd_collapse_section">Recolher seção</string>
+
+    <!-- Library & Metadata Updates -->
+    <string name="library_check_updates">Verificar atualizações</string>
+    <string name="library_updates_checked_none">%1$d livros verificados — tudo atualizado.</string>
+    <string name="library_updates_found">%1$d sugestão(ões) de atualização encontrada(s).</string>
+    <string name="detail_check_updates">Buscar atualizações</string>
+    <string name="detail_suggestions_banner">%1$d sugestão(ões) de atualização pendente(s)</string>
+    <string name="detail_review_suggestions">Revisar sugestões</string>
+    <string name="detail_genre_label">Gênero</string>
+    <string name="detail_synopsis_section">Sinopse</string>
+    <string name="detail_contributors_section">Colaboradores</string>
+    <string name="detail_series_label">Coleção</string>
+    <string name="suggestions_sheet_title">Sugestões de atualização</string>
+    <string name="suggestions_current_label">Atual</string>
+    <string name="suggestions_found_label">Encontrado</string>
+    <string name="suggestions_empty">(vazio)</string>
+    <string name="suggestions_accept">Aceitar</string>
+    <string name="suggestions_reject">Ignorar</string>
+    <string name="suggestions_source">Fonte: %1$s</string>
+    <string name="suggestion_reason_missing">Preenche campo bibliográfico ausente</string>
+    <string name="suggestion_reason_synopsis">Sinopse mais completa disponível</string>
+    <string name="suggestion_reason_cover">Capa encontrada para esta edição</string>
+    <string name="suggestion_reason_series">Série ou coleção identificada</string>
 </resources>

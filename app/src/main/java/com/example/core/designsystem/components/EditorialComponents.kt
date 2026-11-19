@@ -662,3 +662,67 @@ private tailrec fun android.content.Context.findActivityResultRegistryOwner():
     else -> null
   }
 
+@Composable
+fun contributorRoleLabel(role: com.example.core.model.ContributorRole): String =
+  when (role) {
+    com.example.core.model.ContributorRole.AUTHOR -> stringResource(R.string.role_author)
+    com.example.core.model.ContributorRole.CO_AUTHOR -> stringResource(R.string.role_co_author)
+    com.example.core.model.ContributorRole.EDITOR_ORGANIZER ->
+      stringResource(R.string.role_editor_organizer)
+    com.example.core.model.ContributorRole.TRANSLATOR -> stringResource(R.string.role_translator)
+    com.example.core.model.ContributorRole.ILLUSTRATOR -> stringResource(R.string.role_illustrator)
+    com.example.core.model.ContributorRole.PREFACE_BY -> stringResource(R.string.role_preface_by)
+    com.example.core.model.ContributorRole.OTHER -> stringResource(R.string.role_other)
+  }
+
+@Composable
+fun copyConditionLabel(condition: com.example.core.model.CopyCondition): String =
+  when (condition) {
+    com.example.core.model.CopyCondition.NEW -> stringResource(R.string.condition_new)
+    com.example.core.model.CopyCondition.LIKE_NEW -> stringResource(R.string.condition_like_new)
+    com.example.core.model.CopyCondition.GOOD -> stringResource(R.string.condition_good)
+    com.example.core.model.CopyCondition.FAIR -> stringResource(R.string.condition_fair)
+    com.example.core.model.CopyCondition.WORN -> stringResource(R.string.condition_worn)
+    com.example.core.model.CopyCondition.DAMAGED -> stringResource(R.string.condition_damaged)
+  }
+
+@Composable
+fun copyOriginLabel(origin: com.example.core.model.CopyOrigin): String =
+  when (origin) {
+    com.example.core.model.CopyOrigin.PURCHASED -> stringResource(R.string.origin_purchased)
+    com.example.core.model.CopyOrigin.GIFT -> stringResource(R.string.origin_gift)
+    com.example.core.model.CopyOrigin.BORROWED -> stringResource(R.string.origin_borrowed)
+    com.example.core.model.CopyOrigin.EXCHANGE -> stringResource(R.string.origin_exchange)
+    com.example.core.model.CopyOrigin.INHERITED -> stringResource(R.string.origin_inherited)
+    com.example.core.model.CopyOrigin.OTHER -> stringResource(R.string.origin_other)
+  }
+
+@Composable
+fun metadataSourceLabel(source: com.example.core.model.MetadataSource): String =
+  source.displayName
+
+@Composable
+fun suggestionReasonLabel(reasonKey: String): String =
+  when (reasonKey) {
+    "reason_synopsis_richer" -> stringResource(R.string.suggestion_reason_synopsis)
+    "reason_cover_found" -> stringResource(R.string.suggestion_reason_cover)
+    "reason_series_found" -> stringResource(R.string.suggestion_reason_series)
+    else -> stringResource(R.string.suggestion_reason_missing)
+  }
+
+@Composable
+fun suggestionFieldLabel(fieldName: String): String =
+  when (fieldName) {
+    "subtitle" -> stringResource(R.string.review_field_subtitle)
+    "activeSynopsis" -> stringResource(R.string.detail_synopsis_section)
+    "isbn13" -> stringResource(R.string.review_field_isbn13)
+    "publisherOrNote" -> stringResource(R.string.review_field_publisher)
+    "publicationYear" -> stringResource(R.string.book_field_year)
+    "totalPages" -> stringResource(R.string.book_field_pages)
+    "seriesName" -> stringResource(R.string.detail_series_label)
+    "translator" -> stringResource(R.string.book_field_translator)
+    "coverUrl" -> stringResource(R.string.review_section_cover)
+    else -> fieldName
+  }
+
+

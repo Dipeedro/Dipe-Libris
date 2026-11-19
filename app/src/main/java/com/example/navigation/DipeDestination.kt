@@ -27,10 +27,21 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class BookDiaryRoute(val workId: Long)
 
+@Serializable data class BookSearchRoute(val initialQuery: String? = null)
+
+@Serializable data object IsbnScannerRoute
+
+@Serializable
+data class BookReviewRoute(
+  val mode: String = "manual",
+  val targetWorkId: Long = -1L,
+  val prefill: String? = null,
+)
+
 enum class TopLevelDestination(
   val route: Any,
   val routeKey: String,
-  @StringRes val labelRes: Int,
+  @param:StringRes val labelRes: Int,
   val selectedIcon: ImageVector,
   val unselectedIcon: ImageVector,
 ) {

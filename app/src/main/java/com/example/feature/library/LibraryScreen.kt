@@ -101,6 +101,8 @@ fun LibraryScreen(
   onOpenBook: (Long) -> Unit,
   onToggleFavorite: (CatalogBook) -> Unit,
   modifier: Modifier = Modifier,
+  onGenreFilterChange: (Long?) -> Unit = {},
+  onCheckUpdates: () -> Unit = {},
 ) {
   val gridState = rememberLazyGridState()
   val listState = rememberLazyListState()
@@ -146,12 +148,17 @@ fun LibraryScreen(
             filteredCount = uiState.books.size,
             searchQuery = uiState.searchQuery,
             statusFilter = uiState.statusFilter,
+            genreFilter = uiState.genreFilter,
+            availableGenres = uiState.availableGenres,
             viewMode = uiState.viewMode,
+            isCheckingUpdates = uiState.isCheckingUpdates,
             onSearchChange = onSearchChange,
             onStatusFilterChange = onStatusFilterChange,
+            onGenreFilterChange = onGenreFilterChange,
             onSortOrderChange = onSortOrderChange,
             onViewModeChange = onViewModeChange,
             onOpenAddBook = onOpenAddBook,
+            onCheckUpdates = onCheckUpdates,
           )
         }
 
@@ -189,12 +196,17 @@ fun LibraryScreen(
             filteredCount = uiState.books.size,
             searchQuery = uiState.searchQuery,
             statusFilter = uiState.statusFilter,
+            genreFilter = uiState.genreFilter,
+            availableGenres = uiState.availableGenres,
             viewMode = uiState.viewMode,
+            isCheckingUpdates = uiState.isCheckingUpdates,
             onSearchChange = onSearchChange,
             onStatusFilterChange = onStatusFilterChange,
+            onGenreFilterChange = onGenreFilterChange,
             onSortOrderChange = onSortOrderChange,
             onViewModeChange = onViewModeChange,
             onOpenAddBook = onOpenAddBook,
+            onCheckUpdates = onCheckUpdates,
           )
         }
 
@@ -272,13 +284,19 @@ private fun LibraryControlsBlock(
   filteredCount: Int,
   searchQuery: String,
   statusFilter: ReadingStatus?,
+  genreFilter: Long?,
+  availableGenres: List<com.example.core.model.Genre>,
   viewMode: LibraryViewMode,
+  isCheckingUpdates: Boolean,
   onSearchChange: (String) -> Unit,
   onStatusFilterChange: (ReadingStatus?) -> Unit,
+  onGenreFilterChange: (Long?) -> Unit,
   onSortOrderChange: (LibrarySortOrder) -> Unit,
   onViewModeChange: (LibraryViewMode) -> Unit,
   onOpenAddBook: () -> Unit,
+  onCheckUpdates: () -> Unit,
 ) {
+  val language = LocalAppLanguage.current
   val countForPlural = if (filteredCount == 1) 1 else 2
   val subtitle =
     if (totalCatalogCount > 0) {
@@ -426,7 +444,26 @@ private fun LibraryControlsBlock(
         }
       }
 
-      LibrarySortControl(onSortOrderChange = onSortOrderChange)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        if (totalCatalogCount > 0) {
+          TextButton(
+            onClick = onCheckUpdates,
+            enabled = !isCheckingUpdates,
+            contentPadding = PaddingValues(horizontal = DipeSpacing.xs, vertical = DipeSpacing.xs),
+            modifier =
+              Modifier.minimumInteractiveComponentSize().testTag("library_check_updates_button"),
+          ) {
+            Text(
+              text =
+                if (isCheckingUpdates) "…"
+                else stringResource(R.string.library_check_updates),
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.secondary,
+            )
+          }
+        }
+        LibrarySortControl(onSortOrderChange = onSortOrderChange)
+      }
     }
 
     LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
@@ -452,6 +489,23 @@ private fun LibraryControlsBlock(
           border = null,
           modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
         )
+      }
+    }
+
+    if (availableGenres.isNotEmpty()) {
+      LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
+        items(availableGenres, key = { it.id }, contentType = { "genre_filter" }) { genre ->
+          val selected = genreFilter == genre.id
+          FilterChip(
+            selected = selected,
+            onClick = { onGenreFilterChange(genre.id) },
+            label = { Text(genre.localizedName(language)) },
+            shape = CircleShape,
+            colors = chipColors,
+            border = null,
+            modifier = Modifier.testTag("library_genre_filter_${genre.slug}"),
+          )
+        }
       }
     }
 
@@ -578,6 +632,21 @@ private fun LibraryGridCard(
           text = statusMeta,
           style = LocalDipeTypography.current.monoMetadata,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+      if (book.primaryGenre != null || book.pendingSuggestionsCount > 0) {
+        val secondaryLine =
+          listOfNotNull(
+              book.primaryGenre?.localizedName(language),
+              if (book.pendingSuggestionsCount > 0) "+${book.pendingSuggestionsCount}" else null,
+            )
+            .joinToString(" · ")
+        Text(
+          text = secondaryLine,
+          style = LocalDipeTypography.current.monoMetadata,
+          color = MaterialTheme.colorScheme.secondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
