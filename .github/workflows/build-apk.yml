@@ -55,13 +55,19 @@ jobs:
           fi
 
       - name: Build Debug APK
+        env:
+          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
         run: |
+          if [ -n "$GOOGLE_BOOKS_API_KEY" ]; then
+            printf 'GOOGLE_BOOKS_API_KEY=%s\n' "$GOOGLE_BOOKS_API_KEY" > .env
+          fi
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew :app:assembleDebug --no-daemon --stacktrace
           else
             gradle :app:assembleDebug --no-daemon --stacktrace
           fi
+          rm -f .env
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v7
