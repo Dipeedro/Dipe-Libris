@@ -24,6 +24,65 @@ object CoverRanker {
     return filtered
   }
 
+  fun buildGoogleBooksCoverCandidates(
+    rawUrl: String?,
+    matchesIsbn: Boolean,
+    matchesPublisherYear: Boolean,
+    matchesLanguage: Boolean,
+  ): List<CoverCandidate> {
+    val cleanBase =
+      rawUrl
+        ?.trim()
+        ?.replace("http://", "https://", ignoreCase = true)
+        ?.replace("&edge=curl", "", ignoreCase = true)
+        ?.takeIf { it.isNotBlank() }
+        ?: return emptyList()
+
+    val candidates = mutableListOf<CoverCandidate>()
+    val hasZoomParam = Regex("[?&]zoom=\\d+").containsMatchIn(cleanBase)
+    if (hasZoomParam && "books.google" in cleanBase) {
+      val noZoomBase = cleanBase.replace(Regex("&zoom=\\d+"), "")
+      val fifeW800 =
+        if ("?" in noZoomBase) "$noZoomBase&fife=w800" else "$noZoomBase?fife=w800"
+      val zoom0 = cleanBase.replace(Regex("([?&])zoom=\\d+"), "$1zoom=0")
+      candidates.add(
+        CoverCandidate(
+          imageUrl = fifeW800,
+          source = MetadataSource.GOOGLE_BOOKS,
+          matchesIsbn = matchesIsbn,
+          matchesPublisherYear = matchesPublisherYear,
+          matchesLanguage = matchesLanguage,
+          widthHint = 800,
+          heightHint = 1200,
+        )
+      )
+      candidates.add(
+        CoverCandidate(
+          imageUrl = zoom0,
+          source = MetadataSource.GOOGLE_BOOKS,
+          matchesIsbn = matchesIsbn,
+          matchesPublisherYear = matchesPublisherYear,
+          matchesLanguage = matchesLanguage,
+          widthHint = 900,
+          heightHint = 1350,
+        )
+      )
+    }
+
+    candidates.add(
+      CoverCandidate(
+        imageUrl = cleanBase,
+        source = MetadataSource.GOOGLE_BOOKS,
+        matchesIsbn = matchesIsbn,
+        matchesPublisherYear = matchesPublisherYear,
+        matchesLanguage = matchesLanguage,
+        widthHint = if ("zoom=1" in cleanBase) 128 else null,
+        heightHint = if ("zoom=1" in cleanBase) 192 else null,
+      )
+    )
+    return rankAndDeduplicate(candidates)
+  }
+
   private fun scoreCandidate(c: CoverCandidate): Int {
     var score = 0
     if (c.matchesIsbn) score += 50
@@ -40,15 +99,20 @@ object CoverRanker {
       }
     val w = c.widthHint ?: 0
     val h = c.heightHint ?: 0
-    if (w >= 400 || h >= 600) {
+    if (w >= 600 || h >= 900) {
+      score += 22
+    } else if (w >= 400 || h >= 600) {
       score += 14
-    } else if (w in 1..119 || h in 1..159) {
-      score -= 15
+    } else if (w in 1..130 || h in 1..195) {
+      score -= 8
     }
-    if (c.imageUrl.contains("-L.jpg", ignoreCase = true) || c.imageUrl.contains("zoom=1", ignoreCase = true)) {
-      score += 10
-    } else if (c.imageUrl.contains("zoom=5", ignoreCase = true) || c.imageUrl.contains("-S.jpg", ignoreCase = true)) {
-      score -= 12
+    val lowerUrl = c.imageUrl.lowercase()
+    when {
+      "fife=w800" in lowerUrl || "fife=w1000" in lowerUrl -> score += 18
+      "zoom=0" in lowerUrl -> score += 15
+      "-l.jpg" in lowerUrl -> score += 12
+      "zoom=1" in lowerUrl -> score += 4
+      "zoom=5" in lowerUrl || "-s.jpg" in lowerUrl -> score -= 12
     }
     return score
   }

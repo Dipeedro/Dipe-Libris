@@ -9,11 +9,14 @@ import com.example.core.data.repository.LibraryRepository
 import com.example.core.di.BibliographicDraftStore
 import com.example.core.di.BookReviewMode
 import com.example.core.di.ReviewDraftPayload
+import com.example.core.model.CatalogBook
 import com.example.core.model.DuplicateAssessment
 import com.example.core.model.Genre
 import com.example.core.model.HybridSearchResponse
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +41,10 @@ data class BookSearchUiState(
   val loadingMoreEditionsForGroups: Set<String> = emptySet(),
   val genresBySlug: Map<String, Genre> = emptyMap(),
   val duplicatePrompt: PendingDuplicatePrompt? = null,
+  val localLiveMatches: List<CatalogBook> = emptyList(),
+  val isLoadingMoreResults: Boolean = false,
+  val isSecondaryLanguagesExpanded: Boolean = false,
+  val expandedSecondaryEditionGroupIds: Set<String> = emptySet(),
 )
 
 class BookSearchViewModel(
@@ -55,6 +62,35 @@ class BookSearchViewModel(
   private val expandedGroupIds = MutableStateFlow<Set<String>>(emptySet())
   private val loadingMoreEditions = MutableStateFlow<Set<String>>(emptySet())
   private val duplicatePrompt = MutableStateFlow<PendingDuplicatePrompt?>(null)
+  private val localLiveMatches = MutableStateFlow<List<CatalogBook>>(emptyList())
+  private val isLoadingMoreResults = MutableStateFlow(false)
+  private val isSecondaryLanguagesExpanded = MutableStateFlow(false)
+  private val expandedSecondaryEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
+
+  private var localSearchJob: Job? = null
+  private var searchJob: Job? = null
+  private var paginationJob: Job? = null
+  private var userToggledGroupInCurrentSearch: Boolean = false
+
+  private val extraState =
+    combine(
+      localLiveMatches,
+      isLoadingMoreResults,
+      isSecondaryLanguagesExpanded,
+      expandedSecondaryEditionGroupIds,
+    ) { localMatches, loadingMore, secondaryExpanded, secEditions ->
+      ExtraSearchState(localMatches, loadingMore, secondaryExpanded, secEditions)
+    }
+
+  private val detailState =
+    combine(
+      expandedGroupIds,
+      loadingMoreEditions,
+      libraryRepository.observeGenres(),
+      duplicatePrompt,
+    ) { expanded, loadingMore, genres, dupPrompt ->
+      QuadState(expanded, loadingMore, genres.associateBy { it.slug }, dupPrompt)
+    }
 
   val uiState: StateFlow<BookSearchUiState> =
     combine(
@@ -62,15 +98,9 @@ class BookSearchViewModel(
         isSearching,
         hasSearched,
         response,
-        combine(
-          expandedGroupIds,
-          loadingMoreEditions,
-          libraryRepository.observeGenres(),
-          duplicatePrompt,
-        ) { expanded, loadingMore, genres, dupPrompt ->
-          QuadState(expanded, loadingMore, genres.associateBy { it.slug }, dupPrompt)
-        },
-      ) { currentQuery, searching, searched, searchResponse, quad ->
+        combine(detailState, extraState) { quad, extra -> quad to extra },
+      ) { currentQuery, searching, searched, searchResponse, combinedPair ->
+        val (quad, extra) = combinedPair
         BookSearchUiState(
           query = currentQuery,
           isSearching = searching,
@@ -80,6 +110,10 @@ class BookSearchViewModel(
           loadingMoreEditionsForGroups = quad.loadingMore,
           genresBySlug = quad.genresBySlug,
           duplicatePrompt = quad.duplicatePrompt,
+          localLiveMatches = extra.localMatches,
+          isLoadingMoreResults = extra.loadingMoreResults,
+          isSecondaryLanguagesExpanded = extra.secondaryExpanded,
+          expandedSecondaryEditionGroupIds = extra.expandedSecondaryEditionGroupIds,
         )
       }
       .stateIn(
@@ -93,6 +127,13 @@ class BookSearchViewModel(
     val loadingMore: Set<String>,
     val genresBySlug: Map<String, Genre>,
     val duplicatePrompt: PendingDuplicatePrompt?,
+  )
+
+  private data class ExtraSearchState(
+    val localMatches: List<CatalogBook>,
+    val loadingMoreResults: Boolean,
+    val secondaryExpanded: Boolean,
+    val expandedSecondaryEditionGroupIds: Set<String>,
   )
 
   init {
@@ -110,40 +151,105 @@ class BookSearchViewModel(
     submitSearch()
   }
 
+  /**
+   * Instantaneous local-only library feedback while typing (no external API calls until Buscar/Enter).
+   */
   fun setQuery(newQuery: String) {
     query.value = newQuery
+    localSearchJob?.cancel()
+    val trimmed = newQuery.trim()
+    if (trimmed.isEmpty()) {
+      localLiveMatches.value = emptyList()
+      return
+    }
+    localSearchJob =
+      viewModelScope.launch {
+        delay(80L)
+        localLiveMatches.value = runCatching { orchestrator.findLocalMatchesOnly(trimmed) }.getOrDefault(emptyList())
+      }
   }
 
   fun submitSearch(expandSecondarySources: Boolean = false) {
     val q = query.value.trim()
     if (q.isEmpty()) return
-    viewModelScope.launch {
-      isSearching.value = true
-      try {
-        val preferredLang = preferencesRepository.preferences.first().language.tag
-        val result =
-          orchestrator.search(
-            rawQuery = q,
-            preferredLanguage = preferredLang,
-            expandSecondary = expandSecondarySources,
-          )
-        response.value = result
-        hasSearched.value = true
-        // Auto-expand if there's only 1 work group or if this was an ISBN lookup
-        if (result.workGroups.size == 1 || result.isIsbnQuery) {
-          expandedGroupIds.value = result.workGroups.take(1).map { it.groupId }.toSet()
-        } else {
-          expandedGroupIds.value = emptySet()
+
+    searchJob?.cancel()
+    paginationJob?.cancel()
+    isLoadingMoreResults.value = false
+    userToggledGroupInCurrentSearch = false
+    expandedGroupIds.value = emptySet()
+    isSecondaryLanguagesExpanded.value = false
+    expandedSecondaryEditionGroupIds.value = emptySet()
+
+    searchJob =
+      viewModelScope.launch {
+        isSearching.value = true
+        try {
+          val preferredLang = preferencesRepository.preferences.first().language.tag
+          orchestrator
+            .searchProgressive(
+              rawQuery = q,
+              preferredLanguage = preferredLang,
+              expandSecondary = expandSecondarySources,
+            )
+            .collect { partialOrFinal ->
+              response.value = partialOrFinal
+              hasSearched.value = true
+              localLiveMatches.value = partialOrFinal.localMatches
+
+              // Auto-expand only on completion if there is 1 work group or ISBN lookup and user hasn't clicked yet
+              if (!partialOrFinal.isPartialResult && !userToggledGroupInCurrentSearch) {
+                val allVisible =
+                  partialOrFinal.workGroups.ifEmpty { partialOrFinal.secondaryWorkGroups }
+                if (allVisible.size == 1 || partialOrFinal.isIsbnQuery) {
+                  expandedGroupIds.value = allVisible.take(1).map { it.groupId }.toSet()
+                }
+              }
+              isSearching.value = partialOrFinal.isPartialResult
+            }
+        } finally {
+          isSearching.value = false
         }
-      } finally {
-        isSearching.value = false
       }
-    }
+  }
+
+  fun loadNextPage() {
+    val currentResp = response.value ?: return
+    if (isSearching.value || isLoadingMoreResults.value || !currentResp.hasMoreResults) return
+    paginationJob?.cancel()
+    paginationJob =
+      viewModelScope.launch {
+        isLoadingMoreResults.value = true
+        try {
+          val preferredLang = preferencesRepository.preferences.first().language.tag
+          val updated =
+            orchestrator.loadNextPage(
+              currentResponse = currentResp,
+              preferredLanguage = preferredLang,
+              expandSecondary = currentResp.expandedSecondarySources,
+            )
+          response.value = updated
+        } finally {
+          isLoadingMoreResults.value = false
+        }
+      }
+  }
+
+  fun toggleSecondaryLanguagesExpanded() {
+    isSecondaryLanguagesExpanded.value = !isSecondaryLanguagesExpanded.value
   }
 
   fun toggleGroupExpanded(groupId: String) {
+    userToggledGroupInCurrentSearch = true
     expandedGroupIds.value =
       expandedGroupIds.value.let { current ->
+        if (groupId in current) current - groupId else current + groupId
+      }
+  }
+
+  fun toggleGroupSecondaryEditionsExpanded(groupId: String) {
+    expandedSecondaryEditionGroupIds.value =
+      expandedSecondaryEditionGroupIds.value.let { current ->
         if (groupId in current) current - groupId else current + groupId
       }
   }
@@ -156,11 +262,19 @@ class BookSearchViewModel(
         val preferredLang = preferencesRepository.preferences.first().language.tag
         val updatedGroup = orchestrator.expandWorkEditions(group, preferredLang)
         val currentResp = response.value ?: return@launch
-        val updatedGroups =
+        val updatedPrimary =
           currentResp.workGroups.map { existing ->
             if (existing.groupId == group.groupId) updatedGroup else existing
           }
-        response.value = currentResp.copy(workGroups = updatedGroups)
+        val updatedSecondary =
+          currentResp.secondaryWorkGroups.map { existing ->
+            if (existing.groupId == group.groupId) updatedGroup else existing
+          }
+        response.value =
+          currentResp.copy(
+            workGroups = updatedPrimary,
+            secondaryWorkGroups = updatedSecondary,
+          )
       } finally {
         loadingMoreEditions.value = loadingMoreEditions.value - group.groupId
       }

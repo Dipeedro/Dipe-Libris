@@ -505,7 +505,7 @@ class RoomLibraryRepository(
 
   override suspend fun saveBookFromReview(submission: BookReviewSubmission): Long {
     ensureDefaultGenresSeeded()
-    val resolvedCoverUri = resolveCoverUri(submission.selectedLocalCoverUri, submission.selectedRemoteCoverUrl)
+    val resolvedCoverUri = resolveCoverUri(submission.selectedLocalCoverUri, submission.selectedRemoteCoverUrl, submission.fallbackRemoteCoverUrls)
     val parsedIsbn = BibliographicMath.parseIsbn(submission.isbn13 ?: submission.isbn10)
     val isbn13 = parsedIsbn?.isbn13 ?: submission.isbn13?.trim()?.takeIf { it.isNotEmpty() }
     val isbn10 = parsedIsbn?.isbn10 ?: submission.isbn10?.trim()?.takeIf { it.isNotEmpty() }
@@ -588,7 +588,7 @@ class RoomLibraryRepository(
   ): Long {
     val edDao = editionDao ?: error("EditionDao required")
     val cDao = copyDao ?: error("CopyDao required")
-    val resolvedCoverUri = resolveCoverUri(submission.selectedLocalCoverUri, submission.selectedRemoteCoverUrl)
+    val resolvedCoverUri = resolveCoverUri(submission.selectedLocalCoverUri, submission.selectedRemoteCoverUrl, submission.fallbackRemoteCoverUrls)
     val parsedIsbn = BibliographicMath.parseIsbn(submission.isbn13 ?: submission.isbn10)
     val isbn13 = parsedIsbn?.isbn13 ?: submission.isbn13?.trim()?.takeIf { it.isNotEmpty() }
     val isbn10 = parsedIsbn?.isbn10 ?: submission.isbn10?.trim()?.takeIf { it.isNotEmpty() }
@@ -1247,6 +1247,7 @@ class RoomLibraryRepository(
   private suspend fun resolveCoverUri(
     localCoverUri: String?,
     remoteCoverUrl: String?,
+    fallbackRemoteCoverUrls: List<String> = emptyList(),
   ): String? {
     if (!localCoverUri.isNullOrBlank()) {
       return if (localCoverUri.startsWith("content://") && coverStorageManager != null) {
@@ -1256,7 +1257,8 @@ class RoomLibraryRepository(
       }
     }
     if (!remoteCoverUrl.isNullOrBlank()) {
-      return coverStorageManager?.downloadAndImportCover(remoteCoverUrl) ?: remoteCoverUrl
+      val ordered = (listOf(remoteCoverUrl) + fallbackRemoteCoverUrls).distinct()
+      return coverStorageManager?.downloadBestAvailableCover(ordered) ?: remoteCoverUrl
     }
     return null
   }

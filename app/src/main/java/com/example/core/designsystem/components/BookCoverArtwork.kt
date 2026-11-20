@@ -19,7 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +67,7 @@ fun BookCoverArtwork(
   isFavorite: Boolean,
   modifier: Modifier = Modifier,
   coverUri: String? = null,
+  fallbackCoverUris: List<String> = emptyList(),
   compact: Boolean = false,
   elevated: Boolean = false,
   onImageLoadError: (() -> Unit)? = null,
@@ -86,9 +90,17 @@ fun BookCoverArtwork(
       }
     }
 
+  val candidateUris =
+    remember(coverUri, fallbackCoverUris) {
+      (listOfNotNull(coverUri?.takeIf { it.isNotBlank() }) + fallbackCoverUris.filter { it.isNotBlank() })
+        .distinct()
+    }
+  var activeUriIndex by remember(candidateUris) { mutableIntStateOf(0) }
+  val activeUri = candidateUris.getOrNull(activeUriIndex)
+
   val imageRequest =
-    remember(coverUri, context) {
-      coverUri?.takeIf { it.isNotBlank() }?.let { raw ->
+    remember(activeUri, context) {
+      activeUri?.let { raw ->
         val file = File(raw)
         val data: Any =
           when {
@@ -105,12 +117,25 @@ fun BookCoverArtwork(
     }
   val painter = imageRequest?.let { rememberAsyncImagePainter(model = it) }
   val painterState = painter?.state
-  androidx.compose.runtime.LaunchedEffect(coverUri, painterState) {
-    if (coverUri != null && painterState is AsyncImagePainter.State.Error) {
-      onImageLoadError?.invoke()
+  val isTinyRemotePlaceholder =
+    if (painterState is AsyncImagePainter.State.Success && activeUri?.startsWith("http") == true) {
+      val w = painterState.result.drawable.intrinsicWidth
+      val h = painterState.result.drawable.intrinsicHeight
+      (w in 1..48) || (h in 1..48)
+    } else {
+      false
+    }
+
+  androidx.compose.runtime.LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
+    if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isTinyRemotePlaceholder)) {
+      if (activeUriIndex + 1 < candidateUris.size) {
+        activeUriIndex++
+      } else if (painterState is AsyncImagePainter.State.Error) {
+        onImageLoadError?.invoke()
+      }
     }
   }
-  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success
+  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isTinyRemotePlaceholder
 
   BoxWithConstraints(
     modifier =

@@ -17,6 +17,9 @@ interface CoverStorageManager {
 
   suspend fun downloadAndImportCover(imageUrl: String): String? = null
 
+  suspend fun downloadBestAvailableCover(imageUrls: List<String>): String? =
+    imageUrls.firstNotNullOfOrNull { downloadAndImportCover(it) }
+
   suspend fun deleteCoverIfManaged(coverUri: String?)
 }
 
@@ -77,7 +80,15 @@ class InternalCoverStorageManager(
             FileOutputStream(tempFile).use { output -> input.copyTo(output) }
           }
         }
-        if (!tempFile.exists() || tempFile.length() < 256L) {
+        val length = tempFile.length()
+        if (!tempFile.exists() || length < 256L) {
+          return@withContext null
+        }
+        // Reject tiny placeholder responses (~9KB "image not available" PNG) on Google Books zoom=0/fife upgrades
+        val isGoogleHdProbe =
+          cleanUrl.contains("books.google.com") &&
+            (cleanUrl.contains("fife=w") || cleanUrl.contains("zoom=0"))
+        if (isGoogleHdProbe && length in 1L..11_000L) {
           return@withContext null
         }
         decodeAndSaveTempFile(tempFile, minWidth = 50, minHeight = 60)

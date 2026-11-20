@@ -62,6 +62,15 @@ data class SearchEditionCandidate(
   val reliabilityScore: Int = 0,
   val localExistingEditionId: Long? = null,
   val localExistingWorkId: Long? = null,
+  val canonicalLanguageTag: String? = null,
+  val languageTierRank: Int = LanguageTier.UNKNOWN.rank,
+  val languageConfidenceName: String? = null,
+  val hasLanguageConflict: Boolean = false,
+  val queryMatchScore: Int = 0,
+  val workEditionCount: Int = 0,
+  val workReadingLogCount: Int = 0,
+  val workRatingsCount: Int = 0,
+  val availableWorkLanguages: List<String> = emptyList(),
 ) {
   val bestIsbn: String?
     get() = isbn13 ?: isbn10
@@ -69,8 +78,14 @@ data class SearchEditionCandidate(
   val bestCover: CoverCandidate?
     get() = coverCandidates.maxByOrNull { it.score }
 
+  val orderedCoverUrls: List<String>
+    get() = coverCandidates.sortedByDescending { it.score }.map { it.imageUrl }.distinct()
+
   val bestSynopsis: SynopsisCandidate?
     get() = synopsisCandidates.maxByOrNull { it.score }
+
+  val effectiveLanguageTier: LanguageTier
+    get() = LanguageTier.entries.firstOrNull { it.rank == languageTierRank } ?: LanguageTier.UNKNOWN
 
   val primaryAuthorsText: String
     get() =
@@ -101,12 +116,31 @@ data class SearchWorkGroup(
   val sources: List<MetadataSource> = emptyList(),
   val localMatchedWorkId: Long? = null,
   val localMatchedTitle: String? = null,
+  val workPopularityScore: Int = 0,
+  val queryRelevanceScore: Int = 0,
+  val primaryLanguageTierRank: Int = LanguageTier.UNKNOWN.rank,
+  val totalAvailableEditionsHint: Int? = null,
 ) {
   val displayAuthors: String
     get() = primaryAuthors.joinToString(", ") { it.name }
 
   val previewCoverUrl: String?
     get() = editions.firstNotNullOfOrNull { it.bestCover?.imageUrl }
+
+  val previewFallbackCoverUrls: List<String>
+    get() = editions.flatMap { it.orderedCoverUrls }.distinct().drop(1)
+
+  val primaryTierEditions: List<SearchEditionCandidate>
+    get() {
+      val primary = editions.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+      return primary.ifEmpty { editions }
+    }
+
+  val secondaryTierEditions: List<SearchEditionCandidate>
+    get() {
+      val primary = editions.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+      return if (primary.isEmpty()) emptyList() else editions.filter { it.languageTierRank > LanguageTier.PT_UNCERTAIN.rank }
+    }
 }
 
 enum class ProviderOutcomeState {
@@ -117,6 +151,7 @@ enum class ProviderOutcomeState {
   RATE_LIMITED,
   OFFLINE,
   ERROR,
+  LOADING,
 }
 
 @Immutable
@@ -125,6 +160,9 @@ data class SourceQueryStatus(
   val state: ProviderOutcomeState,
   val count: Int = 0,
   val message: String? = null,
+  val totalAvailable: Int? = null,
+  val hasMore: Boolean = false,
+  val durationMs: Long = 0L,
 )
 
 @Immutable
@@ -135,8 +173,14 @@ data class HybridSearchResponse(
   val isOffline: Boolean,
   val localMatches: List<CatalogBook> = emptyList(),
   val workGroups: List<SearchWorkGroup> = emptyList(),
+  val secondaryWorkGroups: List<SearchWorkGroup> = emptyList(),
   val sourceStatuses: List<SourceQueryStatus> = emptyList(),
   val expandedSecondarySources: Boolean = false,
+  val hasMoreResults: Boolean = false,
+  val isPartialResult: Boolean = false,
+  val totalFoundHint: Int? = null,
+  val firstResultLatencyMs: Long? = null,
+  val totalLatencyMs: Long? = null,
 )
 
 @Immutable
@@ -196,6 +240,7 @@ data class BookReviewSubmission(
   val categories: List<String> = emptyList(),
   val externalIdsJson: String? = null,
   val selectedRemoteCoverUrl: String? = null,
+  val fallbackRemoteCoverUrls: List<String> = emptyList(),
   val selectedLocalCoverUri: String? = null,
   val coverSource: String? = null,
   val isCoverCustomized: Boolean = false,

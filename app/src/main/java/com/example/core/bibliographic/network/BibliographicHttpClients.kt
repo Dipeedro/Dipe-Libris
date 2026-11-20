@@ -34,12 +34,37 @@ data class SourceAdapterResult(
   val candidates: List<SearchEditionCandidate> = emptyList(),
 )
 
+data class AdapterSearchRequest(
+  val rawQuery: String,
+  val parsedIntent: com.example.core.bibliographic.domain.ParsedSearchIntent,
+  val page: Int = 1,
+  val pageSize: Int = 30,
+  val expandSecondary: Boolean = false,
+)
+
 interface BibliographicSourceAdapter {
   val source: MetadataSource
 
   suspend fun searchByIsbn(isbn13: String?, isbn10: String?, rawIsbn: String): SourceAdapterResult
 
   suspend fun searchByQuery(query: String): SourceAdapterResult
+
+  suspend fun searchPaginated(request: AdapterSearchRequest): SourceAdapterResult {
+    val isbn = request.parsedIntent.parsedIsbn
+    return if (isbn != null) {
+      if (request.page > 1) {
+        SourceAdapterResult(SourceQueryStatus(source = source, state = ProviderOutcomeState.EMPTY))
+      } else {
+        searchByIsbn(isbn.isbn13, isbn.isbn10, isbn.cleaned)
+      }
+    } else {
+      if (request.page > 1) {
+        SourceAdapterResult(SourceQueryStatus(source = source, state = ProviderOutcomeState.EMPTY))
+      } else {
+        searchByQuery(request.rawQuery)
+      }
+    }
+  }
 
   suspend fun fetchEditionsForWork(externalWorkKey: String): SourceAdapterResult =
     SourceAdapterResult(
@@ -62,16 +87,21 @@ object BibliographicHttpClients {
 
   val okHttpClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
-      .connectTimeout(6, TimeUnit.SECONDS)
-      .readTimeout(8, TimeUnit.SECONDS)
-      .writeTimeout(6, TimeUnit.SECONDS)
+      .connectTimeout(5, TimeUnit.SECONDS)
+      .readTimeout(7, TimeUnit.SECONDS)
+      .writeTimeout(5, TimeUnit.SECONDS)
+      .connectionPool(okhttp3.ConnectionPool(8, 3, TimeUnit.MINUTES))
       .addInterceptor { chain ->
         val original: Request = chain.request()
         val request =
           original
             .newBuilder()
             .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/json")
+            .apply {
+              if (original.header("Accept") == null) {
+                header("Accept", "application/json")
+              }
+            }
             .build()
         chain.proceed(request)
       }

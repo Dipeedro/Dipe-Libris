@@ -320,6 +320,15 @@ interface EditionDao {
     cleanedRaw: String?,
   ): List<EditionEntity>
 
+  @Query(
+    """
+    SELECT * FROM editions
+    WHERE isbn13 IN (:isbns) OR isbn10 IN (:isbns)
+    ORDER BY isPrimary DESC, id ASC
+    """
+  )
+  suspend fun findEditionsByIsbnIn(isbns: List<String>): List<EditionEntity>
+
   @Query("SELECT coverUri FROM editions WHERE workId = :workId AND coverUri IS NOT NULL")
   suspend fun getCoverUrisForWork(workId: Long): List<String>
 

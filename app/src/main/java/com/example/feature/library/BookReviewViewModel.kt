@@ -578,6 +578,9 @@ class BookReviewViewModel(
             externalIdsJson = state.externalIdsJson,
             selectedRemoteCoverUrl =
               if (state.useTypographicCover) null else state.selectedRemoteCoverUrl,
+            fallbackRemoteCoverUrls =
+              if (state.useTypographicCover || state.isCoverCustomized) emptyList()
+              else state.coverCandidates.map { it.imageUrl }.filter { it != state.selectedRemoteCoverUrl },
             selectedLocalCoverUri = importedLocalCoverPath,
             coverSource = state.coverSource,
             isCoverCustomized = state.isCoverCustomized,

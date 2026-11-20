@@ -462,6 +462,9 @@ fun DipeNavigationShell(
                   }
                 },
                 onNavigateBack = { navController.popBackStack() },
+                onLoadMoreResults = searchViewModel::loadNextPage,
+                onToggleSecondaryLanguages = searchViewModel::toggleSecondaryLanguagesExpanded,
+                onToggleGroupSecondaryEditions = searchViewModel::toggleGroupSecondaryEditionsExpanded,
               )
             }
 

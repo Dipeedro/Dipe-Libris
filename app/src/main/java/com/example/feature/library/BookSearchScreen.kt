@@ -1,7 +1,5 @@
 package com.example.feature.library
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,11 +28,11 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -49,25 +46,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
-import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.EditorialEmptyState
 import com.example.core.designsystem.components.EditorialSectionHeader
 import com.example.core.designsystem.components.EditorialSubscreenTopBar
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
-import com.example.core.designsystem.components.editionFormatLabel
 import com.example.core.designsystem.components.metadataSourceLabel
 import com.example.core.localization.LocalAppLanguage
-import com.example.core.model.DuplicateAssessment
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
@@ -91,11 +82,16 @@ fun BookSearchScreen(
   onDuplicateAddEdition: (SearchEditionCandidate, workId: Long) -> Unit,
   onDuplicateSaveSeparately: (SearchEditionCandidate) -> Unit,
   onNavigateBack: () -> Unit,
+  onLoadMoreResults: () -> Unit = {},
+  onToggleSecondaryLanguages: () -> Unit = {},
+  onToggleGroupSecondaryEditions: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val language = LocalAppLanguage.current
   val response = uiState.response
+  val hasAnyResponseWorks =
+    response != null && (response.workGroups.isNotEmpty() || response.secondaryWorkGroups.isNotEmpty() || response.localMatches.isNotEmpty())
 
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(
@@ -187,13 +183,43 @@ fun BookSearchScreen(
         }
       }
 
+      // Live local library matches while typing (before user presses Search or while editing)
+      if (!uiState.hasSearched && uiState.localLiveMatches.isNotEmpty() && !uiState.isSearching) {
+        item(key = "search_live_local_header") {
+          EditorialSectionHeader(title = stringResource(R.string.search_live_local_matches_section))
+        }
+        itemsIndexed(
+          items = uiState.localLiveMatches,
+          key = { _, book -> "live_local_${book.work.id}" },
+        ) { index, book ->
+          SearchLocalMatchCard(
+            book = book,
+            testTag = "search_live_local_match_$index",
+            onClick = { onOpenExistingBook(book.work.id) },
+          )
+        }
+      }
+
       if (uiState.isSearching) {
         item(key = "search_loading") {
-          Box(
-            modifier = Modifier.fillMaxWidth().padding(vertical = DipeSpacing.xl),
-            contentAlignment = Alignment.Center,
-          ) {
-            CircularProgressIndicator(strokeWidth = 2.dp)
+          if (hasAnyResponseWorks) {
+            LinearProgressIndicator(
+              modifier = Modifier.fillMaxWidth().testTag("search_progressive_bar"),
+              color = MaterialTheme.colorScheme.secondary,
+            )
+          } else {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(vertical = DipeSpacing.md),
+              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm, Alignment.CenterHorizontally),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+              Text(
+                text = stringResource(R.string.search_loading_progress),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           }
         }
       }
@@ -256,27 +282,29 @@ fun BookSearchScreen(
               verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
             ) {
               response.sourceStatuses.forEach { st ->
+                val srcLabel = metadataSourceLabel(st.source)
                 val label =
                   when (st.state) {
+                    ProviderOutcomeState.LOADING ->
+                      stringResource(R.string.search_source_loading, srcLabel)
                     ProviderOutcomeState.SUCCESS,
-                    ProviderOutcomeState.CACHED ->
-                      stringResource(
-                        R.string.search_source_active,
-                        metadataSourceLabel(st.source),
-                        st.count,
-                      )
+                    ProviderOutcomeState.CACHED -> {
+                      val total = st.totalAvailable
+                      if (total != null && total > st.count) {
+                        stringResource(R.string.search_source_active_total, srcLabel, st.count, total)
+                      } else {
+                        stringResource(R.string.search_source_active, srcLabel, st.count)
+                      }
+                    }
                     ProviderOutcomeState.SKIPPED_NO_API_KEY ->
-                      stringResource(R.string.search_source_no_key, metadataSourceLabel(st.source))
+                      stringResource(R.string.search_source_no_key, srcLabel)
                     ProviderOutcomeState.OFFLINE ->
-                      stringResource(R.string.search_source_offline, metadataSourceLabel(st.source))
+                      stringResource(R.string.search_source_offline, srcLabel)
                     ProviderOutcomeState.RATE_LIMITED ->
-                      stringResource(
-                        R.string.search_source_rate_limit,
-                        metadataSourceLabel(st.source),
-                      )
-                    ProviderOutcomeState.EMPTY -> "${metadataSourceLabel(st.source)} (${st.count})"
+                      stringResource(R.string.search_source_rate_limit, srcLabel)
+                    ProviderOutcomeState.EMPTY -> "$srcLabel (${st.count})"
                     ProviderOutcomeState.ERROR ->
-                      stringResource(R.string.search_source_error, metadataSourceLabel(st.source))
+                      stringResource(R.string.search_source_error, srcLabel)
                   }
                 Surface(
                   shape = CircleShape,
@@ -302,77 +330,128 @@ fun BookSearchScreen(
             items = response.localMatches,
             key = { _, book -> "local_${book.work.id}" },
           ) { index, book ->
-            EditorialSurfaceCard(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-              border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+            SearchLocalMatchCard(
+              book = book,
+              testTag = "search_local_match_$index",
               onClick = { onOpenExistingBook(book.work.id) },
-              modifier = Modifier.testTag("search_local_match_$index"),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                BookCoverArtwork(
-                  title = book.title,
-                  author = book.author,
-                  isFavorite = book.isFavorite,
-                  coverUri = book.coverUri,
-                  compact = true,
-                  modifier = Modifier.width(46.dp),
-                )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                  Text(
-                    text = book.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                  Text(
-                    text = book.author,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                }
-                Text(
-                  text = stringResource(R.string.search_work_in_library_badge),
-                  style = LocalDipeTypography.current.monoMetadata,
-                  color = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
+            )
           }
         }
 
         if (response.workGroups.isNotEmpty()) {
           item(key = "search_works_header") {
-            EditorialSectionHeader(title = stringResource(R.string.search_results_works_section))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              EditorialSectionHeader(title = stringResource(R.string.search_results_works_section))
+              val totalDisplayed = response.workGroups.size + response.secondaryWorkGroups.size
+              val hint = response.totalFoundHint
+              Text(
+                text =
+                  if (hint != null && hint > totalDisplayed) {
+                    stringResource(R.string.search_results_count_with_hint, response.workGroups.size, hint)
+                  } else {
+                    stringResource(R.string.search_results_count_summary, response.workGroups.size)
+                  },
+                style = LocalDipeTypography.current.monoMetadata,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           }
 
           itemsIndexed(
             items = response.workGroups,
             key = { _, group -> group.groupId },
           ) { groupIndex, group ->
-            val isExpanded = group.groupId in uiState.expandedGroupIds
-            val isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups
             val genreName =
               group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
-
             SearchWorkGroupCard(
               group = group,
               groupIndex = groupIndex,
               genreLabel = genreName,
-              isExpanded = isExpanded,
-              isLoadingMore = isLoadingMore,
+              isExpanded = group.groupId in uiState.expandedGroupIds,
+              isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
+              isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
               onToggleExpand = { onToggleGroupExpanded(group.groupId) },
+              onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
               onLoadMoreEditions = { onLoadMoreEditions(group) },
               onSelectEdition = onSelectEdition,
             )
           }
-        } else if (!uiState.isSearching && response.localMatches.isEmpty()) {
+        }
+
+        // Secondary languages (pt-PT & other foreign works):
+        // Collapsible drawer when primary results exist; auto-displayed when primary is empty.
+        if (response.secondaryWorkGroups.isNotEmpty()) {
+          val hasPrimary = response.workGroups.isNotEmpty()
+          val showSecondaryList = !hasPrimary || uiState.isSecondaryLanguagesExpanded
+          val indexOffset = response.workGroups.size
+
+          item(key = "search_secondary_languages_header") {
+            if (hasPrimary) {
+              OutlinedButton(
+                onClick = onToggleSecondaryLanguages,
+                shape = CircleShape,
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .testTag("search_secondary_languages_toggle"),
+              ) {
+                Text(
+                  text =
+                    stringResource(
+                      R.string.search_secondary_languages_toggle,
+                      response.secondaryWorkGroups.size,
+                    ),
+                  modifier = Modifier.weight(1f),
+                )
+                Icon(
+                  imageVector =
+                    if (uiState.isSecondaryLanguagesExpanded) Icons.Outlined.ExpandLess
+                    else Icons.Outlined.ExpandMore,
+                  contentDescription = null,
+                )
+              }
+            } else {
+              EditorialSurfaceCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentPadding = PaddingValues(DipeSpacing.md),
+                modifier = Modifier.testTag("search_secondary_only_notice"),
+              ) {
+                Text(
+                  text = stringResource(R.string.search_secondary_languages_only_notice),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+
+          if (showSecondaryList) {
+            itemsIndexed(
+              items = response.secondaryWorkGroups,
+              key = { _, group -> "sec_${group.groupId}" },
+            ) { secIdx, group ->
+              val groupIndex = indexOffset + secIdx
+              val genreName =
+                group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
+              SearchWorkGroupCard(
+                group = group,
+                groupIndex = groupIndex,
+                genreLabel = genreName,
+                isExpanded = group.groupId in uiState.expandedGroupIds,
+                isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
+                isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
+                onToggleExpand = { onToggleGroupExpanded(group.groupId) },
+                onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
+                onLoadMoreEditions = { onLoadMoreEditions(group) },
+                onSelectEdition = onSelectEdition,
+              )
+            }
+          }
+        } else if (
+          response.workGroups.isEmpty() &&
+            !uiState.isSearching &&
+            response.localMatches.isEmpty()
+        ) {
           item(key = "search_empty_results") {
             EditorialEmptyState(
               icon = Icons.AutoMirrored.Outlined.LibraryBooks,
@@ -382,6 +461,29 @@ fun BookSearchScreen(
               actionTestTag = "search_empty_manual_button",
               onAction = onManualCatalog,
             )
+          }
+        }
+
+        // Manual Pagination Footer
+        if (response.hasMoreResults && !response.isOffline && !uiState.isSearching) {
+          item(key = "search_load_more_results") {
+            OutlinedButton(
+              onClick = onLoadMoreResults,
+              enabled = !uiState.isLoadingMoreResults,
+              shape = CircleShape,
+              modifier =
+                Modifier.fillMaxWidth()
+                  .minimumInteractiveComponentSize()
+                  .testTag("search_load_more_results_button"),
+            ) {
+              if (uiState.isLoadingMoreResults) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(DipeSpacing.xs))
+                Text(stringResource(R.string.search_loading_more_results))
+              } else {
+                Text(stringResource(R.string.search_action_load_more_results))
+              }
+            }
           }
         }
 
@@ -399,7 +501,7 @@ fun BookSearchScreen(
             }
           }
         }
-      } else if (!uiState.hasSearched && !uiState.isSearching) {
+      } else if (!uiState.hasSearched && !uiState.isSearching && uiState.localLiveMatches.isEmpty()) {
         item(key = "search_initial_prompt") {
           EditorialEmptyState(
             icon = Icons.Outlined.Search,
@@ -423,350 +525,5 @@ fun BookSearchScreen(
       onAddEdition = onDuplicateAddEdition,
       onSaveSeparately = onDuplicateSaveSeparately,
     )
-  }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SearchWorkGroupCard(
-  group: SearchWorkGroup,
-  groupIndex: Int,
-  genreLabel: String?,
-  isExpanded: Boolean,
-  isLoadingMore: Boolean,
-  onToggleExpand: () -> Unit,
-  onLoadMoreEditions: () -> Unit,
-  onSelectEdition: (SearchEditionCandidate) -> Unit,
-) {
-  val editionCount = group.editions.size
-  EditorialSurfaceCard(
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-    contentPadding = PaddingValues(DipeSpacing.md),
-    modifier = Modifier.testTag("search_work_card_$groupIndex"),
-  ) {
-    Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        BookCoverArtwork(
-          title = group.canonicalTitle,
-          author = group.displayAuthors,
-          isFavorite = false,
-          coverUri = group.previewCoverUrl,
-          compact = true,
-          elevated = true,
-          modifier = Modifier.width(56.dp),
-        )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(
-            text = group.canonicalTitle,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-          if (group.displayAuthors.isNotBlank()) {
-            Text(
-              text = group.displayAuthors,
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            Text(
-              text =
-                pluralStringResource(
-                  R.plurals.search_work_editions_count,
-                  if (editionCount == 1) 1 else 2,
-                  editionCount,
-                ),
-              style = LocalDipeTypography.current.monoMetadata,
-              color = MaterialTheme.colorScheme.secondary,
-            )
-            if (genreLabel != null) {
-              Text(
-                text = "· $genreLabel",
-                style = LocalDipeTypography.current.monoMetadata,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-            if (group.localMatchedWorkId != null) {
-              Text(
-                text = "· ${stringResource(R.string.search_work_in_library_badge)}",
-                style = LocalDipeTypography.current.monoMetadata,
-                color = MaterialTheme.colorScheme.secondary,
-              )
-            }
-          }
-        }
-        TextButton(
-          onClick = onToggleExpand,
-          modifier =
-            Modifier.minimumInteractiveComponentSize().testTag("search_work_expand_$groupIndex"),
-        ) {
-          Icon(
-            imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-            contentDescription =
-              stringResource(
-                if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section
-              ),
-          )
-        }
-      }
-
-      AnimatedVisibility(visible = isExpanded) {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xs),
-          verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-        ) {
-          HairlineDivider()
-          group.editions.forEachIndexed { editionIdx, edition ->
-            val metaLine =
-              listOfNotNull(
-                  edition.publisher,
-                  edition.publicationYear?.toString(),
-                  edition.totalPages?.let { "$it p." },
-                  edition.language,
-                  edition.format?.let { editionFormatLabel(it) },
-                )
-                .joinToString(" · ")
-            val isbnLine = edition.bestIsbn?.let { "ISBN $it" }
-            val sourcesLine = edition.sources.joinToString(", ")
-
-            EditorialSurfaceCard(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-              shape = MaterialTheme.shapes.medium,
-              contentPadding = PaddingValues(DipeSpacing.md),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                BookCoverArtwork(
-                  title = edition.workTitle,
-                  author = edition.primaryAuthorsText,
-                  isFavorite = false,
-                  coverUri = edition.bestCover?.imageUrl,
-                  compact = true,
-                  modifier = Modifier.width(42.dp),
-                )
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                  Text(
-                    text =
-                      edition.editionLabel?.takeIf { it.isNotBlank() }
-                        ?: edition.publisher
-                        ?: edition.workTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                  if (metaLine.isNotEmpty()) {
-                    Text(
-                      text = metaLine,
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 2,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  }
-                  if (isbnLine != null || sourcesLine.isNotEmpty()) {
-                    Text(
-                      text = listOfNotNull(isbnLine, sourcesLine.takeIf { it.isNotEmpty() }).joinToString(" · "),
-                      style = LocalDipeTypography.current.monoMetadata,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  }
-                }
-                Button(
-                  onClick = { onSelectEdition(edition) },
-                  shape = CircleShape,
-                  colors =
-                    ButtonDefaults.buttonColors(
-                      containerColor = MaterialTheme.colorScheme.secondary,
-                      contentColor = MaterialTheme.colorScheme.onSecondary,
-                    ),
-                  contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
-                  modifier =
-                    Modifier.minimumInteractiveComponentSize()
-                      .testTag("search_edition_select_${groupIndex}_$editionIdx"),
-                ) {
-                  Text(
-                    text = stringResource(R.string.search_edition_select_action),
-                    style = MaterialTheme.typography.labelMedium,
-                  )
-                }
-              }
-            }
-          }
-
-          if (group.externalWorkKey != null) {
-            TextButton(
-              onClick = onLoadMoreEditions,
-              enabled = !isLoadingMore,
-              modifier = Modifier.minimumInteractiveComponentSize(),
-            ) {
-              if (isLoadingMore) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(DipeSpacing.xs))
-              }
-              Text(stringResource(R.string.search_edition_load_more))
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun DuplicateResolutionDialog(
-  prompt: PendingDuplicatePrompt,
-  onDismiss: () -> Unit,
-  onOpenExistingBook: (Long) -> Unit,
-  onAddCopy: (SearchEditionCandidate, Long, Long) -> Unit,
-  onAddEdition: (SearchEditionCandidate, Long) -> Unit,
-  onSaveSeparately: (SearchEditionCandidate) -> Unit,
-) {
-  val candidate = prompt.candidate
-  when (val assessment = prompt.assessment) {
-    is DuplicateAssessment.ExactEditionMatch -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.large,
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(stringResource(R.string.duplicate_exact_title)) },
-        text = {
-          Text(
-            text =
-              stringResource(
-                R.string.duplicate_exact_body,
-                assessment.existingTitle,
-                assessment.matchedIsbn,
-                assessment.existingCopiesCount,
-              )
-          )
-        },
-        confirmButton = {
-          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-            Button(
-              onClick = {
-                onAddCopy(candidate, assessment.existingEditionId, assessment.existingWorkId)
-              },
-              modifier = Modifier.fillMaxWidth().testTag("duplicate_add_copy_button"),
-            ) {
-              Text(stringResource(R.string.duplicate_add_copy_action))
-            }
-            OutlinedButton(
-              onClick = {
-                onDismiss()
-                onOpenExistingBook(assessment.existingWorkId)
-              },
-              modifier = Modifier.fillMaxWidth().testTag("duplicate_open_existing_button"),
-            ) {
-              Text(stringResource(R.string.duplicate_open_existing_action))
-            }
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = onDismiss) { Text(stringResource(R.string.book_cancel_action)) }
-        },
-      )
-    }
-
-    is DuplicateAssessment.SameWorkDifferentEditionMatch -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.large,
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(stringResource(R.string.duplicate_same_work_title)) },
-        text = {
-          Text(
-            text =
-              stringResource(
-                R.string.duplicate_same_work_body,
-                assessment.existingTitle,
-                assessment.existingAuthor,
-              )
-          )
-        },
-        confirmButton = {
-          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs)) {
-            Button(
-              onClick = { onAddEdition(candidate, assessment.existingWorkId) },
-              modifier = Modifier.fillMaxWidth().testTag("duplicate_add_edition_button"),
-            ) {
-              Text(stringResource(R.string.duplicate_add_edition_action))
-            }
-            OutlinedButton(
-              onClick = {
-                onDismiss()
-                onOpenExistingBook(assessment.existingWorkId)
-              },
-              modifier = Modifier.fillMaxWidth(),
-            ) {
-              Text(stringResource(R.string.duplicate_open_existing_action))
-            }
-            TextButton(
-              onClick = { onSaveSeparately(candidate) },
-              modifier = Modifier.fillMaxWidth().testTag("duplicate_save_separately_button"),
-            ) {
-              Text(stringResource(R.string.duplicate_save_as_new_work))
-            }
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = onDismiss) { Text(stringResource(R.string.book_cancel_action)) }
-        },
-      )
-    }
-
-    is DuplicateAssessment.UncertainWorkMatch -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.large,
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(stringResource(R.string.duplicate_uncertain_title)) },
-        text = {
-          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
-            Text(stringResource(R.string.duplicate_uncertain_body))
-            assessment.candidates.take(3).forEach { similar ->
-              TextButton(
-                onClick = { onAddEdition(candidate, similar.work.id) },
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                Text("${similar.title} — ${similar.author}")
-              }
-            }
-          }
-        },
-        confirmButton = {
-          Button(
-            onClick = { onSaveSeparately(candidate) },
-            modifier = Modifier.testTag("duplicate_confirm_new_work_button"),
-          ) {
-            Text(stringResource(R.string.duplicate_save_as_new_work))
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = onDismiss) { Text(stringResource(R.string.book_cancel_action)) }
-        },
-      )
-    }
-
-    DuplicateAssessment.NoMatch -> Unit
   }
 }

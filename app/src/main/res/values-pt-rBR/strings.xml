@@ -359,10 +359,22 @@
     <string name="search_no_results_title">Nenhuma edição encontrada</string>
     <string name="search_no_results_body">Amplie a pesquisa em outras fontes, simplifique os termos ou cadastre manualmente.</string>
     <string name="search_source_active">%1$s (%2$d)</string>
+    <string name="search_source_active_total">%1$s (%2$d / ~%3$d)</string>
+    <string name="search_source_loading">%1$s (buscando…)</string>
     <string name="search_source_no_key">%1$s (sem chave)</string>
     <string name="search_source_offline">%1$s (offline)</string>
     <string name="search_source_rate_limit">%1$s (limite)</string>
     <string name="search_source_error">%1$s (erro)</string>
+    <string name="search_loading_progress">Consultando fontes bibliográficas…</string>
+    <string name="search_secondary_languages_toggle">Outros idiomas e edições de Portugal (%1$d)</string>
+    <string name="search_secondary_languages_only_notice">Nenhuma edição em português (Brasil) ou inglês encontrada. Exibindo outros idiomas:</string>
+    <string name="search_edition_show_secondary_langs">Ver edições em outros idiomas (%1$d)</string>
+    <string name="search_edition_hide_secondary_langs">Ocultar outros idiomas</string>
+    <string name="search_action_load_more_results">Carregar mais resultados</string>
+    <string name="search_loading_more_results">Carregando mais resultados…</string>
+    <string name="search_results_count_summary">Exibindo %1$d obra(s)</string>
+    <string name="search_results_count_with_hint">Exibindo %1$d obra(s) · ~%2$d ocorrências na fonte</string>
+    <string name="search_live_local_matches_section">Na sua biblioteca</string>
     <string name="cd_scan_isbn">Escanear código de barras ISBN</string>
 
     <!-- ISBN Scanner -->
