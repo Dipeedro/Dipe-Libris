@@ -642,20 +642,19 @@ class SearchReformulationTest {
       )
 
     val emissions = orchestrator.searchProgressive("Coraline", "pt-BR", expandSecondary = false).toList()
-    // Should emit initial loading -> OL arrival -> GB 429 completion!
-    assertTrue(emissions.size >= 3)
+    // Should emit initial loading state followed by ONE consolidated batch response after all primary sources finish!
+    assertEquals(2, emissions.size)
     // Secondary sources MUST NOT be called on standard query!
     assertEquals(0, crossref.invocations.get())
     assertEquals(0, wikidata.invocations.get())
     assertEquals(0, brasilApi.invocations.get())
 
-    // Second emission already shows Coraline while GB is still loading
-    val olPartial = emissions.first { it.workGroups.isNotEmpty() && it.isPartialResult }
-    assertEquals("Coraline", olPartial.workGroups.first().canonicalTitle)
+    assertTrue(emissions[0].isPartialResult)
 
     // Final emission retains Coraline despite Google Books HTTP 429
     val finalResp = emissions.last()
     assertFalse(finalResp.isPartialResult)
+    assertEquals("Coraline", finalResp.workGroups.first().canonicalTitle)
     assertEquals(1, finalResp.workGroups.size)
     assertTrue(finalResp.hasMoreResults)
     assertTrue(finalResp.sourceStatuses.any { it.source == MetadataSource.GOOGLE_BOOKS && it.state == ProviderOutcomeState.RATE_LIMITED })

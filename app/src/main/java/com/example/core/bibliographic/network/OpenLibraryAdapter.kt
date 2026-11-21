@@ -1,11 +1,14 @@
 package com.example.core.bibliographic.network
 
+import com.example.core.bibliographic.domain.OpenLibraryQuerySpec
 import com.example.core.bibliographic.domain.QueryIntentType
+import com.example.core.bibliographic.domain.QueryPlanner
 import com.example.core.model.BibliographicMath
 import com.example.core.model.CandidateContributor
 import com.example.core.model.ContributorRole
 import com.example.core.model.CoverCandidate
 import com.example.core.model.EditionFormat
+import com.example.core.model.LanguageTier
 import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
@@ -17,6 +20,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -259,26 +263,10 @@ class OpenLibraryAdapter(
       val page = request.page.coerceAtLeast(1)
       val limit = request.pageSize.coerceIn(15, 30)
       val explicitLang = intent.explicitLanguageRequest
+      val plan = QueryPlanner.planOpenLibrary(intent = intent, page = page, limit = limit)
 
       runCatching {
-          val encoded = URLEncoder.encode(cleanQ, "UTF-8")
-          val urls =
-            buildList {
-              when {
-                intent.intentType == QueryIntentType.EXPLICIT_AUTHOR && intent.authorQueryPart != null -> {
-                  val encAuth = URLEncoder.encode(intent.authorQueryPart.trim(), "UTF-8")
-                  add("$baseUrl/search.json?author=$encAuth&sort=readinglog&fields=$SEARCH_FIELDS&limit=$limit&page=$page")
-                }
-                intent.canProbeStructuredAuthor && page == 1 -> {
-                  val encAuth = URLEncoder.encode(intent.authorQueryPart!!.trim(), "UTF-8")
-                  add("$baseUrl/search.json?q=$encoded&fields=$SEARCH_FIELDS&limit=$limit&page=$page")
-                  add("$baseUrl/search.json?author=$encAuth&sort=readinglog&fields=$SEARCH_FIELDS&limit=20&page=1")
-                }
-                else -> {
-                  add("$baseUrl/search.json?q=$encoded&fields=$SEARCH_FIELDS&limit=$limit&page=$page")
-                }
-              }
-            }
+          val urls = plan.primaryQueries.map(::buildSearchUrl)
 
           val outcomes =
             coroutineScope {
@@ -291,18 +279,48 @@ class OpenLibraryAdapter(
                 .awaitAll()
             }
 
-          val elapsed = System.currentTimeMillis() - startMs
           val successful = outcomes.filter { it.status.state == ProviderOutcomeState.SUCCESS || it.status.state == ProviderOutcomeState.EMPTY }
           if (successful.isEmpty()) {
+            val elapsed = System.currentTimeMillis() - startMs
             return@withContext outcomes.firstOrNull()
               ?: SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.ERROR, durationMs = elapsed))
           }
-          val combined =
+
+          val combinedInitial =
             outcomes
               .flatMap { it.candidates }
               .distinctBy { it.candidateId }
-          val maxTotal = outcomes.mapNotNull { it.status.totalAvailable }.maxOrNull()
-          val anyMore = outcomes.any { it.status.hasMore }
+
+          val allOutcomes =
+            if (combinedInitial.isEmpty() && plan.fallbackQuery != null) {
+              val fbOutcome =
+                executeSearchUrl(
+                  url = buildSearchUrl(plan.fallbackQuery),
+                  page = 1,
+                  limit = plan.fallbackQuery.limit,
+                  explicitRequestedLang = explicitLang,
+                  startMs = startMs,
+                )
+              outcomes + fbOutcome
+            } else {
+              outcomes
+            }
+
+          var combined =
+            allOutcomes
+              .flatMap { it.candidates }
+              .distinctBy { it.candidateId }
+
+          if (plan.shouldEnrichMissingPtWorks && combined.isNotEmpty()) {
+            val enrichedExtras = enrichWorksMissingPortugueseEditions(combined, explicitLang)
+            if (enrichedExtras.isNotEmpty()) {
+              combined = (combined + enrichedExtras).distinctBy { it.candidateId }
+            }
+          }
+
+          val elapsed = System.currentTimeMillis() - startMs
+          val maxTotal = allOutcomes.mapNotNull { it.status.totalAvailable }.maxOrNull()
+          val anyMore = allOutcomes.any { it.status.hasMore }
           SourceAdapterResult(
             status =
               SourceQueryStatus(
@@ -322,6 +340,85 @@ class OpenLibraryAdapter(
           )
         }
     }
+
+  private fun buildSearchUrl(spec: OpenLibraryQuerySpec): String {
+    val encoded = URLEncoder.encode(spec.queryValue.trim(), "UTF-8")
+    return when (spec.mode) {
+      OpenLibraryQuerySpec.Mode.ISBN ->
+        "$baseUrl/search.json?isbn=$encoded&fields=$SEARCH_FIELDS&limit=${spec.limit}"
+      OpenLibraryQuerySpec.Mode.AUTHOR ->
+        "$baseUrl/search.json?author=$encoded&sort=${spec.sort ?: "readinglog"}&fields=$SEARCH_FIELDS&limit=${spec.limit}&page=${spec.page}"
+      OpenLibraryQuerySpec.Mode.TITLE ->
+        "$baseUrl/search.json?title=$encoded&fields=$SEARCH_FIELDS&limit=${spec.limit}&page=${spec.page}"
+      OpenLibraryQuerySpec.Mode.TITLE_AND_AUTHOR -> {
+        val encAuthor = URLEncoder.encode(spec.extraAuthorValue.orEmpty().trim(), "UTF-8")
+        "$baseUrl/search.json?title=$encoded&author=$encAuthor&fields=$SEARCH_FIELDS&limit=${spec.limit}&page=${spec.page}"
+      }
+      OpenLibraryQuerySpec.Mode.GENERAL_Q ->
+        "$baseUrl/search.json?q=$encoded&fields=$SEARCH_FIELDS&limit=${spec.limit}&page=${spec.page}"
+    }
+  }
+
+  private suspend fun enrichWorksMissingPortugueseEditions(
+    candidates: List<SearchEditionCandidate>,
+    explicitRequestedLang: String?,
+  ): List<SearchEditionCandidate> = coroutineScope {
+    val byWork = candidates.filter { it.externalWorkKey?.startsWith("/works/") == true }.groupBy { it.externalWorkKey!! }
+    val targetWorks =
+      byWork.entries
+        .mapNotNull { (workKey, workCands) ->
+          val rep = workCands.maxByOrNull { it.workEditionCount } ?: return@mapNotNull null
+          val claimsPt = "pt" in rep.availableWorkLanguages
+          val hasEmbeddedPt = workCands.any { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+          if (claimsPt && !hasEmbeddedPt && rep.workEditionCount >= 10) {
+            workKey to rep
+          } else {
+            null
+          }
+        }
+        .sortedByDescending { it.second.workReadingLogCount + (it.second.workEditionCount * 20) }
+        .take(2)
+
+    if (targetWorks.isEmpty()) return@coroutineScope emptyList()
+
+    targetWorks
+      .map { (workKey, rep) ->
+        async {
+          withTimeoutOrNull(1_600L) {
+            runCatching {
+                val resp = fetchJson("$baseUrl$workKey/editions.json?limit=40")
+                val body = resp.body?.takeIf { resp.code == 200 } ?: return@runCatching emptyList()
+                val parsed = json.decodeFromString<OlWorkEditionsResponse>(body)
+                val syntheticWork =
+                  OlWorkRecord(
+                    key = workKey,
+                    title = rep.workTitle,
+                    subtitle = rep.subtitle,
+                  )
+                parsed.entries
+                  .map { ed ->
+                    buildCandidateFromEdition(
+                      edition = ed,
+                      work = syntheticWork,
+                      resolvedWorkAuthors = rep.contributors,
+                      explicitRequestedLang = explicitRequestedLang,
+                    ).copy(
+                      workEditionCount = rep.workEditionCount,
+                      workReadingLogCount = rep.workReadingLogCount,
+                      workRatingsCount = rep.workRatingsCount,
+                      availableWorkLanguages = rep.availableWorkLanguages,
+                    )
+                  }
+                  .filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+                  .take(4)
+              }
+              .getOrDefault(emptyList())
+          }.orEmpty()
+        }
+      }
+      .awaitAll()
+      .flatten()
+  }
 
   override suspend fun fetchEditionsForWork(externalWorkKey: String): SourceAdapterResult =
     withContext(Dispatchers.IO) {
@@ -483,10 +580,15 @@ class OpenLibraryAdapter(
               )
             }
           }
+          val origTitle =
+            workTitle.takeIf {
+              BibliographicMath.normalizeBaseTitle(edTitle) != BibliographicMath.normalizeBaseTitle(workTitle)
+            }
           SearchEditionCandidate(
             candidateId = "ol_ed_${ed.key ?: doc.key ?: edTitle.hashCode()}_${isbn13 ?: ed.hashCode()}",
             workTitle = workTitle,
             subtitle = BibliographicMath.sanitizeDisplayText(doc.subtitle),
+            originalTitle = origTitle,
             editionTitle = edTitle,
             contributors = contributors,
             publisher = pub,
@@ -740,10 +842,18 @@ class OpenLibraryAdapter(
         }
       }
 
+    val origTitle =
+      edTitle?.let { edT ->
+        workTitle.takeIf {
+          BibliographicMath.normalizeBaseTitle(edT) != BibliographicMath.normalizeBaseTitle(it)
+        }
+      }
+
     return SearchEditionCandidate(
       candidateId = "ol_ed_${edition.key ?: final13 ?: final10 ?: edition.title.hashCode()}",
       workTitle = workTitle,
       subtitle = BibliographicMath.sanitizeDisplayText(edition.subtitle) ?: BibliographicMath.sanitizeDisplayText(work?.subtitle),
+      originalTitle = origTitle,
       editionTitle = edTitle,
       contributors = allContributors,
       publisher = pub,

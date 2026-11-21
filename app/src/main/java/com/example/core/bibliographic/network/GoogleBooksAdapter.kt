@@ -1,9 +1,10 @@
 package com.example.core.bibliographic.network
 
 import com.example.BuildConfig
+import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.bibliographic.domain.ParsedSearchIntent
 import com.example.core.bibliographic.domain.QueryIntentType
-import com.example.core.bibliographic.domain.CoverRanker
+import com.example.core.bibliographic.domain.QueryPlanner
 import com.example.core.model.BibliographicMath
 import com.example.core.model.CandidateContributor
 import com.example.core.model.ContributorRole
@@ -114,44 +115,15 @@ class GoogleBooksAdapter(
       }
 
       val startMs = System.currentTimeMillis()
+      val page = request.page.coerceAtLeast(1)
       val pageSize = request.pageSize.coerceIn(15, 40)
-      val startIndex = ((request.page - 1).coerceAtLeast(0)) * 25
+      val startIndex = (page - 1) * pageSize
       val explicitLang = intent.explicitLanguageRequest
+      val plan = QueryPlanner.planGoogleBooks(intent = intent, page = page, pageSize = pageSize)
 
-      val calls =
-        buildList {
-          when {
-            explicitLang != null -> {
-              val apiLang = explicitLang.substringBefore('-').takeIf { it.length == 2 }
-              add(
-                QuerySpec(
-                  qParam = cleanQ,
-                  maxResults = pageSize,
-                  startIndex = startIndex,
-                  langRestrict = apiLang,
-                )
-              )
-            }
-            intent.intentType == QueryIntentType.EXPLICIT_AUTHOR && intent.authorQueryPart != null -> {
-              val auth = intent.authorQueryPart
-              add(QuerySpec(qParam = "inauthor:\"$auth\"", maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
-              add(QuerySpec(qParam = "inauthor:\"$auth\"", maxResults = 25, startIndex = startIndex, langRestrict = null))
-            }
-            intent.canProbeStructuredAuthor -> {
-              val qOrAuthor = "$cleanQ OR inauthor:\"$cleanQ\""
-              add(QuerySpec(qParam = qOrAuthor, maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
-              add(QuerySpec(qParam = cleanQ, maxResults = 25, startIndex = startIndex, langRestrict = null))
-            }
-            else -> {
-              add(QuerySpec(qParam = cleanQ, maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
-              add(QuerySpec(qParam = cleanQ, maxResults = 25, startIndex = startIndex, langRestrict = null))
-            }
-          }
-        }
-
-      val callResults =
+      val primaryResults =
         coroutineScope {
-          calls
+          plan.primaryQueries
             .map { spec ->
               async {
                 executeSingleQuery(
@@ -166,20 +138,35 @@ class GoogleBooksAdapter(
             .awaitAll()
         }
 
+      val primaryHasCandidates =
+        primaryResults.filterIsInstance<SingleCallOutcome.Success>().any { it.candidates.isNotEmpty() }
+
+      val allResults =
+        if (!primaryHasCandidates &&
+          plan.fallbackQuery != null &&
+          primaryResults.any { it is SingleCallOutcome.Success }
+        ) {
+          val fb = plan.fallbackQuery
+          val fallbackOutcome =
+            executeSingleQuery(
+              qParam = fb.qParam,
+              maxResults = fb.maxResults,
+              startIndex = fb.startIndex,
+              langRestrict = fb.langRestrict,
+              explicitRequestedLang = explicitLang,
+            )
+          primaryResults + fallbackOutcome
+        } else {
+          primaryResults
+        }
+
       toAdapterResult(
-        results = callResults,
+        results = allResults,
         requestedCount = pageSize,
         startIndex = startIndex,
         elapsedMs = System.currentTimeMillis() - startMs,
       )
     }
-
-  private data class QuerySpec(
-    val qParam: String,
-    val maxResults: Int,
-    val startIndex: Int,
-    val langRestrict: String?,
-  )
 
   private sealed interface SingleCallOutcome {
     data class Success(
@@ -188,6 +175,7 @@ class GoogleBooksAdapter(
       val candidates: List<SearchEditionCandidate>,
     ) : SingleCallOutcome
 
+    data class SkippedNoKey(val message: String? = null) : SingleCallOutcome
     data class RateLimited(val message: String? = null) : SingleCallOutcome
     data class Error(val message: String?) : SingleCallOutcome
   }
@@ -204,7 +192,7 @@ class GoogleBooksAdapter(
     return runCatching {
         val encodedQ = URLEncoder.encode(qParam, "UTF-8")
         val url = buildString {
-          append("$baseUrl/volumes?q=$encodedQ&maxResults=$maxResults&printType=books")
+          append("$baseUrl/volumes?q=$encodedQ&maxResults=$maxResults&printType=books&orderBy=relevance")
           if (startIndex > 0) append("&startIndex=$startIndex")
           if (!langRestrict.isNullOrBlank()) append("&langRestrict=${URLEncoder.encode(langRestrict, "UTF-8")}")
           if (hasValidKey) append("&key=${URLEncoder.encode(key, "UTF-8")}")
@@ -216,7 +204,11 @@ class GoogleBooksAdapter(
             response.code == 429 ||
               (response.code == 403 && isRateLimitErrorBody(body))
           ) {
-            return SingleCallOutcome.RateLimited("HTTP ${response.code}")
+            return if (!hasValidKey) {
+              SingleCallOutcome.SkippedNoKey("HTTP ${response.code} without configured API key")
+            } else {
+              SingleCallOutcome.RateLimited("HTTP ${response.code}")
+            }
           }
           if (!response.isSuccessful || body == null) {
             return SingleCallOutcome.Error("HTTP ${response.code}")
@@ -339,6 +331,12 @@ class GoogleBooksAdapter(
   ): SourceAdapterResult {
     val successes = results.filterIsInstance<SingleCallOutcome.Success>()
     if (successes.isEmpty()) {
+      val skipped = results.filterIsInstance<SingleCallOutcome.SkippedNoKey>().firstOrNull()
+      if (skipped != null) {
+        return SourceAdapterResult(
+          SourceQueryStatus(source, ProviderOutcomeState.SKIPPED_NO_API_KEY, message = skipped.message, durationMs = elapsedMs)
+        )
+      }
       val rateLimited = results.filterIsInstance<SingleCallOutcome.RateLimited>().firstOrNull()
       if (rateLimited != null) {
         return SourceAdapterResult(

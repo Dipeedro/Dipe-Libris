@@ -4,16 +4,21 @@ import com.example.core.model.BibliographicMath
 import com.example.core.model.EditionFormat
 import com.example.core.model.LanguageConfidence
 import com.example.core.model.LanguageTier
+import com.example.core.model.MatchTier
 import com.example.core.model.MetadataSource
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
+import com.example.core.model.TitleBundleKind
 import com.example.core.model.TitleStructure
+import java.security.MessageDigest
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ln
 
 data class GroupedSearchOutcome(
   val primaryGroups: List<SearchWorkGroup>,
   val secondaryGroups: List<SearchWorkGroup>,
+  val derivativeGroups: List<SearchWorkGroup> = emptyList(),
 )
 
 object WorkGroupingEngine {
@@ -24,13 +29,27 @@ object WorkGroupingEngine {
     val titleStructure: TitleStructure,
   )
 
+  private data class RankedGroupKey(
+    val group: SearchWorkGroup,
+    val matchTierRank: Int,
+    val identityMatchBucket: Int,
+    val hasCanonicalAuthorConsensus: Boolean,
+    val independentSourcesCount: Int,
+    val bundleRankOrder: Int,
+    val volumeNumber: Int,
+    val languageTierRank: Int,
+    val workPopularityBucket: Int,
+    val maxAuthorScore: Int,
+    val bestEditionQualityScore: Int,
+  )
+
   fun groupCandidates(
     rawCandidates: List<SearchEditionCandidate>,
     preferredLanguage: String? = null,
     parsedIntent: ParsedSearchIntent? = null,
   ): List<SearchWorkGroup> {
     val separated = groupSeparated(rawCandidates, preferredLanguage, parsedIntent)
-    return separated.primaryGroups + separated.secondaryGroups
+    return separated.primaryGroups + separated.secondaryGroups + separated.derivativeGroups
   }
 
   fun groupSeparated(
@@ -38,10 +57,10 @@ object WorkGroupingEngine {
     preferredLanguage: String? = null,
     parsedIntent: ParsedSearchIntent? = null,
   ): GroupedSearchOutcome {
-    if (rawCandidates.isEmpty()) return GroupedSearchOutcome(emptyList(), emptyList())
+    if (rawCandidates.isEmpty()) return GroupedSearchOutcome(emptyList(), emptyList(), emptyList())
 
     val explicitRequestedLang = parsedIntent?.explicitLanguageRequest
-    val evaluatedList = mutableListOf<EvaluatedCandidate>()
+    val sanitizedCandidates = mutableListOf<SearchEditionCandidate>()
 
     for (raw in rawCandidates) {
       val cleanTitle = BibliographicMath.sanitizeDisplayText(raw.workTitle) ?: continue
@@ -50,7 +69,6 @@ object WorkGroupingEngine {
       val isbn13 = parsed13?.isbn13 ?: parsed10?.isbn13
       val isbn10 = parsed10?.isbn10 ?: parsed13?.isbn10
 
-      // Preserve adapter language classification when already assessed, or re-assess for synthetic/legacy inputs or explicit language request
       val langAssessment =
         if (raw.languageConfidenceName == null || explicitRequestedLang != null) {
           BibliographicMath.assessLanguage(
@@ -73,10 +91,11 @@ object WorkGroupingEngine {
       val covers = CoverRanker.rankAndDeduplicate(raw.coverCandidates)
       val synopses = SynopsisSelector.rankAndDeduplicate(raw.synopsisCandidates, preferredLanguage, normLang)
 
-      var cleaned =
+      val cleaned =
         raw.copy(
           workTitle = cleanTitle,
           subtitle = BibliographicMath.sanitizeDisplayText(raw.subtitle),
+          originalTitle = BibliographicMath.sanitizeDisplayText(raw.originalTitle),
           editionTitle = BibliographicMath.sanitizeDisplayText(raw.editionTitle),
           publisher = BibliographicMath.sanitizeDisplayText(raw.publisher),
           isbn13 = isbn13,
@@ -89,34 +108,83 @@ object WorkGroupingEngine {
           coverCandidates = covers,
           synopsisCandidates = synopses,
         )
-
-      val eval = RelevanceAndDerivativeFilter.evaluateCandidate(cleaned, parsedIntent)
-      if (!eval.accepted) continue
-
-      cleaned =
-        cleaned.copy(
-          queryMatchScore = maxOf(cleaned.queryMatchScore, eval.queryMatchScore),
-          reliabilityScore = computeEditionReliability(cleaned, preferredLanguage),
-        )
-      val struct = BibliographicMath.extractTitleStructure(cleanTitle, cleaned.subtitle)
-      evaluatedList.add(EvaluatedCandidate(cleaned, eval, struct))
+      sanitizedCandidates.add(cleaned)
     }
 
-    if (evaluatedList.isEmpty()) return GroupedSearchOutcome(emptyList(), emptyList())
+    if (sanitizedCandidates.isEmpty()) return GroupedSearchOutcome(emptyList(), emptyList(), emptyList())
+
+    // Etapas C & D: Avaliação em lote com consenso de autor canônico e ponte bilíngue
+    val classified = RelevanceAndDerivativeFilter.classifyBatch(sanitizedCandidates, parsedIntent)
+    val acceptedItems =
+      classified.mapNotNull { (cand, eval) ->
+        if (!eval.accepted) return@mapNotNull null
+        val enriched =
+          cand.copy(
+            queryMatchScore = maxOf(cand.queryMatchScore, eval.queryMatchScore),
+            reliabilityScore = computeEditionReliability(cand, preferredLanguage),
+          )
+        val primaryDisplayForStruct =
+          enriched.editionTitle?.takeIf {
+            eval.matchedField == MatchedTitleField.EDITION_TITLE &&
+              enriched.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank
+          } ?: enriched.workTitle
+        val struct = BibliographicMath.extractTitleStructure(primaryDisplayForStruct, enriched.subtitle)
+        EvaluatedCandidate(enriched, eval, struct)
+      }
+
+    if (acceptedItems.isEmpty()) return GroupedSearchOutcome(emptyList(), emptyList(), emptyList())
 
     val isPredominantlyAuthor =
       RelevanceAndDerivativeFilter.isPredominantlyAuthorQuery(
-        evaluations = evaluatedList.map { it.evaluation },
+        evaluations = acceptedItems.map { it.evaluation },
         intent = parsedIntent,
       )
 
-    // Step 1: O(1) indexed deduplication of identical Editions
+    // Passo E1: Deduplicação de Editions (isolando literárias vs derivadas)
+    val literaryMerged = deduplicateEditions(acceptedItems.filter { !it.evaluation.isAcademicOrDerivative && it.evaluation.matchTier != MatchTier.DERIVATIVE_OR_ACADEMIC }, preferredLanguage)
+    val derivativeMerged = deduplicateEditions(acceptedItems.filter { it.evaluation.isAcademicOrDerivative || it.evaluation.matchTier == MatchTier.DERIVATIVE_OR_ACADEMIC }, preferredLanguage)
+
+    // Passo E2 & F: Consolidação em Works com barreiras estruturais e ordenação lexicográfica
+    val literaryRanked =
+      buildAndRankWorkBuckets(
+        items = literaryMerged,
+        preferredLanguage = preferredLanguage,
+        parsedIntent = parsedIntent,
+        isPredominantlyAuthor = isPredominantlyAuthor,
+        isDerivativeClass = false,
+      )
+    val derivativeRanked =
+      buildAndRankWorkBuckets(
+        items = derivativeMerged,
+        preferredLanguage = preferredLanguage,
+        parsedIntent = parsedIntent,
+        isPredominantlyAuthor = isPredominantlyAuthor,
+        isDerivativeClass = true,
+      )
+
+    val primaryCutoffRank = LanguageTier.EN.rank
+    val primaryGroups = literaryRanked.filter { it.primaryLanguageTierRank <= primaryCutoffRank }
+    val secondaryGroups = literaryRanked.filter { it.primaryLanguageTierRank > primaryCutoffRank }
+
+    return GroupedSearchOutcome(
+      primaryGroups = primaryGroups,
+      secondaryGroups = secondaryGroups,
+      derivativeGroups = derivativeRanked,
+    )
+  }
+
+  private fun deduplicateEditions(
+    items: List<EvaluatedCandidate>,
+    preferredLanguage: String?,
+  ): List<EvaluatedCandidate> {
+    if (items.isEmpty()) return emptyList()
     val mergedEditions = mutableListOf<EvaluatedCandidate>()
     val isbn13Index = HashMap<String, Int>()
     val isbn10Index = HashMap<String, Int>()
+    val extIdIndex = HashMap<String, Int>()
     val noIsbnBuckets = HashMap<String, MutableList<Int>>()
 
-    for (item in evaluatedList) {
+    for (item in items) {
       val cand = item.candidate
       var matchIdx = -1
       if (cand.isbn13 != null) {
@@ -124,6 +192,16 @@ object WorkGroupingEngine {
       }
       if (matchIdx < 0 && cand.isbn10 != null) {
         matchIdx = isbn10Index[cand.isbn10] ?: -1
+      }
+      if (matchIdx < 0) {
+        for (idKey in listOf("openlibrary_edition", "google_books_id", "apple_books_track_id")) {
+          val extVal = cand.externalIds[idKey] ?: continue
+          val hit = extIdIndex["$idKey:$extVal"]
+          if (hit != null) {
+            matchIdx = hit
+            break
+          }
+        }
       }
       if (matchIdx < 0 && cand.isbn13 == null && cand.isbn10 == null && cand.publicationYear != null && !cand.publisher.isNullOrBlank()) {
         val bucketKey = "${item.titleStructure.coreNormalized}|${cand.publicationYear}"
@@ -136,96 +214,111 @@ object WorkGroupingEngine {
       if (matchIdx >= 0) {
         val prev = mergedEditions[matchIdx]
         val mergedCand = mergeEditions(prev.candidate, cand, preferredLanguage)
-        val mergedEval =
-          if (prev.evaluation.queryMatchScore >= item.evaluation.queryMatchScore) prev.evaluation else item.evaluation
-        val mergedItem = prev.copy(candidate = mergedCand, evaluation = mergedEval)
-        mergedEditions[matchIdx] = mergedItem
+        val mergedEval = combineEvaluations(prev.evaluation, item.evaluation)
+        val mergedStruct =
+          if (prev.evaluation.matchTier.rank <= item.evaluation.matchTier.rank) prev.titleStructure else item.titleStructure
+        mergedEditions[matchIdx] = EvaluatedCandidate(mergedCand, mergedEval, mergedStruct)
         mergedCand.isbn13?.let { isbn13Index.putIfAbsent(it, matchIdx) }
         mergedCand.isbn10?.let { isbn10Index.putIfAbsent(it, matchIdx) }
+        for (idKey in listOf("openlibrary_edition", "google_books_id", "apple_books_track_id")) {
+          mergedCand.externalIds[idKey]?.let { extIdIndex.putIfAbsent("$idKey:$it", matchIdx) }
+        }
       } else {
         val newIdx = mergedEditions.size
         mergedEditions.add(item)
         cand.isbn13?.let { isbn13Index[it] = newIdx }
         cand.isbn10?.let { isbn10Index[it] = newIdx }
+        for (idKey in listOf("openlibrary_edition", "google_books_id", "apple_books_track_id")) {
+          cand.externalIds[idKey]?.let { extIdIndex["$idKey:$it"] = newIdx }
+        }
         if (cand.isbn13 == null && cand.isbn10 == null && cand.publicationYear != null && !cand.publisher.isNullOrBlank()) {
           val bucketKey = "${item.titleStructure.coreNormalized}|${cand.publicationYear}"
           noIsbnBuckets.getOrPut(bucketKey) { mutableListOf() }.add(newIdx)
         }
       }
     }
+    return mergedEditions
+  }
 
-    // Step 2: Indexed Work grouping with strict Volume & Collection/Box separation guard
+  private fun buildAndRankWorkBuckets(
+    items: List<EvaluatedCandidate>,
+    preferredLanguage: String?,
+    parsedIntent: ParsedSearchIntent?,
+    isPredominantlyAuthor: Boolean,
+    isDerivativeClass: Boolean,
+  ): List<SearchWorkGroup> {
+    if (items.isEmpty()) return emptyList()
+
     val workBuckets = mutableListOf<MutableList<EvaluatedCandidate>>()
-    val workKeyToBucket = HashMap<String, Int>()
-    val wikidataToBucket = HashMap<String, Int>()
+    val workKeyToBucket = HashMap<String, MutableList<Int>>()
+    val wikidataToBucket = HashMap<String, MutableList<Int>>()
     val coreTitleToBuckets = HashMap<String, MutableList<Int>>()
     val surnameToBuckets = HashMap<String, MutableList<Int>>()
 
-    for (item in mergedEditions) {
+    for (item in items) {
       val cand = item.candidate
       var matchedBucket = -1
+      val checked = HashSet<Int>()
 
-      // Check work key index with volume/bundle guard
       val wKey = cand.externalWorkKey
       if (wKey != null) {
-        val candidateBucketIdx = workKeyToBucket[wKey]
-        if (candidateBucketIdx != null &&
-          workBuckets[candidateBucketIdx].any { member -> belongsToSameWork(member, item) }
-        ) {
-          matchedBucket = candidateBucketIdx
-        }
+        val buckets = workKeyToBucket[wKey].orEmpty()
+        matchedBucket =
+          buckets.firstOrNull { bIdx ->
+            checked.add(bIdx)
+            workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+          } ?: -1
       }
 
-      // Check Wikidata index with guard
       val wdKey = cand.externalIds["wikidata_work"]
       if (matchedBucket < 0 && wdKey != null) {
-        val candidateBucketIdx = wikidataToBucket[wdKey]
-        if (candidateBucketIdx != null &&
-          workBuckets[candidateBucketIdx].any { member -> belongsToSameWork(member, item) }
-        ) {
-          matchedBucket = candidateBucketIdx
-        }
+        val buckets = wikidataToBucket[wdKey].orEmpty()
+        matchedBucket =
+          buckets.firstOrNull { bIdx ->
+            if (!checked.add(bIdx)) false
+            else workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+          } ?: -1
       }
 
-      // Check small candidate buckets sharing normalized title core or first significant word or author surname
       if (matchedBucket < 0) {
         val candidateIndices = linkedSetOf<Int>()
-        coreTitleToBuckets[item.titleStructure.coreNormalized]?.let { candidateIndices.addAll(it) }
+        extractTitleLookupKeys(cand, item.titleStructure).forEach { key ->
+          coreTitleToBuckets[key]?.let { candidateIndices.addAll(it) }
+        }
         val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
         if (surname.isNotEmpty()) {
           surnameToBuckets[surname]?.let { candidateIndices.addAll(it) }
         }
         matchedBucket =
           candidateIndices.firstOrNull { bIdx ->
-            workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            if (!checked.add(bIdx)) false
+            else workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
           } ?: -1
       }
 
-      if (matchedBucket >= 0) {
-        workBuckets[matchedBucket].add(item)
-        if (wKey != null) workKeyToBucket.putIfAbsent(wKey, matchedBucket)
-        if (wdKey != null) wikidataToBucket.putIfAbsent(wdKey, matchedBucket)
-        val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
-        if (surname.isNotEmpty()) {
-          surnameToBuckets.getOrPut(surname) { mutableListOf() }.add(matchedBucket)
+      val targetIdx =
+        if (matchedBucket >= 0) {
+          workBuckets[matchedBucket].add(item)
+          matchedBucket
+        } else {
+          val newIdx = workBuckets.size
+          workBuckets.add(mutableListOf(item))
+          newIdx
         }
-        coreTitleToBuckets.getOrPut(item.titleStructure.coreNormalized) { mutableListOf() }.add(matchedBucket)
-      } else {
-        val newBucketIdx = workBuckets.size
-        workBuckets.add(mutableListOf(item))
-        if (wKey != null) workKeyToBucket[wKey] = newBucketIdx
-        if (wdKey != null) wikidataToBucket[wdKey] = newBucketIdx
-        coreTitleToBuckets.getOrPut(item.titleStructure.coreNormalized) { mutableListOf() }.add(newBucketIdx)
-        val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
-        if (surname.isNotEmpty()) {
-          surnameToBuckets.getOrPut(surname) { mutableListOf() }.add(newBucketIdx)
-        }
+
+      if (wKey != null) workKeyToBucket.getOrPut(wKey) { mutableListOf() }.addDistinct(targetIdx)
+      if (wdKey != null) wikidataToBucket.getOrPut(wdKey) { mutableListOf() }.addDistinct(targetIdx)
+      extractTitleLookupKeys(cand, item.titleStructure).forEach { key ->
+        coreTitleToBuckets.getOrPut(key) { mutableListOf() }.addDistinct(targetIdx)
+      }
+      val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
+      if (surname.isNotEmpty()) {
+        surnameToBuckets.getOrPut(surname) { mutableListOf() }.addDistinct(targetIdx)
       }
     }
 
-    // Step 3: Build WorkGroups keeping Work popularity strictly separated from Edition selection
-    val builtGroups =
-      workBuckets.mapIndexed { idx, bucketItems ->
+    val rankedKeys =
+      workBuckets.map { bucketItems ->
         val sortedItems =
           bucketItems.sortedWith(
             compareBy<EvaluatedCandidate> { it.candidate.languageTierRank }
@@ -233,9 +326,23 @@ object WorkGroupingEngine {
           )
         val sortedEditions = sortedItems.map { it.candidate }
         val primary = sortedEditions.first()
-        val canonicalTitle = pickCanonicalTitle(sortedEditions)
-        val subtitle = sortedEditions.firstNotNullOfOrNull { it.subtitle?.takeIf { s -> s.isNotBlank() } }
-        val originalTitle = sortedEditions.firstNotNullOfOrNull { it.originalTitle?.takeIf { s -> s.isNotBlank() } }
+        val bestTier =
+          sortedItems.minByOrNull { it.evaluation.matchTier.rank }?.evaluation?.matchTier
+            ?: MatchTier.EXACT_WORK
+        val bestBundleKind =
+          sortedItems
+            .groupingBy { it.titleStructure.bundleKind }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key ?: TitleBundleKind.SINGLE
+
+        val canonicalTitle = pickCanonicalTitle(sortedEditions, preferredLanguage)
+        val canonicalNorm = BibliographicMath.normalizeBaseTitle(canonicalTitle)
+        val subtitle =
+          sortedEditions.firstNotNullOfOrNull { ed ->
+            ed.subtitle?.takeIf { s -> s.isNotBlank() && BibliographicMath.normalizeBaseTitle(s) != canonicalNorm }
+          }
+        val originalTitle = pickOriginalTitle(sortedEditions, canonicalTitle)
         val externalWorkKey = sortedEditions.firstNotNullOfOrNull { it.externalWorkKey }
         val primaryAuthors =
           sortedEditions
@@ -262,13 +369,22 @@ object WorkGroupingEngine {
         val bestTierRank = sortedEditions.minOfOrNull { it.languageTierRank } ?: LanguageTier.UNKNOWN.rank
         val totalHints =
           sortedEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > sortedEditions.size }
-        val groupKey =
-          externalWorkKey?.let { "$it:${sortedItems.first().titleStructure.volumeNumber ?: 0}:${sortedItems.first().titleStructure.bundleKind.name}" }
-            ?: "${BibliographicMath.normalizeTitleCore(canonicalTitle)}_${BibliographicMath.normalizeAuthorSurname(primaryAuthors.firstOrNull()?.name)}_$idx"
+        val repStruct = sortedItems.first().titleStructure
+
+        val deterministicGroupId =
+          buildDeterministicGroupId(
+            externalWorkKey = externalWorkKey,
+            canonicalTitle = canonicalTitle,
+            subtitle = subtitle,
+            authorName = primaryAuthors.firstOrNull()?.name,
+            volumeNumber = repStruct.volumeNumber,
+            bundleKind = bestBundleKind,
+            isDerivative = isDerivativeClass,
+          )
 
         val group =
           SearchWorkGroup(
-            groupId = groupKey,
+            groupId = deterministicGroupId,
             canonicalTitle = canonicalTitle,
             subtitle = subtitle,
             originalTitle = originalTitle,
@@ -282,23 +398,115 @@ object WorkGroupingEngine {
             queryRelevanceScore = queryRelevance,
             primaryLanguageTierRank = bestTierRank,
             totalAvailableEditionsHint = totalHints,
+            matchTierName = bestTier.name,
+            bundleKindName = bestBundleKind.name,
           )
-        group to computeWorkRankScore(group, isPredominantlyAuthor, sortedItems)
+
+        val bundleOrder =
+          when (bestBundleKind) {
+            TitleBundleKind.SINGLE -> 0
+            TitleBundleKind.OMNIBUS_SINGLE_VOLUME -> 1
+            TitleBundleKind.SERIES_VOLUME -> 2
+            TitleBundleKind.COLLECTION_OR_BOX -> 3
+          }
+        val popBucket = computePopularityBucket(workPopScore)
+        val bestEditionQuality = sortedItems.maxOfOrNull { editionSelectionScore(it.candidate, it.evaluation) } ?: 0
+
+        RankedGroupKey(
+          group = group,
+          matchTierRank = bestTier.rank,
+          identityMatchBucket = sortedItems.maxOfOrNull { it.evaluation.identityMatchBucket } ?: 0,
+          hasCanonicalAuthorConsensus = sortedItems.any { it.evaluation.hasCanonicalAuthorConsensus },
+          independentSourcesCount = allSources.distinct().size.coerceAtMost(3),
+          bundleRankOrder = bundleOrder,
+          volumeNumber = repStruct.volumeNumber ?: 0,
+          languageTierRank = bestTierRank,
+          workPopularityBucket = popBucket,
+          maxAuthorScore = sortedItems.maxOfOrNull { it.evaluation.authorMatchScore } ?: 0,
+          bestEditionQualityScore = bestEditionQuality,
+        )
       }
 
-    val rankedGroups =
-      builtGroups
-        .sortedByDescending { it.second }
-        .map { it.first }
+    // Passo F: Comparador Lexicográfico Hierárquico (Identidade e Autor Canônico > Popularidade/Completude)
+    val comparator =
+      if (isPredominantlyAuthor) {
+        Comparator<RankedGroupKey> { a, b ->
+          compareValues(a.matchTierRank, b.matchTierRank).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.maxAuthorScore / 15, a.maxAuthorScore / 15).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.workPopularityBucket, a.workPopularityBucket).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(a.languageTierRank, b.languageTierRank).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.bestEditionQualityScore, a.bestEditionQualityScore)
+        }
+      } else {
+        Comparator<RankedGroupKey> { a, b ->
+          compareValues(a.matchTierRank, b.matchTierRank).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.identityMatchBucket, a.identityMatchBucket).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.hasCanonicalAuthorConsensus, a.hasCanonicalAuthorConsensus).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.independentSourcesCount, a.independentSourcesCount).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(a.bundleRankOrder, b.bundleRankOrder).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(a.volumeNumber, b.volumeNumber).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(a.languageTierRank, b.languageTierRank).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.workPopularityBucket, a.workPopularityBucket).takeIf { it != 0 }?.let { return@Comparator it }
+          compareValues(b.bestEditionQualityScore, a.bestEditionQualityScore)
+        }
+      }
 
-    val primaryCutoffRank = LanguageTier.PT_UNCERTAIN.rank
-    val primaryGroups = rankedGroups.filter { it.primaryLanguageTierRank <= primaryCutoffRank }
-    val secondaryGroups = rankedGroups.filter { it.primaryLanguageTierRank > primaryCutoffRank }
+    return rankedKeys.sortedWith(comparator).map { it.group }
+  }
 
-    return GroupedSearchOutcome(
-      primaryGroups = primaryGroups,
-      secondaryGroups = secondaryGroups,
+  private fun MutableList<Int>.addDistinct(value: Int) {
+    if (value !in this) add(value)
+  }
+
+  private fun extractTitleLookupKeys(cand: SearchEditionCandidate, struct: TitleStructure): Set<String> =
+    buildSet {
+      if (struct.coreNormalized.isNotEmpty()) add(struct.coreNormalized)
+      cand.editionTitle?.let { BibliographicMath.normalizeTitleCore(it) }?.takeIf { it.isNotEmpty() }?.let { add(it) }
+      cand.originalTitle?.let { BibliographicMath.normalizeTitleCore(it) }?.takeIf { it.isNotEmpty() }?.let { add(it) }
+      BibliographicMath.normalizeTitleCore(cand.workTitle).takeIf { it.isNotEmpty() }?.let { add(it) }
+    }
+
+  private fun combineEvaluations(a: CandidateMatchEvaluation, b: CandidateMatchEvaluation): CandidateMatchEvaluation {
+    val bestTier = if (a.matchTier.rank <= b.matchTier.rank) a.matchTier else b.matchTier
+    return a.copy(
+      queryMatchScore = maxOf(a.queryMatchScore, b.queryMatchScore),
+      titleMatchScore = maxOf(a.titleMatchScore, b.titleMatchScore),
+      authorMatchScore = maxOf(a.authorMatchScore, b.authorMatchScore),
+      significantTokenCoverage = maxOf(a.significantTokenCoverage, b.significantTokenCoverage),
+      matchTier = bestTier,
+      identityMatchBucket = maxOf(a.identityMatchBucket, b.identityMatchBucket),
+      isAcademicOrDerivative = a.isAcademicOrDerivative || b.isAcademicOrDerivative,
+      hasCanonicalAuthorConsensus = a.hasCanonicalAuthorConsensus || b.hasCanonicalAuthorConsensus,
     )
+  }
+
+  private fun buildDeterministicGroupId(
+    externalWorkKey: String?,
+    canonicalTitle: String,
+    subtitle: String?,
+    authorName: String?,
+    volumeNumber: Int?,
+    bundleKind: TitleBundleKind,
+    isDerivative: Boolean,
+  ): String {
+    val rawKey =
+      buildString {
+        append(externalWorkKey ?: BibliographicMath.normalizeBaseTitle(canonicalTitle))
+        append('|')
+        append(BibliographicMath.normalizeText(subtitle).take(40))
+        append('|')
+        append(BibliographicMath.normalizeAuthorSurname(authorName))
+        append('|')
+        append(volumeNumber ?: 0)
+        append('|')
+        append(bundleKind.name)
+        append('|')
+        append(if (isDerivative) "T7" else "W")
+      }
+    val digest = MessageDigest.getInstance("SHA-1").digest(rawKey.toByteArray(Charsets.UTF_8))
+    val shortHex = digest.take(8).joinToString("") { "%02x".format(it) }
+    val cleanSlug = BibliographicMath.normalizeTitleCore(canonicalTitle).replace(' ', '_').take(24)
+    return "wg_${cleanSlug}_$shortHex"
   }
 
   private fun isSameEditionWithoutIsbn(a: SearchEditionCandidate, b: SearchEditionCandidate): Boolean {
@@ -306,14 +514,18 @@ object WorkGroupingEngine {
     if (a.publicationYear == null || b.publicationYear == null || a.publicationYear != b.publicationYear) {
       return false
     }
+    if (a.totalPages != null && b.totalPages != null) {
+      val maxP = maxOf(a.totalPages, b.totalPages).toFloat()
+      if (maxP > 0f && abs(a.totalPages - b.totalPages).toFloat() / maxP > 0.08f) return false
+    }
     val pubSim = BibliographicMath.tokenSimilarity(a.publisher, b.publisher)
     val titleSim =
       BibliographicMath.tokenSimilarity(
-        BibliographicMath.normalizeTitleCore(a.workTitle),
-        BibliographicMath.normalizeTitleCore(b.workTitle),
+        BibliographicMath.normalizeBaseTitle(a.editionTitle ?: a.workTitle),
+        BibliographicMath.normalizeBaseTitle(b.editionTitle ?: b.workTitle),
       )
     val sameLang = (a.canonicalLanguageTag ?: a.language) == (b.canonicalLanguageTag ?: b.language)
-    return pubSim >= 0.85f && titleSim >= 0.88f && sameLang
+    return pubSim >= 0.85f && titleSim >= 0.90f && sameLang
   }
 
   private fun mergeEditions(
@@ -386,8 +598,13 @@ object WorkGroupingEngine {
     val structA = itemA.titleStructure
     val structB = itemB.titleStructure
 
-    // Strict structural guards: never merge Box/Trilogy into single volume or Volume 1 into Volume 2
+    // Barreira #1: Derivado/Acadêmico jamais se funde à obra literária
+    if (itemA.evaluation.isAcademicOrDerivative != itemB.evaluation.isAcademicOrDerivative) return false
+
+    // Barreira #2: Pacote estrutural (SINGLE vs SERIES_VOLUME vs OMNIBUS_SINGLE_VOLUME vs COLLECTION_OR_BOX)
     if (structA.bundleKind != structB.bundleKind) return false
+
+    // Barreira #3: Volume numérico e Subtítulo temático distinto em séries
     if (structA.volumeNumber != null && structB.volumeNumber != null && structA.volumeNumber != structB.volumeNumber) {
       return false
     }
@@ -397,9 +614,30 @@ object WorkGroupingEngine {
     if ((structB.volumeNumber ?: 1) > 1 && structA.volumeNumber == null && structA.coreNormalized != structB.coreNormalized) {
       return false
     }
+    if (structA.subtitleNormalized.isNotEmpty() && structB.subtitleNormalized.isNotEmpty()) {
+      val edA = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(structA.subtitleNormalized)
+      val edB = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(structB.subtitleNormalized)
+      if (!edA && !edB) {
+        val subSim = BibliographicMath.tokenSimilarity(structA.subtitleNormalized, structB.subtitleNormalized)
+        if (subSim < 0.70f) return false
+      }
+    }
 
     val a = itemA.candidate
     val b = itemB.candidate
+
+    // Barreira #4: Autor principal (impede fusão de homônimos como "Coraline" de autores distintos)
+    val surnameA = BibliographicMath.normalizeAuthorSurname(a.primaryAuthorsText)
+    val surnameB = BibliographicMath.normalizeAuthorSurname(b.primaryAuthorsText)
+    val authorCompat =
+      if (surnameA.isNotEmpty() && surnameB.isNotEmpty()) {
+        BibliographicMath.tokenSimilarity(surnameA, surnameB) >= 0.70f
+      } else {
+        true
+      }
+    if (!authorCompat) return false
+
+    // Evidência forte por chave de obra / Wikidata (após passar nas 4 barreiras!)
     if (a.externalWorkKey != null && b.externalWorkKey != null && a.externalWorkKey == b.externalWorkKey) {
       return true
     }
@@ -409,43 +647,107 @@ object WorkGroupingEngine {
       return true
     }
 
-    val coreA = structA.coreNormalized
-    val coreB = structB.coreNormalized
-    if (coreA.isEmpty() || coreB.isEmpty()) return false
-    val titleSim = BibliographicMath.tokenSimilarity(coreA, coreB)
-    if (titleSim < 0.84f) return false
+    // Comparação cruzada considerando título da obra, título traduzido da edição e título original
+    val formsA =
+      listOfNotNull(
+          structA.baseNormalizedWithArticle.takeIf { it.isNotBlank() },
+          structA.coreNormalized.takeIf { it.isNotBlank() },
+          a.editionTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+          a.originalTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+        )
+        .distinct()
+    val formsB =
+      listOfNotNull(
+          structB.baseNormalizedWithArticle.takeIf { it.isNotBlank() },
+          structB.coreNormalized.takeIf { it.isNotBlank() },
+          b.editionTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+          b.originalTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+        )
+        .distinct()
 
-    val surnameA = BibliographicMath.normalizeAuthorSurname(a.primaryAuthorsText)
-    val surnameB = BibliographicMath.normalizeAuthorSurname(b.primaryAuthorsText)
+    val maxFormSim =
+      formsA.maxOfOrNull { fa ->
+        formsB.maxOfOrNull { fb -> BibliographicMath.tokenSimilarity(fa, fb) } ?: 0f
+      } ?: 0f
+
     if (surnameA.isEmpty() || surnameB.isEmpty()) {
-      return titleSim >= 0.94f
+      return maxFormSim >= 0.94f
     }
-    val authorSim = BibliographicMath.tokenSimilarity(surnameA, surnameB)
-    return authorSim >= 0.72f
+    return maxFormSim >= 0.86f
   }
 
-  private fun pickCanonicalTitle(editions: List<SearchEditionCandidate>): String {
+  private fun pickCanonicalTitle(
+    editions: List<SearchEditionCandidate>,
+    preferredLanguage: String?,
+  ): String {
+    val wantsPt = BibliographicMath.normalizeLanguageCode(preferredLanguage) != "en"
+    val ptEditions =
+      editions.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+    if (wantsPt && ptEditions.isNotEmpty()) {
+      // Se alguma edição PT já traz um título localizado em editionTitle (ex: workTitle="The Hunger Games", editionTitle="Jogos Vorazes")
+      val ptDisplayCandidates =
+        ptEditions.flatMap { ed ->
+          val edT = ed.editionTitle?.takeIf { it.isNotBlank() }
+          val wT = ed.workTitle
+          val orig = ed.originalTitle
+          when {
+            edT != null && orig != null && BibliographicMath.normalizeBaseTitle(wT) == BibliographicMath.normalizeBaseTitle(orig) ->
+              listOf(edT)
+            edT != null && BibliographicMath.normalizeBaseTitle(edT) != BibliographicMath.normalizeBaseTitle(wT) &&
+              looksPortugueseLike(edT) && !looksPortugueseLike(wT) ->
+              listOf(edT)
+            else -> listOfNotNull(wT, edT)
+          }
+        }
+      ptDisplayCandidates
+        .maxByOrNull { scoreDisplayTitle(it) }
+        ?.let { return it }
+    }
+
     val primaryTier =
-      editions.filter { it.languageTierRank <= LanguageTier.PT_BR.rank }
+      ptEditions
         .ifEmpty { editions.filter { it.languageTierRank <= LanguageTier.EN.rank } }
         .ifEmpty { editions }
     return primaryTier
       .map { it.workTitle }
-      .maxByOrNull { title ->
-        var score = 0
-        if (title != title.uppercase(Locale.ROOT)) score += 10
-        if (':' !in title) score += 3
-        score - (title.length / 45)
-      }
+      .maxByOrNull { scoreDisplayTitle(it) }
       ?: editions.first().workTitle
   }
 
-  /**
-   * Pontuação estrita de seleção da edição principal DENTRO de uma obra.
-   * Deliberadamente NÃO utiliza métricas de popularidade da obra como se fossem da edição;
-   * prioriza correspondência com a consulta, idioma (pt-BR > en > pt incerto > outros),
-   * relevância editorial brasileira, qualidade bibliográfica e capa verificada.
-   */
+  private fun pickOriginalTitle(
+    editions: List<SearchEditionCandidate>,
+    canonicalTitle: String,
+  ): String? {
+    val canonicalNorm = BibliographicMath.normalizeBaseTitle(canonicalTitle)
+    editions
+      .firstNotNullOfOrNull { it.originalTitle?.takeIf { o -> o.isNotBlank() && BibliographicMath.normalizeBaseTitle(o) != canonicalNorm } }
+      ?.let { return it }
+
+    return editions
+      .firstOrNull { ed ->
+        val wNorm = BibliographicMath.normalizeBaseTitle(ed.workTitle)
+        wNorm.isNotBlank() && wNorm != canonicalNorm &&
+          (ed.language == "en" || ed.language == "fr" || ed.language == "es" || !looksPortugueseLike(ed.workTitle))
+      }
+      ?.workTitle
+  }
+
+  private fun scoreDisplayTitle(title: String): Int {
+    var score = 0
+    if (title != title.uppercase(Locale.ROOT)) score += 10
+    if (':' !in title) score += 3
+    if (looksPortugueseLike(title)) score += 6
+    score -= (title.length / 45)
+    return score
+  }
+
+  private fun looksPortugueseLike(title: String): Boolean {
+    val lower = title.lowercase(Locale.ROOT)
+    return Regex("[ãõçáéíóúâêôà]").containsMatchIn(lower) ||
+      Regex("\\b(dos|das|uma|um|jogos|vorazes|senhor|aneis|principe|pequeno|gato|memorias|casmurro)\\b")
+        .containsMatchIn(BibliographicMath.normalizeText(lower))
+  }
+
   private fun editionSelectionScore(
     cand: SearchEditionCandidate,
     eval: CandidateMatchEvaluation,
@@ -453,8 +755,8 @@ object WorkGroupingEngine {
     var score = cand.reliabilityScore
     score += eval.queryMatchScore
     val isbn = cand.isbn13 ?: cand.isbn10
-    if (BibliographicMath.isBrazilianIsbn(isbn)) score += 22
-    if (BibliographicMath.isKnownBrazilianPublisher(cand.publisher)) score += 16
+    if (BibliographicMath.isBrazilianIsbn(isbn)) score += 24
+    if (BibliographicMath.isKnownBrazilianPublisher(cand.publisher)) score += 18
     if (cand.bestCover != null) {
       score += 10
       if (cand.bestCover!!.matchesIsbn) score += 8
@@ -463,10 +765,6 @@ object WorkGroupingEngine {
     return score
   }
 
-  /**
-   * Popularidade da OBRA (editions_count, readinglog_count, ratings_count, fontes concordantes).
-   * Usada exclusivamente para ranquear obras entre si, nunca como evidência da edição individual.
-   */
   private fun computeWorkPopularityScore(
     editions: List<SearchEditionCandidate>,
     allSources: List<MetadataSource>,
@@ -481,36 +779,16 @@ object WorkGroupingEngine {
     return editionSignals + readingLogSignals + ratingSignals + groupedBonus
   }
 
-  private fun computeWorkRankScore(
-    group: SearchWorkGroup,
-    isPredominantlyAuthor: Boolean,
-    items: List<EvaluatedCandidate>,
-  ): Int {
-    val topEdition = group.editions.firstOrNull()
-    val langBonus =
-      when {
-        group.primaryLanguageTierRank == LanguageTier.EXPLICIT_MATCH.rank -> 55
-        group.primaryLanguageTierRank == LanguageTier.PT_BR.rank -> 38
-        group.primaryLanguageTierRank == LanguageTier.EN.rank -> 24
-        group.primaryLanguageTierRank == LanguageTier.PT_UNCERTAIN.rank -> 14
-        else -> 0
-      }
-    val hasCoverBonus = if (group.previewCoverUrl != null) 12 else 0
-    val singleBundleBonus =
-      if (items.firstOrNull()?.titleStructure?.bundleKind == com.example.core.model.TitleBundleKind.SINGLE) 8 else 0
-
-    return if (isPredominantlyAuthor) {
-      val maxAuthorScore = items.maxOfOrNull { it.evaluation.authorMatchScore } ?: 0
-      maxAuthorScore + (group.workPopularityScore * 2) + langBonus + hasCoverBonus + ((topEdition?.reliabilityScore ?: 0) / 3)
-    } else {
-      group.queryRelevanceScore * 2 +
-        group.workPopularityScore +
-        langBonus +
-        hasCoverBonus +
-        singleBundleBonus +
-        ((topEdition?.reliabilityScore ?: 0) / 2)
+  private fun computePopularityBucket(workPopularityScore: Int): Int =
+    when {
+      workPopularityScore >= 85 -> 6
+      workPopularityScore >= 60 -> 5
+      workPopularityScore >= 40 -> 4
+      workPopularityScore >= 24 -> 3
+      workPopularityScore >= 12 -> 2
+      workPopularityScore >= 4 -> 1
+      else -> 0
     }
-  }
 
   fun computeEditionReliability(
     candidate: SearchEditionCandidate,
@@ -537,6 +815,7 @@ object WorkGroupingEngine {
     if (MetadataSource.OPEN_LIBRARY in candidate.sources) score += 5
     if (MetadataSource.GOOGLE_BOOKS in candidate.sources) score += 5
     if (MetadataSource.BRASIL_API in candidate.sources) score += 6
+    if (MetadataSource.APPLE_BOOKS in candidate.sources) score += 4
     return score
   }
 }

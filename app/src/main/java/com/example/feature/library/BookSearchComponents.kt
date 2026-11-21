@@ -44,8 +44,10 @@ import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.editionFormatLabel
 import com.example.core.model.CatalogBook
 import com.example.core.model.DuplicateAssessment
+import com.example.core.model.MetadataSource
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
+import com.example.core.model.TitleBundleKind
 
 @Composable
 internal fun SearchLocalMatchCard(
@@ -118,6 +120,14 @@ internal fun SearchWorkGroupCard(
     } else {
       group.primaryTierEditions
     }
+  val bundleKind = group.effectiveBundleKind
+  val bundleBadgeLabel =
+    when (bundleKind) {
+      TitleBundleKind.COLLECTION_OR_BOX -> stringResource(R.string.search_bundle_box_badge)
+      TitleBundleKind.OMNIBUS_SINGLE_VOLUME -> stringResource(R.string.search_bundle_omnibus_badge)
+      else -> null
+    }
+  val previewCoverSource = group.editions.firstNotNullOfOrNull { it.bestCover }?.source
 
   EditorialSurfaceCard(
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -148,6 +158,15 @@ internal fun SearchWorkGroupCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
           )
+          group.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+            Text(
+              text = sub,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
           if (group.displayAuthors.isNotBlank()) {
             Text(
               text = group.displayAuthors,
@@ -171,6 +190,13 @@ internal fun SearchWorkGroupCard(
               style = LocalDipeTypography.current.monoMetadata,
               color = MaterialTheme.colorScheme.secondary,
             )
+            if (bundleBadgeLabel != null) {
+              Text(
+                text = "· $bundleBadgeLabel",
+                style = LocalDipeTypography.current.monoMetadata,
+                color = MaterialTheme.colorScheme.tertiary,
+              )
+            }
             if (genreLabel != null) {
               Text(
                 text = "· $genreLabel",
@@ -183,6 +209,13 @@ internal fun SearchWorkGroupCard(
                 text = "· ${stringResource(R.string.search_work_in_library_badge)}",
                 style = LocalDipeTypography.current.monoMetadata,
                 color = MaterialTheme.colorScheme.secondary,
+              )
+            }
+            if (previewCoverSource == MetadataSource.APPLE_BOOKS) {
+              Text(
+                text = "· ${stringResource(R.string.search_source_attribution_apple)}",
+                style = LocalDipeTypography.current.monoMetadata,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
           }
@@ -220,7 +253,7 @@ internal fun SearchWorkGroupCard(
                 )
                 .joinToString(" · ")
             val isbnLine = edition.bestIsbn?.let { "ISBN $it" }
-            val sourcesLine = edition.sources.joinToString(", ")
+            val sourcesLine = edition.sources.joinToString(", ") { it.displayName }
 
             EditorialSurfaceCard(
               containerColor = MaterialTheme.colorScheme.surfaceContainerLow,

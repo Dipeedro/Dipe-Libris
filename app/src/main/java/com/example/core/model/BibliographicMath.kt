@@ -13,8 +13,8 @@ data class ParsedIsbn(
 enum class LanguageTier(val rank: Int) {
   EXPLICIT_MATCH(0),
   PT_BR(1),
-  EN(2),
-  PT_UNCERTAIN(3),
+  PT_UNCERTAIN(2),
+  EN(3),
   PT_PT_OR_OTHER(4),
   UNKNOWN(5),
 }
@@ -35,11 +35,15 @@ data class LanguageAssessment(
 
 enum class TitleBundleKind {
   SINGLE,
+  SERIES_VOLUME,
+  OMNIBUS_SINGLE_VOLUME,
   COLLECTION_OR_BOX,
 }
 
 data class TitleStructure(
   val coreNormalized: String,
+  val baseNormalizedWithArticle: String,
+  val subtitleNormalized: String,
   val volumeNumber: Int?,
   val bundleKind: TitleBundleKind,
   val cleanDisplayTitle: String,
@@ -140,9 +144,18 @@ object BibliographicMath {
 
   private val leadingArticles = setOf("a", "o", "as", "os", "um", "uma", "the", "an", "le", "la", "les", "el")
 
-  fun normalizeTitleCore(rawTitle: String?): String {
+  fun normalizeBaseTitle(rawTitle: String?): String {
     val sanitized = sanitizeDisplayText(rawTitle).orEmpty()
-    val base = normalizeText(sanitized.substringBefore(':').substringBefore('('))
+    val beforeDelimiter = sanitized.substringBefore(':').substringBefore('(').trim()
+    return normalizeText(beforeDelimiter)
+  }
+
+  /**
+   * Normalização estritamente para indexação de blocos e busca aproximada de duplicatas.
+   * NÃO usar como igualdade exata de título na validação bibliográfica.
+   */
+  fun normalizeTitleCore(rawTitle: String?): String {
+    val base = normalizeBaseTitle(rawTitle)
     val tokens = base.split(' ').filter { it.isNotBlank() }
     val trimmed =
       if (tokens.size > 1 && tokens.first() in leadingArticles) tokens.drop(1) else tokens
@@ -152,20 +165,37 @@ object BibliographicMath {
   private val volumeRegex =
     Regex("\\b(?:vol(?:ume)?\\.?|livro|book|part(?:e)?|tomo|tome)\\s*([0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x)\\b")
   private val trailingRomanRegex = Regex("\\b(i{1,3}|iv|v|vi{0,3})\\s*$")
+  private val omnibusSingleVolumeRegex =
+    Regex("\\b(volume\\s+unico|edicao\\s+integral|livro\\s+unico|trilogia\\s+completa\\s+em\\s+volume\\s+unico)\\b")
   private val bundleRegex =
-    Regex("\\b(trilogia|trilogy|box\\b|colecao|collection|omnibus|complete\\s+series|obra\\s+completa|volume\\s+unico)\\b")
+    Regex("\\b(trilogia|trilogy|box\\b|colecao|collection|omnibus|complete\\s+series|obra\\s+completa|kit\\s+(?:com\\s+)?\\d+|coffret)\\b")
 
   fun extractTitleStructure(rawTitle: String?, subtitle: String? = null): TitleStructure {
     val cleanTitle = sanitizeDisplayText(rawTitle).orEmpty()
     val cleanSubtitle = sanitizeDisplayText(subtitle).orEmpty()
+    val inlineSubtitle =
+      if (':' in cleanTitle) cleanTitle.substringAfter(':').trim() else ""
+    val effectiveSubtitleRaw =
+      listOf(inlineSubtitle, cleanSubtitle).filter { it.isNotBlank() }.joinToString(" ")
+    val subtitleNorm = normalizeText(effectiveSubtitleRaw)
     val combinedNorm = normalizeText("$cleanTitle $cleanSubtitle")
-    val volMatch = volumeRegex.find(combinedNorm) ?: trailingRomanRegex.find(normalizeText(cleanTitle))
+    val isOmnibusSingle = omnibusSingleVolumeRegex.containsMatchIn(combinedNorm)
+    val isBox = !isOmnibusSingle && bundleRegex.containsMatchIn(combinedNorm)
+    val volMatch =
+      if (isOmnibusSingle || isBox) null
+      else (volumeRegex.find(combinedNorm) ?: trailingRomanRegex.find(normalizeText(cleanTitle)))
     val volumeNumber = volMatch?.groupValues?.getOrNull(1)?.let(::parseVolumeToken)
     val bundleKind =
-      if (bundleRegex.containsMatchIn(combinedNorm)) TitleBundleKind.COLLECTION_OR_BOX
-      else TitleBundleKind.SINGLE
+      when {
+        isBox -> TitleBundleKind.COLLECTION_OR_BOX
+        isOmnibusSingle -> TitleBundleKind.OMNIBUS_SINGLE_VOLUME
+        volumeNumber != null -> TitleBundleKind.SERIES_VOLUME
+        else -> TitleBundleKind.SINGLE
+      }
     return TitleStructure(
       coreNormalized = normalizeTitleCore(cleanTitle),
+      baseNormalizedWithArticle = normalizeBaseTitle(cleanTitle),
+      subtitleNormalized = subtitleNorm,
       volumeNumber = volumeNumber,
       bundleKind = bundleKind,
       cleanDisplayTitle = cleanTitle,
@@ -256,10 +286,14 @@ object BibliographicMath {
       "intrinseca",
       "companhia das letras",
       "companhiadasletras",
+      "cia das letras",
+      "companhia de bolso",
       "seguinte",
+      "paralela",
       "principis",
       "ciranda cultural",
       "harpercollins brasil",
+      "harper collins brasil",
       "martins fontes",
       "wmf martins fontes",
       "record",
@@ -272,6 +306,7 @@ object BibliographicMath {
       "aleph",
       "darkside",
       "l pm",
+      "lpm",
       "zahar",
       "todavia",
       "antofagica",
@@ -287,15 +322,44 @@ object BibliographicMath {
       "gutenberg",
       "nemo",
       "suma",
+      "suma de letras",
       "objetiva",
+      "fontanar",
       "alfaguara brasil",
       "penguin companhia",
       "planeta do brasil",
+      "editora planeta",
+      "planeta brasil",
       "editora 34",
       "paulus",
       "vozes",
       "loyola",
       "clube de autores",
+      "agir",
+      "melhoramentos",
+      "autentica",
+      "abril",
+      "ediouro",
+      "ftd",
+      "global",
+      "carambaia",
+      "benvira",
+      "casa da palavra",
+      "verus",
+      "plataforma21",
+      "universo dos livros",
+      "pedra azul",
+      "alta books",
+      "novatec",
+      "paz e terra",
+      "estacao liberdade",
+      "cosac naify",
+      "best seller",
+      "bestseller",
+      "valentina",
+      "jangada",
+      "morro branco",
+      "excelsior",
     )
 
   private val portugalPublisherTokens =

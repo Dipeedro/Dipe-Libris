@@ -1,5 +1,7 @@
 package com.example.core.bibliographic.network
 
+import com.example.core.bibliographic.domain.QueryIntentParser
+import com.example.core.bibliographic.domain.QueryIntentType
 import com.example.core.model.BibliographicMath
 import com.example.core.model.CandidateContributor
 import com.example.core.model.ContributorRole
@@ -89,11 +91,35 @@ class CrossrefAdapter(
     if (trimmed.isEmpty()) {
       return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
     }
-    val encoded = URLEncoder.encode(trimmed, "UTF-8")
+    val parsedIsbn = BibliographicMath.parseIsbn(trimmed)
+    if (parsedIsbn != null) {
+      return searchByIsbn(parsedIsbn.isbn13, parsedIsbn.isbn10, parsedIsbn.cleaned)
+    }
+    val doi = extractDoi(trimmed)
+      ?: return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
+    val encodedDoi = URLEncoder.encode(doi, "UTF-8")
     val url =
-      "$baseUrl/works?query.bibliographic=$encoded&filter=type:book,type:monograph,type:edited-book" +
-        "&mailto=${URLEncoder.encode(BibliographicHttpClients.CONTACT_EMAIL, "UTF-8")}&rows=8"
+      "$baseUrl/works?filter=doi:$encodedDoi&mailto=${URLEncoder.encode(BibliographicHttpClients.CONTACT_EMAIL, "UTF-8")}&rows=3"
     return executeRequest(url)
+  }
+
+  override suspend fun searchPaginated(request: AdapterSearchRequest): SourceAdapterResult {
+    if (request.page > 1) {
+      return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
+    }
+    val isbn = request.parsedIntent.parsedIsbn
+    if (request.parsedIntent.intentType == QueryIntentType.ISBN_EXACT && isbn != null) {
+      return searchByIsbn(isbn.isbn13, isbn.isbn10, isbn.cleaned)
+    }
+    if (QueryIntentParser.isExplicitDoi(request.rawQuery)) {
+      return searchByQuery(request.rawQuery)
+    }
+    return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
+  }
+
+  private fun extractDoi(raw: String): String? {
+    if (!QueryIntentParser.isExplicitDoi(raw)) return null
+    return raw.trim().replaceFirst(Regex("^doi\\s*:\\s*", RegexOption.IGNORE_CASE), "").trim()
   }
 
   private suspend fun executeRequest(url: String): SourceAdapterResult =

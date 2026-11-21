@@ -84,6 +84,7 @@ fun BookSearchScreen(
   onNavigateBack: () -> Unit,
   onLoadMoreResults: () -> Unit = {},
   onToggleSecondaryLanguages: () -> Unit = {},
+  onToggleDerivativeWorks: () -> Unit = {},
   onToggleGroupSecondaryEditions: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
@@ -91,7 +92,12 @@ fun BookSearchScreen(
   val language = LocalAppLanguage.current
   val response = uiState.response
   val hasAnyResponseWorks =
-    response != null && (response.workGroups.isNotEmpty() || response.secondaryWorkGroups.isNotEmpty() || response.localMatches.isNotEmpty())
+    response != null && (
+      response.workGroups.isNotEmpty() ||
+        response.secondaryWorkGroups.isNotEmpty() ||
+        response.derivativeWorkGroups.isNotEmpty() ||
+        response.localMatches.isNotEmpty()
+      )
 
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(
@@ -342,15 +348,8 @@ fun BookSearchScreen(
           item(key = "search_works_header") {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
               EditorialSectionHeader(title = stringResource(R.string.search_results_works_section))
-              val totalDisplayed = response.workGroups.size + response.secondaryWorkGroups.size
-              val hint = response.totalFoundHint
               Text(
-                text =
-                  if (hint != null && hint > totalDisplayed) {
-                    stringResource(R.string.search_results_count_with_hint, response.workGroups.size, hint)
-                  } else {
-                    stringResource(R.string.search_results_count_summary, response.workGroups.size)
-                  },
+                text = stringResource(R.string.search_results_count_summary, response.workGroups.size),
                 style = LocalDipeTypography.current.monoMetadata,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -449,6 +448,7 @@ fun BookSearchScreen(
           }
         } else if (
           response.workGroups.isEmpty() &&
+            response.derivativeWorkGroups.isEmpty() &&
             !uiState.isSearching &&
             response.localMatches.isEmpty()
         ) {
@@ -461,6 +461,77 @@ fun BookSearchScreen(
               actionTestTag = "search_empty_manual_button",
               onAction = onManualCatalog,
             )
+          }
+        }
+
+        // Academic studies, literary analyses & derivative editions (T7):
+        // Always collapsed into bottom drawer when literary results exist.
+        if (response.derivativeWorkGroups.isNotEmpty()) {
+          val hasLiterary = response.workGroups.isNotEmpty() || response.secondaryWorkGroups.isNotEmpty()
+          val showDerivatives = !hasLiterary || uiState.isDerivativeWorksExpanded
+          val derivOffset = response.workGroups.size + response.secondaryWorkGroups.size
+
+          item(key = "search_derivative_works_header") {
+            if (hasLiterary) {
+              OutlinedButton(
+                onClick = onToggleDerivativeWorks,
+                shape = CircleShape,
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .testTag("search_derivative_works_toggle"),
+              ) {
+                Text(
+                  text =
+                    stringResource(
+                      R.string.search_derivative_drawer_toggle,
+                      response.derivativeWorkGroups.size,
+                    ),
+                  modifier = Modifier.weight(1f),
+                )
+                Icon(
+                  imageVector =
+                    if (uiState.isDerivativeWorksExpanded) Icons.Outlined.ExpandLess
+                    else Icons.Outlined.ExpandMore,
+                  contentDescription = null,
+                )
+              }
+            } else {
+              EditorialSurfaceCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentPadding = PaddingValues(DipeSpacing.md),
+                modifier = Modifier.testTag("search_derivative_only_notice"),
+              ) {
+                Text(
+                  text = stringResource(R.string.search_derivative_only_notice),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+
+          if (showDerivatives) {
+            itemsIndexed(
+              items = response.derivativeWorkGroups,
+              key = { _, group -> "deriv_${group.groupId}" },
+            ) { derivIdx, group ->
+              val groupIndex = derivOffset + derivIdx
+              val genreName =
+                group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
+              SearchWorkGroupCard(
+                group = group,
+                groupIndex = groupIndex,
+                genreLabel = genreName,
+                isExpanded = group.groupId in uiState.expandedGroupIds,
+                isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
+                isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
+                onToggleExpand = { onToggleGroupExpanded(group.groupId) },
+                onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
+                onLoadMoreEditions = { onLoadMoreEditions(group) },
+                onSelectEdition = onSelectEdition,
+              )
+            }
           }
         }
 

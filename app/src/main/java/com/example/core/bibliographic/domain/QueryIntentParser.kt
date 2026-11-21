@@ -7,6 +7,7 @@ enum class QueryIntentType {
   ISBN_EXACT,
   EXPLICIT_AUTHOR,
   EXPLICIT_TITLE,
+  TITLE_AND_AUTHOR,
   TITLE_STRONG,
   AMBIGUOUS_OR_SHORT,
 }
@@ -25,7 +26,12 @@ data class ParsedSearchIntent(
   val allowGuidesOrAnalyses: Boolean = false,
   val allowColoringBooks: Boolean = false,
   val allowNotebooks: Boolean = false,
+  val wantsBoxOrCollection: Boolean = false,
 ) {
+  /**
+   * Sondagem separada (nunca via OR em busca full-text!) para nomes potenciais de 2–3 palavras
+   * ou busca explícita de autor.
+   */
   val canProbeStructuredAuthor: Boolean
     get() =
       intentType == QueryIntentType.EXPLICIT_AUTHOR ||
@@ -36,12 +42,14 @@ data class ParsedSearchIntent(
 
 object QueryIntentParser {
 
+  // Lista estrita de artigos/preposições: NÃO remover palavras de expressão ("que", "tal", "mais", "sem", "como", "não")
+  // para impedir que títulos como "Que tal mais um gato?" virem busca genérica de 1 substantivo.
   private val stopwords =
     setOf(
       "a", "o", "as", "os", "um", "uma", "uns", "umas",
       "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas",
-      "e", "ou", "que", "tal", "mais", "para", "por", "com", "sem",
-      "the", "an", "and", "or", "of", "in", "on", "to", "for", "with",
+      "e", "ou", "ao", "aos",
+      "the", "an", "and", "or", "of", "in", "on", "to", "for",
       "el", "la", "los", "las", "y", "del", "le", "les",
     )
 
@@ -53,6 +61,9 @@ object QueryIntentParser {
 
   private val explicitAuthorPrefixRegex = Regex("^autor\\s*:\\s*(.+)$|^author\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
   private val explicitTitlePrefixRegex = Regex("^titulo\\s*:\\s*(.+)$|^title\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
+  private val explicitDoiRegex = Regex("^(?:doi\\s*:\\s*)?(10\\.\\d{4,9}/\\S+)$", RegexOption.IGNORE_CASE)
+  private val splitTitleDashAuthorRegex = Regex("^(.{3,}?)\\s+[-–—]\\s+(.{3,})$")
+  private val splitTitleByAuthorRegex = Regex("^(.{3,}?)\\s+(?:by)\\s+(.{3,})$", RegexOption.IGNORE_CASE)
 
   private val languageModifierRules =
     listOf(
@@ -67,6 +78,8 @@ object QueryIntentParser {
     )
 
   private val leadingTitleArticles = setOf("a", "o", "as", "os", "um", "uma", "the", "an", "le", "la")
+
+  fun isExplicitDoi(raw: String): Boolean = explicitDoiRegex.matches(raw.trim())
 
   fun parse(rawQuery: String): ParsedSearchIntent {
     val trimmed = BibliographicMath.sanitizeDisplayText(rawQuery).orEmpty()
@@ -101,14 +114,34 @@ object QueryIntentParser {
 
     val normAll = BibliographicMath.normalizeText(workingQuery)
     val allTokens = normAll.split(' ').filter { it.isNotBlank() }
-    val significantTokens = allTokens.filter { it !in stopwords && it.length > 1 }
-      .ifEmpty { allTokens }
+    val significantTokens =
+      allTokens.filter { it !in stopwords && it.length > 1 }.ifEmpty { allTokens }
 
     val allowGuides =
-      allTokens.any { it in setOf("guia", "guide", "analise", "analysis", "resumo", "summary", "estudo", "study", "comentado") }
+      allTokens.any {
+        it in
+          setOf(
+            "guia",
+            "guide",
+            "analise",
+            "analysis",
+            "resumo",
+            "summary",
+            "estudo",
+            "study",
+            "comentado",
+            "dissertacao",
+            "tese",
+            "reflexao",
+          )
+      }
     val allowColoring = allTokens.any { it in setOf("colorir", "coloring", "colouring") }
     val allowNotebooks =
-      allTokens.any { it in setOf("caderno", "notebook", "journal", "diary", "diario", "sketchbook", "planner") }
+      allTokens.any {
+        it in setOf("caderno", "notebook", "journal", "diary", "diario", "sketchbook", "planner")
+      }
+    val wantsBox =
+      allTokens.any { it in setOf("box", "trilogia", "trilogy", "colecao", "collection", "omnibus") }
 
     if (explicitAuthorMatch != null) {
       val authorVal =
@@ -128,6 +161,7 @@ object QueryIntentParser {
         allowGuidesOrAnalyses = allowGuides,
         allowColoringBooks = allowColoring,
         allowNotebooks = allowNotebooks,
+        wantsBoxOrCollection = wantsBox,
       )
     }
 
@@ -143,19 +177,41 @@ object QueryIntentParser {
         intentType = QueryIntentType.EXPLICIT_TITLE,
         parsedIsbn = null,
         allTokens = titleTokens,
-        significantTokens = titleTokens.filter { it !in stopwords }.ifEmpty { titleTokens },
+        significantTokens = titleTokens.filter { it !in stopwords && it.length > 1 }.ifEmpty { titleTokens },
         titleQueryPart = titleVal,
         explicitLanguageRequest = explicitLang,
         allowGuidesOrAnalyses = allowGuides,
         allowColoringBooks = allowColoring,
         allowNotebooks = allowNotebooks,
+        wantsBoxOrCollection = wantsBox,
       )
     }
 
-    // Notice we intentionally do NOT classify 2-3 word names as AUTHOR_ONLY using fragile heuristics
-    // (because titles like "Dom Casmurro" or "Memórias Póstumas de Brás Cubas" would break!).
-    // Instead, 1-3 word queries default to AMBIGUOUS_OR_SHORT, allowing parallel probes and
-    // post-return evidence disambiguation.
+    val titleDashAuthor = splitTitleDashAuthorRegex.find(workingQuery) ?: splitTitleByAuthorRegex.find(workingQuery)
+    if (titleDashAuthor != null) {
+      val tPart = titleDashAuthor.groupValues[1].trim()
+      val aPart = titleDashAuthor.groupValues[2].trim()
+      val aTokens = BibliographicMath.normalizeText(aPart).split(' ').filter { it.isNotBlank() }
+      if (aTokens.size in 1..4) {
+        return ParsedSearchIntent(
+          rawQuery = trimmed,
+          cleanQuery = "$tPart $aPart",
+          normalizedQuery = normAll,
+          intentType = QueryIntentType.TITLE_AND_AUTHOR,
+          parsedIsbn = null,
+          allTokens = allTokens,
+          significantTokens = significantTokens,
+          authorQueryPart = aPart,
+          titleQueryPart = tPart,
+          explicitLanguageRequest = explicitLang,
+          allowGuidesOrAnalyses = allowGuides,
+          allowColoringBooks = allowColoring,
+          allowNotebooks = allowNotebooks,
+          wantsBoxOrCollection = wantsBox,
+        )
+      }
+    }
+
     val startsWithArticle = allTokens.firstOrNull() in leadingTitleArticles && allTokens.size >= 2
     val hasStrongTitleSignal =
       strongTitleMarkers.containsMatchIn(workingQuery) || allTokens.size >= 4 || startsWithArticle
@@ -163,11 +219,12 @@ object QueryIntentParser {
     val intentType =
       if (hasStrongTitleSignal) QueryIntentType.TITLE_STRONG else QueryIntentType.AMBIGUOUS_OR_SHORT
 
-    // Optional non-exclusive author probe hint ONLY for short 2-3 word queries without strong title cues
+    // Sonda autor separadamente APENAS em consultas curtas de 2-3 palavras sem pontuação nem sinais de título
     val possibleAuthorProbe =
       if (intentType == QueryIntentType.AMBIGUOUS_OR_SHORT &&
         allTokens.size in 2..3 &&
-        allTokens.none { it.all(Char::isDigit) }
+        allTokens.none { it.all(Char::isDigit) } &&
+        !workingQuery.any { it in setOf('?', '!', ':') }
       ) {
         workingQuery
       } else {
@@ -188,6 +245,7 @@ object QueryIntentParser {
       allowGuidesOrAnalyses = allowGuides,
       allowColoringBooks = allowColoring,
       allowNotebooks = allowNotebooks,
+      wantsBoxOrCollection = wantsBox,
     )
   }
 }

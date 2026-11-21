@@ -3,6 +3,7 @@ package com.example.core.di
 import android.content.Context
 import com.example.core.bibliographic.domain.HybridSearchOrchestrator
 import com.example.core.bibliographic.network.AndroidConnectivityChecker
+import com.example.core.bibliographic.network.AppleBooksAdapter
 import com.example.core.bibliographic.network.BrasilApiAdapter
 import com.example.core.bibliographic.network.ConnectivityChecker
 import com.example.core.bibliographic.network.CrossrefAdapter
@@ -85,6 +86,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
       editionDao = database.editionDao(),
       bookDao = database.bookDao(),
       libraryRepository = libraryRepository,
+      appleBooksAdapter = AppleBooksAdapter(),
     )
   }
 

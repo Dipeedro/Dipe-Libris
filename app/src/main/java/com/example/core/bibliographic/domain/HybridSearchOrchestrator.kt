@@ -4,6 +4,7 @@ import com.example.core.bibliographic.network.AdapterSearchRequest
 import com.example.core.bibliographic.network.BibliographicSourceAdapter
 import com.example.core.bibliographic.network.ConnectivityChecker
 import com.example.core.bibliographic.network.SourceAdapterResult
+import com.example.core.bibliographic.network.WikidataAdapter
 import com.example.core.data.local.db.BookDao
 import com.example.core.data.local.db.EditionDao
 import com.example.core.data.local.db.SearchCacheDao
@@ -17,6 +18,7 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,21 +27,33 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Serializable
+private data class SourceQueryStatusSnapshot(
+  val source: MetadataSource,
+  val state: ProviderOutcomeState,
+  val count: Int = 0,
+  val totalAvailable: Int? = null,
+  val hasMore: Boolean = false,
+)
+
+@Serializable
 private data class CachedSearchPayload(
+  val candidates: List<SearchEditionCandidate> = emptyList(),
+  val statuses: List<SourceQueryStatusSnapshot> = emptyList(),
   val primaryGroups: List<SearchWorkGroup> = emptyList(),
   val secondaryGroups: List<SearchWorkGroup> = emptyList(),
+  val derivativeGroups: List<SearchWorkGroup> = emptyList(),
   val totalFoundHint: Int? = null,
   val hasMoreResults: Boolean = false,
+  val nextPage: Int = 2,
 )
 
 private data class PaginationSession(
@@ -63,6 +77,7 @@ class HybridSearchOrchestrator(
   private val bookDao: BookDao,
   private val libraryRepository: LibraryRepository,
   private val json: Json = com.example.core.bibliographic.network.BibliographicHttpClients.json,
+  private val appleBooksAdapter: BibliographicSourceAdapter? = null,
 ) {
 
   private val memoryCacheLock = Any()
@@ -117,6 +132,7 @@ class HybridSearchOrchestrator(
           localMatches = emptyList(),
           workGroups = emptyList(),
           secondaryWorkGroups = emptyList(),
+          derivativeWorkGroups = emptyList(),
           sourceStatuses = emptyList(),
           expandedSecondarySources = expandSecondary,
         )
@@ -150,7 +166,7 @@ class HybridSearchOrchestrator(
       }
     }
 
-    // 2. Check persistent Room cache
+    // 2. Check persistent Room cache (v3 stores candidates & source pagination state)
     if (!forceRefresh) {
       val cached =
         if (online) searchCacheDao.getValidEntry(cacheKey, startClockMs)
@@ -160,17 +176,59 @@ class HybridSearchOrchestrator(
         if (decodedPayload != null) {
           searchCacheDao.touchEntry(cacheKey, startClockMs)
           val allLocalBooks = libraryRepository.observeAllBooks().first()
-          val primaryAnnotated = annotateGroups(decodedPayload.primaryGroups, allLocalBooks)
-          val secondaryAnnotated = annotateGroups(decodedPayload.secondaryGroups, allLocalBooks)
+          val groupedOutcome =
+            if (decodedPayload.candidates.isNotEmpty()) {
+              WorkGroupingEngine.groupSeparated(
+                rawCandidates = decodedPayload.candidates,
+                preferredLanguage = preferredLanguage,
+                parsedIntent = intent,
+              )
+            } else {
+              GroupedSearchOutcome(
+                primaryGroups = decodedPayload.primaryGroups,
+                secondaryGroups = decodedPayload.secondaryGroups,
+                derivativeGroups = decodedPayload.derivativeGroups,
+              )
+            }
+          val primaryAnnotated = annotateGroups(groupedOutcome.primaryGroups, allLocalBooks)
+          val secondaryAnnotated = annotateGroups(groupedOutcome.secondaryGroups, allLocalBooks)
+          val derivativeAnnotated = annotateGroups(groupedOutcome.derivativeGroups, allLocalBooks)
           val cachedCount = (primaryAnnotated + secondaryAnnotated).sumOf { it.editions.size }
           val cachedStatuses =
-            cached.sourcesUsed
-              .split(",")
-              .mapNotNull { name ->
-                runCatching { MetadataSource.valueOf(name.trim()) }.getOrNull()?.let { src ->
-                  SourceQueryStatus(src, ProviderOutcomeState.CACHED, count = cachedCount)
-                }
+            if (decodedPayload.statuses.isNotEmpty()) {
+              decodedPayload.statuses.map { snap ->
+                SourceQueryStatus(
+                  source = snap.source,
+                  state = if (snap.state == ProviderOutcomeState.SUCCESS) ProviderOutcomeState.CACHED else snap.state,
+                  count = snap.count,
+                  totalAvailable = snap.totalAvailable,
+                  hasMore = snap.hasMore,
+                )
               }
+            } else {
+              cached.sourcesUsed
+                .split(",")
+                .mapNotNull { name ->
+                  runCatching { MetadataSource.valueOf(name.trim()) }.getOrNull()?.let { src ->
+                    SourceQueryStatus(src, ProviderOutcomeState.CACHED, count = cachedCount)
+                  }
+                }
+            }
+
+          if (decodedPayload.candidates.isNotEmpty()) {
+            synchronized(paginationLock) {
+              paginationSessions[cacheKey] =
+                PaginationSession(
+                  intent = intent,
+                  preferredLanguage = preferredLanguage,
+                  expandSecondary = expandSecondary,
+                  currentPage = (decodedPayload.nextPage - 1).coerceAtLeast(1),
+                  accumulatedCandidates = decodedPayload.candidates,
+                  statuses = cachedStatuses.associateBy { it.source },
+                )
+            }
+          }
+
           val elapsed = (System.currentTimeMillis() - startClockMs).coerceAtLeast(1L)
           val cachedResponse =
             HybridSearchResponse(
@@ -181,9 +239,10 @@ class HybridSearchOrchestrator(
               localMatches = localMatches,
               workGroups = primaryAnnotated,
               secondaryWorkGroups = secondaryAnnotated,
+              derivativeWorkGroups = derivativeAnnotated,
               sourceStatuses = cachedStatuses,
               expandedSecondarySources = expandSecondary,
-              hasMoreResults = decodedPayload.hasMoreResults,
+              hasMoreResults = decodedPayload.hasMoreResults && !isIsbn,
               isPartialResult = false,
               totalFoundHint = decodedPayload.totalFoundHint,
               firstResultLatencyMs = elapsed,
@@ -208,6 +267,7 @@ class HybridSearchOrchestrator(
           localMatches = localMatches,
           workGroups = emptyList(),
           secondaryWorkGroups = emptyList(),
+          derivativeWorkGroups = emptyList(),
           sourceStatuses =
             listOf(
               SourceQueryStatus(MetadataSource.OPEN_LIBRARY, ProviderOutcomeState.OFFLINE),
@@ -220,14 +280,19 @@ class HybridSearchOrchestrator(
       return@channelFlow
     }
 
-    // 4. Online parallel source orchestration with progressive emissions
-    val adapters = selectAdapters(parsedIsbn = parsedIsbn, isIsbn = isIsbn, expandSecondary = expandSecondary)
-    val statusMap = linkedMapOf<MetadataSource, SourceQueryStatus>()
+    // 4. Online parallel source batch with bounded deadline before final sort (zero list-jumping)
+    val adapters = selectAdapters(intent = intent, parsedIsbn = parsedIsbn, isIsbn = isIsbn)
+    val runWikidataBridge =
+      !isIsbn &&
+        QueryPlanner.shouldRunWikidataBridge(intent, expandSecondary) &&
+        wikidataAdapter is WikidataAdapter
+
+    val initialStatuses = linkedMapOf<MetadataSource, SourceQueryStatus>()
     adapters.forEach { adapter ->
-      statusMap[adapter.source] = SourceQueryStatus(adapter.source, ProviderOutcomeState.LOADING)
+      initialStatuses[adapter.source] = SourceQueryStatus(adapter.source, ProviderOutcomeState.LOADING)
     }
 
-    // Emit immediate local matches + loading status pills before network completes
+    // Emission 1: Immediate loading state + local matches while waiting for bounded batch
     send(
       HybridSearchResponse(
         query = trimmed,
@@ -237,17 +302,14 @@ class HybridSearchOrchestrator(
         localMatches = localMatches,
         workGroups = emptyList(),
         secondaryWorkGroups = emptyList(),
-        sourceStatuses = statusMap.values.toList(),
+        derivativeWorkGroups = emptyList(),
+        sourceStatuses = initialStatuses.values.toList(),
         expandedSecondarySources = expandSecondary,
         isPartialResult = true,
         firstResultLatencyMs = if (localMatches.isNotEmpty()) System.currentTimeMillis() - startClockMs else null,
       )
     )
 
-    val mutex = Mutex()
-    val accumulatedCandidates = mutableListOf<SearchEditionCandidate>()
-    var completedAdapters = 0
-    var firstResultLatency: Long? = null
     val allLocalBooks = libraryRepository.observeAllBooks().first()
     val request =
       AdapterSearchRequest(
@@ -258,135 +320,186 @@ class HybridSearchOrchestrator(
         expandSecondary = expandSecondary,
       )
 
-    var latestResponse: HybridSearchResponse? = null
+    val completedResults = ConcurrentHashMap<MetadataSource, SourceAdapterResult>()
+    var bridgeResult: SourceAdapterResult? = null
 
-    supervisorScope {
-      adapters.forEach { adapter ->
-        launch {
-          val adapterStart = System.currentTimeMillis()
-          val result =
-            try {
-              withTimeoutOrNull(ADAPTER_TIMEOUT_MS) {
-                if (parsedIsbn != null) {
-                  adapter.searchPaginated(request)
-                } else {
-                  adapter.searchPaginated(request)
-                }
-              }
-                ?: SourceAdapterResult(
-                  SourceQueryStatus(
-                    source = adapter.source,
-                    state = ProviderOutcomeState.ERROR,
-                    message = "Timeout",
-                    durationMs = System.currentTimeMillis() - adapterStart,
+    withTimeoutOrNull(PRIMARY_BATCH_DEADLINE_MS) {
+      supervisorScope {
+        val jobs =
+          adapters.map { adapter ->
+            launch {
+              val adapterStart = System.currentTimeMillis()
+              val timeoutMs = timeoutForAdapter(adapter.source, isIsbn)
+              val res =
+                try {
+                  withTimeoutOrNull(timeoutMs) {
+                    adapter.searchPaginated(request)
+                  }
+                    ?: SourceAdapterResult(
+                      SourceQueryStatus(
+                        source = adapter.source,
+                        state = ProviderOutcomeState.ERROR,
+                        message = "Timeout",
+                        durationMs = System.currentTimeMillis() - adapterStart,
+                      )
+                    )
+                } catch (ce: CancellationException) {
+                  throw ce
+                } catch (t: Throwable) {
+                  SourceAdapterResult(
+                    SourceQueryStatus(
+                      source = adapter.source,
+                      state = ProviderOutcomeState.ERROR,
+                      message = t.message,
+                      durationMs = System.currentTimeMillis() - adapterStart,
+                    )
                   )
-                )
-            } catch (ce: CancellationException) {
-              throw ce
-            } catch (t: Throwable) {
-              SourceAdapterResult(
-                SourceQueryStatus(
-                  source = adapter.source,
-                  state = ProviderOutcomeState.ERROR,
-                  message = t.message,
-                  durationMs = System.currentTimeMillis() - adapterStart,
-                )
-              )
+                }
+              completedResults[adapter.source] = res
             }
+          }
 
-          val snapshot =
-            mutex.withLock {
-              completedAdapters++
-              statusMap[adapter.source] = result.status
-              accumulatedCandidates.addAll(result.candidates)
-              val isFinal = completedAdapters >= adapters.size
-
-              val grouped =
-                WorkGroupingEngine.groupSeparated(
-                  rawCandidates = accumulatedCandidates,
-                  preferredLanguage = preferredLanguage,
-                  parsedIntent = intent,
-                )
-              val primaryAnnotated = annotateGroups(grouped.primaryGroups, allLocalBooks)
-              val secondaryAnnotated = annotateGroups(grouped.secondaryGroups, allLocalBooks)
-
-              val nowMs = System.currentTimeMillis()
-              if (firstResultLatency == null && (primaryAnnotated.isNotEmpty() || secondaryAnnotated.isNotEmpty())) {
-                firstResultLatency = (nowMs - startClockMs).coerceAtLeast(1L)
-              }
-
-              val statusesList = statusMap.values.toList()
-              val hasMore = statusesList.any { it.hasMore }
-              val totalHint = statusesList.mapNotNull { it.totalAvailable }.maxOrNull()
-
-              val built =
-                HybridSearchResponse(
-                  query = trimmed,
-                  isIsbnQuery = isIsbn,
-                  isFromCache = false,
-                  isOffline = false,
-                  localMatches = localMatches,
-                  workGroups = primaryAnnotated,
-                  secondaryWorkGroups = secondaryAnnotated,
-                  sourceStatuses = statusesList,
-                  expandedSecondarySources = expandSecondary,
-                  hasMoreResults = hasMore && !isIsbn,
-                  isPartialResult = !isFinal,
-                  totalFoundHint = totalHint,
-                  firstResultLatencyMs = firstResultLatency,
-                  totalLatencyMs = if (isFinal) (nowMs - startClockMs).coerceAtLeast(1L) else null,
-                )
-              latestResponse = built
-              built
+        val bridgeJob =
+          if (runWikidataBridge) {
+            launch {
+              bridgeResult =
+                runCatching {
+                    withTimeoutOrNull(WIKIDATA_BRIDGE_DEADLINE_MS) {
+                      (wikidataAdapter as WikidataAdapter).fetchBilingualBridge(intent.cleanQuery)
+                    }
+                  }
+                  .getOrNull()
             }
-          send(snapshot)
-        }
+          } else {
+            null
+          }
+
+        jobs.joinAll()
+        bridgeJob?.join()
       }
     }
 
-    val finalResp = latestResponse
-    if (finalResp != null) {
-      synchronized(paginationLock) {
-        paginationSessions[cacheKey] =
-          PaginationSession(
-            intent = intent,
-            preferredLanguage = preferredLanguage,
-            expandSecondary = expandSecondary,
-            currentPage = 1,
-            accumulatedCandidates = accumulatedCandidates.toList(),
-            statuses = statusMap.toMap(),
+    val statusMap = linkedMapOf<MetadataSource, SourceQueryStatus>()
+    val accumulatedCandidates = mutableListOf<SearchEditionCandidate>()
+    val deadlineElapsed = (System.currentTimeMillis() - startClockMs).coerceAtLeast(1L)
+
+    adapters.forEach { adapter ->
+      val res = completedResults[adapter.source]
+      if (res != null) {
+        statusMap[adapter.source] = res.status
+        accumulatedCandidates.addAll(res.candidates)
+      } else {
+        statusMap[adapter.source] =
+          SourceQueryStatus(
+            source = adapter.source,
+            state = ProviderOutcomeState.ERROR,
+            message = "Batch deadline exceeded",
+            durationMs = deadlineElapsed,
           )
       }
+    }
 
-      if (finalResp.workGroups.isNotEmpty() || finalResp.secondaryWorkGroups.isNotEmpty()) {
-        synchronized(memoryCacheLock) { memoryCache[cacheKey] = finalResp }
-        val ttlMillis = if (isIsbn) ISBN_CACHE_TTL_MS else QUERY_CACHE_TTL_MS
-        val sourcesList =
-          finalResp.sourceStatuses
-            .filter { it.state == ProviderOutcomeState.SUCCESS }
-            .joinToString(",") { it.source.name }
-        val payloadObj =
-          CachedSearchPayload(
-            primaryGroups = finalResp.workGroups,
-            secondaryGroups = finalResp.secondaryWorkGroups,
-            totalFoundHint = finalResp.totalFoundHint,
-            hasMoreResults = finalResp.hasMoreResults,
-          )
-        searchCacheDao.upsertEntry(
-          SearchCacheEntity(
-            cacheKey = cacheKey,
-            queryNormalized = intent.normalizedQuery,
-            queryType = if (isIsbn) "ISBN" else "QUERY",
-            payloadJson = json.encodeToString(payloadObj),
-            sourcesUsed = sourcesList,
-            fetchedAtEpochMillis = startClockMs,
-            expiresAtEpochMillis = startClockMs + ttlMillis,
-            lastAccessedEpochMillis = startClockMs,
-          )
+    bridgeResult?.let { bridge ->
+      if (bridge.candidates.isNotEmpty()) {
+        accumulatedCandidates.addAll(bridge.candidates)
+      }
+    }
+
+    val grouped =
+      WorkGroupingEngine.groupSeparated(
+        rawCandidates = accumulatedCandidates,
+        preferredLanguage = preferredLanguage,
+        parsedIntent = intent,
+      )
+    val primaryAnnotated = annotateGroups(grouped.primaryGroups, allLocalBooks)
+    val secondaryAnnotated = annotateGroups(grouped.secondaryGroups, allLocalBooks)
+    val derivativeAnnotated = annotateGroups(grouped.derivativeGroups, allLocalBooks)
+
+    val statusesList = statusMap.values.toList()
+    val hasMore = statusesList.any { it.hasMore }
+    val totalHint = statusesList.mapNotNull { it.totalAvailable }.maxOrNull()
+    val nowMs = System.currentTimeMillis()
+    val latency = (nowMs - startClockMs).coerceAtLeast(1L)
+
+    val finalResp =
+      HybridSearchResponse(
+        query = trimmed,
+        isIsbnQuery = isIsbn,
+        isFromCache = false,
+        isOffline = false,
+        localMatches = localMatches,
+        workGroups = primaryAnnotated,
+        secondaryWorkGroups = secondaryAnnotated,
+        derivativeWorkGroups = derivativeAnnotated,
+        sourceStatuses = statusesList,
+        expandedSecondarySources = expandSecondary,
+        hasMoreResults = hasMore && !isIsbn,
+        isPartialResult = false,
+        totalFoundHint = totalHint,
+        firstResultLatencyMs = latency,
+        totalLatencyMs = latency,
+      )
+
+    synchronized(paginationLock) {
+      paginationSessions[cacheKey] =
+        PaginationSession(
+          intent = intent,
+          preferredLanguage = preferredLanguage,
+          expandSecondary = expandSecondary,
+          currentPage = 1,
+          accumulatedCandidates = accumulatedCandidates.toList(),
+          statuses = statusMap.toMap(),
         )
-        searchCacheDao.trimBeyond(CACHE_MAX_ENTRIES)
-      }
     }
+
+    val hasAnyLiteraryResults =
+      finalResp.workGroups.isNotEmpty() || finalResp.secondaryWorkGroups.isNotEmpty()
+    val allAdaptersErrored =
+      statusesList.isNotEmpty() &&
+        statusesList.none { it.state == ProviderOutcomeState.SUCCESS || it.state == ProviderOutcomeState.CACHED }
+    if (hasAnyLiteraryResults && !allAdaptersErrored) {
+      synchronized(memoryCacheLock) { memoryCache[cacheKey] = finalResp }
+      val ttlMillis = if (isIsbn) ISBN_CACHE_TTL_MS else QUERY_CACHE_TTL_MS
+      val sourcesList =
+        finalResp.sourceStatuses
+          .filter { it.state == ProviderOutcomeState.SUCCESS }
+          .joinToString(",") { it.source.name }
+      val payloadObj =
+        CachedSearchPayload(
+          candidates = accumulatedCandidates.toList(),
+          statuses =
+            statusesList.map { st ->
+              SourceQueryStatusSnapshot(
+                source = st.source,
+                state = st.state,
+                count = st.count,
+                totalAvailable = st.totalAvailable,
+                hasMore = st.hasMore,
+              )
+            },
+          primaryGroups = finalResp.workGroups,
+          secondaryGroups = finalResp.secondaryWorkGroups,
+          derivativeGroups = finalResp.derivativeWorkGroups,
+          totalFoundHint = finalResp.totalFoundHint,
+          hasMoreResults = finalResp.hasMoreResults,
+          nextPage = 2,
+        )
+      searchCacheDao.upsertEntry(
+        SearchCacheEntity(
+          cacheKey = cacheKey,
+          queryNormalized = intent.normalizedQuery,
+          queryType = if (isIsbn) "ISBN" else "QUERY",
+          payloadJson = json.encodeToString(payloadObj),
+          sourcesUsed = sourcesList,
+          fetchedAtEpochMillis = startClockMs,
+          expiresAtEpochMillis = startClockMs + ttlMillis,
+          lastAccessedEpochMillis = startClockMs,
+        )
+      )
+      searchCacheDao.trimBeyond(CACHE_MAX_ENTRIES)
+    }
+
+    send(finalResp)
   }
 
   suspend fun loadNextPage(
@@ -407,20 +520,24 @@ class HybridSearchOrchestrator(
             preferredLanguage = preferredLanguage,
             expandSecondary = expandSecondary,
             currentPage = 1,
-            accumulatedCandidates = (currentResponse.workGroups + currentResponse.secondaryWorkGroups).flatMap { it.editions },
+            accumulatedCandidates =
+              (currentResponse.workGroups + currentResponse.secondaryWorkGroups + currentResponse.derivativeWorkGroups)
+                .flatMap { it.editions },
             statuses = currentResponse.sourceStatuses.associateBy { it.source },
           )
       }
 
     val nextPage = existingSession.currentPage + 1
-    val allAdapters = selectAdapters(parsedIsbn = null, isIsbn = false, expandSecondary = expandSecondary)
+    val allAdapters = selectAdapters(intent = intent, parsedIsbn = null, isIsbn = false)
     val paginatedAdapters =
       allAdapters.filter { adapter ->
         val prev = existingSession.statuses[adapter.source]
         prev == null || prev.hasMore
-      }.ifEmpty {
-        listOf(openLibraryAdapter, googleBooksAdapter)
       }
+
+    if (paginatedAdapters.isEmpty()) {
+      return currentResponse.copy(hasMoreResults = false)
+    }
 
     val req =
       AdapterSearchRequest(
@@ -436,7 +553,7 @@ class HybridSearchOrchestrator(
         paginatedAdapters.map { adapter ->
           async {
             runCatching {
-                withTimeoutOrNull(ADAPTER_TIMEOUT_MS) { adapter.searchPaginated(req) }
+                withTimeoutOrNull(PRIMARY_BATCH_DEADLINE_MS) { adapter.searchPaginated(req) }
                   ?: SourceAdapterResult(SourceQueryStatus(adapter.source, ProviderOutcomeState.ERROR, message = "Timeout"))
               }
               .getOrElse { err ->
@@ -476,6 +593,7 @@ class HybridSearchOrchestrator(
     val allLocalBooks = libraryRepository.observeAllBooks().first()
     val primaryAnnotated = annotateGroups(grouped.primaryGroups, allLocalBooks)
     val secondaryAnnotated = annotateGroups(grouped.secondaryGroups, allLocalBooks)
+    val derivativeAnnotated = annotateGroups(grouped.derivativeGroups, allLocalBooks)
     val statusList = updatedStatusMap.values.toList()
     val hasMore = statusList.any { it.hasMore } && nextResults.any { it.candidates.isNotEmpty() }
 
@@ -493,6 +611,7 @@ class HybridSearchOrchestrator(
         isFromCache = false,
         workGroups = primaryAnnotated,
         secondaryWorkGroups = secondaryAnnotated,
+        derivativeWorkGroups = derivativeAnnotated,
         sourceStatuses = statusList,
         hasMoreResults = hasMore,
         totalFoundHint = statusList.mapNotNull { it.totalAvailable }.maxOrNull() ?: currentResponse.totalFoundHint,
@@ -504,6 +623,7 @@ class HybridSearchOrchestrator(
   suspend fun expandWorkEditions(
     workGroup: SearchWorkGroup,
     preferredLanguage: String? = null,
+    originalQuery: String? = null,
   ): SearchWorkGroup {
     val workKey = workGroup.externalWorkKey ?: return workGroup
     if (!connectivityChecker.isOnline()) return workGroup
@@ -513,13 +633,15 @@ class HybridSearchOrchestrator(
         ?: return workGroup
     if (extra.candidates.isEmpty()) return workGroup
 
+    val intentForExpansion = originalQuery?.takeIf { it.isNotBlank() }?.let { QueryIntentParser.parse(it) }
     val mergedGroups =
       WorkGroupingEngine.groupCandidates(
         rawCandidates = workGroup.editions + extra.candidates,
         preferredLanguage = preferredLanguage,
+        parsedIntent = intentForExpansion,
       )
     val combined =
-      mergedGroups.firstOrNull() ?: return workGroup
+      mergedGroups.firstOrNull { !it.isDerivative() } ?: mergedGroups.firstOrNull() ?: return workGroup
     val allBooks = libraryRepository.observeAllBooks().first()
     return annotateGroups(
       listOf(
@@ -532,6 +654,9 @@ class HybridSearchOrchestrator(
       allBooks,
     ).first()
   }
+
+  private fun SearchWorkGroup.isDerivative(): Boolean =
+    effectiveMatchTier == com.example.core.model.MatchTier.DERIVATIVE_OR_ACADEMIC
 
   suspend fun fetchCandidatesForBookUpdate(
     title: String,
@@ -565,21 +690,34 @@ class HybridSearchOrchestrator(
   }
 
   private fun selectAdapters(
+    intent: ParsedSearchIntent,
     parsedIsbn: com.example.core.model.ParsedIsbn?,
     isIsbn: Boolean,
-    expandSecondary: Boolean,
   ): List<BibliographicSourceAdapter> =
     buildList {
       add(openLibraryAdapter)
       add(googleBooksAdapter)
-      if (isIsbn || expandSecondary) {
+      appleBooksAdapter?.let { add(it) }
+
+      val isExplicitDoi = QueryIntentParser.isExplicitDoi(intent.rawQuery)
+      if (isIsbn || isExplicitDoi) {
         add(crossrefAdapter)
+      }
+      if (isIsbn) {
         add(wikidataAdapter)
+        val isBrIsbn = BibliographicMath.isBrazilianIsbn(parsedIsbn?.isbn13 ?: parsedIsbn?.isbn10)
+        if (isBrIsbn) {
+          add(brasilApiAdapter)
+        }
       }
-      val isBrIsbn = BibliographicMath.isBrazilianIsbn(parsedIsbn?.isbn13 ?: parsedIsbn?.isbn10)
-      if (isBrIsbn || expandSecondary) {
-        add(brasilApiAdapter)
-      }
+    }
+
+  private fun timeoutForAdapter(source: MetadataSource, isIsbn: Boolean): Long =
+    when (source) {
+      MetadataSource.APPLE_BOOKS -> APPLE_BOOKS_TIMEOUT_MS
+      MetadataSource.GOOGLE_BOOKS -> if (isIsbn) PRIMARY_BATCH_DEADLINE_MS else GOOGLE_BOOKS_TIMEOUT_MS
+      MetadataSource.OPEN_LIBRARY -> OPEN_LIBRARY_TIMEOUT_MS
+      else -> PRIMARY_BATCH_DEADLINE_MS
     }
 
   private fun buildCacheKey(
@@ -590,9 +728,9 @@ class HybridSearchOrchestrator(
     val langPart = BibliographicMath.normalizeLanguageCode(preferredLanguage).orEmpty()
     val isbn = intent.parsedIsbn
     return if (isbn != null) {
-      "v2:isbn:${isbn.isbn13 ?: isbn.isbn10 ?: isbn.cleaned}:lang=$langPart"
+      "v3:isbn:${isbn.isbn13 ?: isbn.isbn10 ?: isbn.cleaned}:lang=$langPart"
     } else {
-      "v2:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
+      "v3:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
     }
   }
 
@@ -624,11 +762,18 @@ class HybridSearchOrchestrator(
   }
 
   private suspend fun annotateResponseWithLocalMatches(response: HybridSearchResponse): HybridSearchResponse {
-    if (response.workGroups.isEmpty() && response.secondaryWorkGroups.isEmpty()) return response
+    if (
+      response.workGroups.isEmpty() &&
+      response.secondaryWorkGroups.isEmpty() &&
+      response.derivativeWorkGroups.isEmpty()
+    ) {
+      return response
+    }
     val allBooks = libraryRepository.observeAllBooks().first()
     return response.copy(
       workGroups = annotateGroups(response.workGroups, allBooks),
       secondaryWorkGroups = annotateGroups(response.secondaryWorkGroups, allBooks),
+      derivativeWorkGroups = annotateGroups(response.derivativeWorkGroups, allBooks),
     )
   }
 
@@ -694,9 +839,13 @@ class HybridSearchOrchestrator(
 
   private companion object {
     const val DEFAULT_PAGE_SIZE = 30
-    const val ADAPTER_TIMEOUT_MS = 7_500L
-    const val QUERY_CACHE_TTL_MS = 7L * 24L * 60L * 60L * 1000L
-    const val ISBN_CACHE_TTL_MS = 30L * 24L * 60L * 60L * 1000L
+    const val PRIMARY_BATCH_DEADLINE_MS = 3_200L
+    const val OPEN_LIBRARY_TIMEOUT_MS = 3_150L
+    const val GOOGLE_BOOKS_TIMEOUT_MS = 2_800L
+    const val APPLE_BOOKS_TIMEOUT_MS = 2_200L
+    const val WIKIDATA_BRIDGE_DEADLINE_MS = 900L
+    const val QUERY_CACHE_TTL_MS = 3L * 24L * 60L * 60L * 1000L
+    const val ISBN_CACHE_TTL_MS = 15L * 24L * 60L * 60L * 1000L
     const val CACHE_MAX_ENTRIES = 120
     const val MEMORY_CACHE_MAX_ENTRIES = 24
   }

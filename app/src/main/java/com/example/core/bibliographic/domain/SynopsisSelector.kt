@@ -76,6 +76,7 @@ object SynopsisSelector {
       when (source) {
         MetadataSource.GOOGLE_BOOKS -> 12
         MetadataSource.BRASIL_API -> 11
+        MetadataSource.APPLE_BOOKS -> 11
         MetadataSource.OPEN_LIBRARY -> 10
         MetadataSource.WIKIDATA -> 8
         MetadataSource.CROSSREF -> 6

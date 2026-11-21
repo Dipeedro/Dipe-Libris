@@ -375,6 +375,11 @@
     <string name="search_results_count_summary">Exibindo %1$d obra(s)</string>
     <string name="search_results_count_with_hint">Exibindo %1$d obra(s) · ~%2$d ocorrências na fonte</string>
     <string name="search_live_local_matches_section">Na sua biblioteca</string>
+    <string name="search_bundle_box_badge">Box / Coleção</string>
+    <string name="search_bundle_omnibus_badge">Volume único</string>
+    <string name="search_derivative_drawer_toggle">Estudos, resumos e obras relacionadas (%1$d)</string>
+    <string name="search_derivative_only_notice">Nenhuma obra principal encontrada diretamente. Exibindo estudos, análises e títulos relacionados:</string>
+    <string name="search_source_attribution_apple">Capa: Apple Books</string>
     <string name="cd_scan_isbn">Escanear código de barras ISBN</string>
 
     <!-- ISBN Scanner -->

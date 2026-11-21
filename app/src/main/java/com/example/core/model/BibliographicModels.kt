@@ -102,6 +102,16 @@ data class SearchEditionCandidate(
         .takeIf { it.isNotBlank() }
 }
 
+enum class MatchTier(val rank: Int) {
+  EXACT_WORK(0),
+  TRANSLATION_OR_ALT_TITLE(1),
+  SERIES_VOLUME_MATCH(2),
+  COLLECTION_OR_BOX_SET(3),
+  PROBABLE_TITLE_OR_AUTHOR_WORK(4),
+  PARTIAL_OR_FUZZY_MATCH(5),
+  DERIVATIVE_OR_ACADEMIC(6),
+}
+
 @Immutable
 @Serializable
 data class SearchWorkGroup(
@@ -120,7 +130,15 @@ data class SearchWorkGroup(
   val queryRelevanceScore: Int = 0,
   val primaryLanguageTierRank: Int = LanguageTier.UNKNOWN.rank,
   val totalAvailableEditionsHint: Int? = null,
+  val matchTierName: String = MatchTier.EXACT_WORK.name,
+  val bundleKindName: String = TitleBundleKind.SINGLE.name,
 ) {
+  val effectiveMatchTier: MatchTier
+    get() = MatchTier.entries.firstOrNull { it.name == matchTierName } ?: MatchTier.EXACT_WORK
+
+  val effectiveBundleKind: TitleBundleKind
+    get() = TitleBundleKind.entries.firstOrNull { it.name == bundleKindName } ?: TitleBundleKind.SINGLE
+
   val displayAuthors: String
     get() = primaryAuthors.joinToString(", ") { it.name }
 
@@ -132,14 +150,14 @@ data class SearchWorkGroup(
 
   val primaryTierEditions: List<SearchEditionCandidate>
     get() {
-      val primary = editions.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+      val primary = editions.filter { it.languageTierRank <= LanguageTier.EN.rank }
       return primary.ifEmpty { editions }
     }
 
   val secondaryTierEditions: List<SearchEditionCandidate>
     get() {
-      val primary = editions.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
-      return if (primary.isEmpty()) emptyList() else editions.filter { it.languageTierRank > LanguageTier.PT_UNCERTAIN.rank }
+      val primary = editions.filter { it.languageTierRank <= LanguageTier.EN.rank }
+      return if (primary.isEmpty()) emptyList() else editions.filter { it.languageTierRank > LanguageTier.EN.rank }
     }
 }
 
@@ -174,6 +192,7 @@ data class HybridSearchResponse(
   val localMatches: List<CatalogBook> = emptyList(),
   val workGroups: List<SearchWorkGroup> = emptyList(),
   val secondaryWorkGroups: List<SearchWorkGroup> = emptyList(),
+  val derivativeWorkGroups: List<SearchWorkGroup> = emptyList(),
   val sourceStatuses: List<SourceQueryStatus> = emptyList(),
   val expandedSecondarySources: Boolean = false,
   val hasMoreResults: Boolean = false,

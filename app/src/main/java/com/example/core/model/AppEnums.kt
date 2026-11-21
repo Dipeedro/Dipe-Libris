@@ -157,6 +157,7 @@ enum class CopyOrigin {
 enum class MetadataSource(val displayName: String) {
   OPEN_LIBRARY("Open Library"),
   GOOGLE_BOOKS("Google Books"),
+  APPLE_BOOKS("Apple Books"),
   CROSSREF("Crossref"),
   WIKIDATA("Wikidata"),
   BRASIL_API("BrasilAPI / CBL"),

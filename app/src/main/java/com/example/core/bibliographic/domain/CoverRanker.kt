@@ -83,6 +83,49 @@ object CoverRanker {
     return rankAndDeduplicate(candidates)
   }
 
+  fun buildAppleBooksCoverCandidates(
+    artworkUrl100: String?,
+    matchesIsbn: Boolean,
+    matchesPublisherYear: Boolean,
+    matchesLanguage: Boolean,
+  ): List<CoverCandidate> {
+    val cleanBase =
+      artworkUrl100
+        ?.trim()
+        ?.replace("http://", "https://", ignoreCase = true)
+        ?.takeIf { it.isNotBlank() }
+        ?: return emptyList()
+
+    val candidates = mutableListOf<CoverCandidate>()
+    val upgraded600 =
+      cleanBase.replace(Regex("\\d+x\\d+bb(?=\\.[a-zA-Z0-9]+$)"), "600x900bb")
+    if (upgraded600 != cleanBase) {
+      candidates.add(
+        CoverCandidate(
+          imageUrl = upgraded600,
+          source = MetadataSource.APPLE_BOOKS,
+          matchesIsbn = matchesIsbn,
+          matchesPublisherYear = matchesPublisherYear,
+          matchesLanguage = matchesLanguage,
+          widthHint = 600,
+          heightHint = 900,
+        )
+      )
+    }
+    candidates.add(
+      CoverCandidate(
+        imageUrl = cleanBase,
+        source = MetadataSource.APPLE_BOOKS,
+        matchesIsbn = matchesIsbn,
+        matchesPublisherYear = matchesPublisherYear,
+        matchesLanguage = matchesLanguage,
+        widthHint = 100,
+        heightHint = 100,
+      )
+    )
+    return rankAndDeduplicate(candidates)
+  }
+
   private fun scoreCandidate(c: CoverCandidate): Int {
     var score = 0
     if (c.matchesIsbn) score += 50
@@ -90,19 +133,21 @@ object CoverRanker {
     if (c.matchesLanguage) score += 15
     score +=
       when (c.source) {
-        MetadataSource.MANUAL -> 30
-        MetadataSource.OPEN_LIBRARY -> 12
-        MetadataSource.GOOGLE_BOOKS -> 10
-        MetadataSource.BRASIL_API -> 9
-        MetadataSource.WIKIDATA -> 8
-        MetadataSource.CROSSREF -> 4
+        MetadataSource.MANUAL -> 40
+        // Fontes abertas/diretas têm prioridade sobre Apple Books para persistência offline segura
+        MetadataSource.OPEN_LIBRARY -> 24
+        MetadataSource.GOOGLE_BOOKS -> 22
+        MetadataSource.BRASIL_API -> 21
+        MetadataSource.WIKIDATA -> 18
+        MetadataSource.CROSSREF -> 10
+        MetadataSource.APPLE_BOOKS -> 2
       }
     val w = c.widthHint ?: 0
     val h = c.heightHint ?: 0
     if (w >= 600 || h >= 900) {
-      score += 22
+      score += 18
     } else if (w >= 400 || h >= 600) {
-      score += 14
+      score += 12
     } else if (w in 1..130 || h in 1..195) {
       score -= 8
     }

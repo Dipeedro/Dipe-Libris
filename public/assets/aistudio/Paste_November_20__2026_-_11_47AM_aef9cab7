@@ -1,0 +1,933 @@
+DIPE LIBRIS — RECONSTRUÇÃO ARQUITETURAL DO MOTOR DE PESQUISA BIBLIOGRÁFICA
+
+FASE DE PLANEJAMENTO, DIAGNÓSTICO E DEFINIÇÃO DA SOLUÇÃO
+
+Estamos trabalhando no Dipe Libris, um aplicativo Android nativo para gerenciamento de biblioteca pessoal, desenvolvido em Kotlin e Jetpack Compose, com arquitetura offline-first e banco de dados Room.
+
+A pesquisa bibliográfica atual foi submetida a uma reformulação anterior, mas os resultados continuam apresentando baixa qualidade, falsos positivos, obras acadêmicas irrelevantes, títulos semelhantes confundidos e agrupamentos inadequados de livros e edições.
+
+Agora quero uma investigação profunda de toda a arquitetura de pesquisa, seguida de um planejamento para reconstruir seu núcleo de relevância bibliográfica.
+
+IMPORTANTE: ESTA ETAPA É EXCLUSIVAMENTE DE PLANEJAMENTO. NÃO MODIFIQUE, CRIE, EXCLUA, REESCREVA OU REORGANIZE NENHUM ARQUIVO DO PROJETO. NÃO IMPLEMENTE NENHUMA CORREÇÃO.
+
+Seu trabalho é analisar os arquivos reais do projeto, propor uma arquitetura definitiva e apresentar um plano de implementação que aguarde minha aprovação.
+
+---
+
+1. CONTEXTO E OBJETIVO DO DIPE LIBRIS
+
+O Dipe Libris é um aplicativo pessoal de gerenciamento de biblioteca.
+
+O fluxo de pesquisa precisa permitir que o usuário encontre um livro por:
+
+- Título.
+- Autor.
+- Título + autor.
+- ISBN.
+- Código de barras.
+- Títulos traduzidos.
+- Títulos sem acentos.
+- Pesquisas parcialmente ambíguas.
+
+A experiência desejada é próxima da qualidade de pesquisa bibliográfica encontrada em plataformas como Skoob e Amazon, especialmente em relação à relevância dos resultados, identificação de obras e edições e qualidade das capas.
+
+Não queremos apenas localizar registros que contenham palavras parecidas com as pesquisadas.
+
+Queremos identificar corretamente a obra literária que o usuário está procurando.
+
+Modelo bibliográfico
+
+O aplicativo trabalha conceitualmente com:
+
+- Work: obra literária.
+- Edition: edição específica da obra.
+- Copy: exemplar individual pertencente ao usuário.
+
+Essa separação deve ser preservada.
+
+Diferentes traduções, editoras, ISBNs, formatos e publicações devem ser reconhecidos como edições da mesma obra quando isso for bibliograficamente justificável.
+
+Obras diferentes, volumes de uma série, coletâneas, box sets, adaptações, estudos acadêmicos e livros derivados não devem ser agrupados indiscriminadamente.
+
+---
+
+2. DIAGNÓSTICO FORENSE JÁ IDENTIFICADO
+
+Uma investigação anterior identificou diversos problemas estruturais. Verifique novamente os arquivos reais antes de confirmar cada conclusão.
+
+2.1. Open Library e títulos de edições
+
+Obras da Open Library frequentemente apresentam:
+
+- Título original no registro Work.
+- Títulos traduzidos em registros Edition.
+- Informações sobre idiomas, ISBNs, editoras e capas dentro das edições.
+
+O mecanismo atual aparentemente ignora ou utiliza inadequadamente "editionTitle".
+
+Isso pode fazer uma obra conhecida pelo título brasileiro ser rejeitada quando seu título canônico está em inglês ou francês.
+
+Exemplo:
+
+- Busca: Jogos Vorazes.
+- Título canônico: The Hunger Games.
+- Título de edição: Jogos Vorazes.
+
+O sistema precisa reconhecer essa relação.
+
+2.2 Subtítulos e falsos títulos exatos
+
+O normalizador atual aparentemente remove partes de títulos após determinados sinais, como dois-pontos e parênteses.
+
+Isso pode transformar:
+
+"Jogos Vorazes: uma reflexão sobre o mundo contemporâneo"
+
+em algo equivalente a:
+
+"Jogos Vorazes"
+
+O resultado é uma falsa correspondência exata.
+
+Um livro acadêmico sobre Jogos Vorazes pode, assim, receber uma pontuação de título exato e competir injustamente com o romance original.
+
+O sistema não pode eliminar subtítulos de maneira destrutiva.
+
+A normalização deve preservar o título completo e criar representações auxiliares, sem transformar títulos diferentes em títulos idênticos.
+
+2.3. Correspondência permissiva demais
+
+O filtro atual aparentemente permite resultados quando apenas uma pequena parte das palavras pesquisadas está presente.
+
+Isso permite que títulos parcialmente coincidentes entrem nos resultados.
+
+Exemplo:
+
+Pesquisa:
+"O Senhor dos Anéis"
+
+Resultado incorreto:
+"O Senhor dos Anais"
+
+O sistema não deve aceitar uma obra apenas porque possui palavras comuns em posição semelhante.
+
+2.4. Similaridade textual inadequada
+
+A utilização de Levenshtein sobre frases inteiras aparentemente produz similaridade artificial entre títulos diferentes.
+
+Essa métrica não pode ser usada isoladamente como evidência de identidade bibliográfica.
+
+A similaridade textual deve ser contextual, considerando:
+
+- Tokens significativos.
+- Ordem das palavras.
+- Título completo.
+- Subtítulo.
+- Autor.
+- Título original.
+- Título de edição.
+- Identificadores bibliográficos.
+- Relação entre obra e edição.
+
+2.5. Pesquisas genéricas e consultas mal direcionadas
+
+As fontes aparentemente recebem pesquisas excessivamente amplas, incluindo buscas por texto completo.
+
+Isso aumenta o número de resultados irrelevantes, estudos acadêmicos, livros que apenas mencionam o título e obras de assunto semelhante.
+
+O mecanismo deve investigar estratégias de consulta mais específicas para cada tipo de pesquisa.
+
+2.6. Pesquisa por autor
+
+Pesquisas por autores podem retornar:
+
+- Obras do autor.
+- Artigos científicos.
+- Estudos sobre o autor.
+- Livros de outros autores que apenas mencionam seu nome.
+
+O sistema precisa reconhecer quando o usuário está buscando uma pessoa e quando está buscando um título.
+
+Exemplo:
+
+Machado de Assis
+
+Deve produzir uma bibliografia de obras do autor, e não uma lista de estudos acadêmicos sobre Machado de Assis.
+
+2.7. Agrupamento bibliográfico
+
+A arquitetura atual aparentemente utiliza normalização textual excessivamente simplificada para agrupar obras.
+
+Isso pode gerar:
+
+- Obras traduzidas não reconhecidas como a mesma obra.
+- Volumes diferentes agrupados.
+- Box sets misturados com volumes individuais.
+- Estudos acadêmicos agrupados com a obra analisada.
+- Edições incorretamente associadas.
+- Resultados instáveis durante pesquisas progressivas.
+
+O agrupamento precisa ser reconstruído com evidências bibliográficas e identificadores confiáveis.
+
+2.8. Problemas de cache, paginação e contadores
+
+Investigue também:
+
+- Paginação com sobreposição.
+- Resultados incompletos.
+- Cache de pesquisas incorretas.
+- Cache que não é invalidado após mudanças no mecanismo.
+- Contagem de obras versus ocorrências nas fontes.
+- Identificadores instáveis durante pesquisas progressivas.
+- Resultados antigos misturados com consultas novas.
+- Cancelamento de pesquisas.
+- Consultas simultâneas e respostas fora de ordem.
+
+---
+
+3. INVESTIGAÇÃO COMPLETA DO PIPELINE ATUAL
+
+Inspecione o código real e rastreie o fluxo completo de uma pesquisa.
+
+Examine, quando existentes:
+
+- QueryIntentParser.
+- HybridSearchOrchestrator.
+- GoogleBooksAdapter.
+- OpenLibraryAdapter.
+- BrasilAPIAdapter.
+- WikidataAdapter.
+- CrossrefAdapter.
+- BibliographicMath.
+- RelevanceAndDerivativeFilter.
+- WorkGroupingEngine.
+- Modelos Work, Edition e Copy.
+- Sistema de capas.
+- Room e cache.
+- Paginação.
+- Pesquisa progressiva.
+- Cancelamento.
+- Interface de pesquisa.
+- Estados de carregamento.
+- Expansão dos resultados.
+- Identificação de idioma.
+- Deduplicação.
+- Ranking.
+
+Não confie apenas em relatórios de auditoria anteriores. Verifique as implementações reais.
+
+Para cada problema encontrado, informe:
+
+1. Arquivo e função envolvidos.
+2. Comportamento atual.
+3. Evidência concreta no código.
+4. Consequência para os resultados.
+5. Solução arquitetural recomendada.
+6. Risco da mudança.
+
+Separe claramente:
+
+- Problemas comprovados pelo código.
+- Problemas reproduzidos em testes.
+- Hipóteses que ainda precisam de validação real de rede.
+- Limitações inerentes às APIs.
+
+---
+
+4. RECONSTRUÇÃO CONCEITUAL DA PESQUISA
+
+Não quero apenas uma correção de pontuação ou uma lista maior de palavras proibidas.
+
+Quero que você proponha um mecanismo bibliográfico organizado em etapas, avaliando se a seguinte arquitetura seria adequada ou se existe uma solução melhor.
+
+ETAPA A — INTERPRETAÇÃO DA INTENÇÃO
+
+Determine o que o usuário está buscando:
+
+- Título de obra.
+- Autor.
+- ISBN.
+- Título + autor.
+- Obra traduzida.
+- Pesquisa ambígua.
+- Série.
+- Volume específico.
+- Box ou coleção.
+- Livro possivelmente acadêmico.
+
+O parser não deve classificar títulos curtos automaticamente como pesquisas por autor.
+
+Exemplo:
+
+"Jogos Vorazes"
+
+É uma pesquisa de título, mesmo que tenha apenas duas palavras.
+
+"Que tal mais um gato?"
+
+Todas as palavras relevantes devem ser preservadas. O sistema não pode reduzir essa pesquisa simplesmente a "gato".
+
+Explique como a intenção será identificada sem depender de heurísticas frágeis.
+
+ETAPA B — GERAÇÃO DE CANDIDATOS
+
+Planeje consultas específicas por fonte.
+
+Investigue estratégias como:
+
+- Busca por título exato.
+- Busca estruturada por título.
+- Título + autor.
+- Busca por ISBN.
+- Busca por título original.
+- Busca por títulos alternativos e traduzidos.
+- Busca específica de edições.
+- Consulta de identificadores externos.
+
+Não utilizar todas as estratégias indiscriminadamente.
+
+Cada consulta deve ter justificativa, objetivo e custo de requisição.
+
+ETAPA C — VALIDAÇÃO BIBLIOGRÁFICA
+
+Antes de classificar e ordenar resultados, valide a identidade dos candidatos.
+
+Considere:
+
+- Título.
+- Subtítulo.
+- Autor.
+- Autores adicionais.
+- Título original.
+- Título traduzido.
+- Título de edição.
+- ISBN.
+- Identificadores de obra.
+- Editora.
+- Idioma.
+- Série.
+- Volume.
+- Tipo de publicação.
+- Relações entre Work e Edition.
+
+Defina quais evidências são fortes, moderadas, fracas ou conflitantes.
+
+Não permita que quantidade de metadados, presença de capa, sinopse extensa ou número de páginas compense uma identidade bibliográfica incorreta.
+
+ETAPA D — CLASSIFICAÇÃO DE RESULTADOS
+
+Investigue uma classificação contextual de candidatos, por exemplo:
+
+- Correspondência exata da obra.
+- Correspondência provável.
+- Edição da obra procurada.
+- Título alternativo ou tradução.
+- Volume da série.
+- Box ou coletânea.
+- Obra derivada.
+- Estudo acadêmico.
+- Livro que apenas menciona a obra.
+- Homônimo.
+- Correspondência insuficiente.
+
+Essa classificação não precisa necessariamente aparecer inteira na interface.
+
+O objetivo é impedir que estudos acadêmicos e falsos positivos concorram na mesma categoria com a obra original.
+
+Não implemente classificações baseadas somente em palavras proibidas.
+
+ETAPA E — CONSOLIDAÇÃO DE WORKS E EDITIONS
+
+Proponha uma arquitetura que consolide resultados de diferentes fontes.
+
+Defina:
+
+- Quando duas ocorrências representam a mesma obra.
+- Quando devem ser consideradas edições da mesma obra.
+- Como identificar traduções.
+- Como resolver títulos alternativos.
+- Como utilizar identificadores externos.
+- Como evitar que títulos parecidos sejam unidos.
+- Como manter volumes de séries separados.
+- Como tratar box sets.
+- Como lidar com informações conflitantes.
+
+O agrupamento deve priorizar evidências bibliográficas.
+
+A similaridade de texto não deve ser suficiente para unir registros.
+
+ETAPA F — RANQUEAMENTO
+
+Proponha um ranking que priorize identidade bibliográfica.
+
+A ordem de prioridade deve favorecer:
+
+1. Identidade exata ou fortemente comprovada da obra.
+2. Compatibilidade de título e autor.
+3. Identificação de título alternativo ou tradução.
+4. Identificadores bibliográficos confiáveis.
+5. Compatibilidade da edição.
+6. Idioma desejado.
+7. Qualidade e confiabilidade dos metadados.
+8. Popularidade, somente como critério auxiliar.
+
+Popularidade jamais deve permitir que uma obra incorreta ultrapasse uma correspondência bibliográfica comprovada.
+
+Evite um modelo de pontuação linear no qual ISBN, capa, sinopse, páginas e editora simplesmente acumulam pontos até superar a identidade do título.
+
+Avalie modelos alternativos, como ranking por etapas, categorias de confiança ou regras hierárquicas.
+
+Apresente uma proposta concreta, incluindo pseudocódigo se necessário.
+
+---
+
+5. INVESTIGAÇÃO E REVISÃO DAS FONTES
+
+Não implemente nenhuma nova integração ainda.
+
+Revise a viabilidade, a documentação e o papel de cada fonte.
+
+Google Books
+
+Investigue:
+
+- Uso de API Key.
+- Configuração atual do projeto.
+- Limites e erros.
+- Consultas estruturadas.
+- Busca por título.
+- Busca por autor.
+- ISBN.
+- "intitle:".
+- "inauthor:".
+- "orderBy=relevance".
+- Paginação.
+- Cobertura brasileira.
+- Ruído de pesquisas por texto completo.
+- Licença e condições de armazenamento.
+
+Verifique se a configuração atual pode estar contribuindo para os erros ou limites observados.
+
+Não assuma que a falta de uma chave é a causa de todos os problemas.
+
+Open Library
+
+Investigue:
+
+- Search API.
+- Work API.
+- Edition API.
+- "editionTitle".
+- Títulos originais.
+- Edições traduzidas.
+- ISBN.
+- Identificadores externos.
+- Idiomas.
+- Capas.
+- Paginação.
+- Limites de requisição.
+- Cache.
+- Uso adequado do User-Agent.
+
+Reavalie como recuperar edições brasileiras de obras cujo Work possui título estrangeiro.
+
+Não descarte obras válidas por estarem em inglês quando suas edições brasileiras forem relevantes.
+
+BrasilAPI
+
+Preserve seu papel como consulta por ISBN.
+
+Avalie:
+
+- Como aproveitar os dados retornados.
+- Confiabilidade.
+- Conflitos entre provedores.
+- Enriquecimento de edição.
+- Recuperação de capa.
+
+Não transforme a BrasilAPI em uma fonte de busca textual se ela não oferece essa funcionalidade.
+
+Wikidata
+
+Investigue a possibilidade de ampliar seu uso através de consultas leves à API MediaWiki, incluindo "wbsearchentities", para auxiliar na identificação de:
+
+- Obras.
+- Autores.
+- Títulos originais.
+- Títulos traduzidos.
+- Identificadores Open Library.
+- Relações bibliográficas.
+
+Avalie custo, latência, confiabilidade e limites.
+
+Não utilize consultas SPARQL pesadas sem necessidade.
+
+Determine se Wikidata deve atuar como identificador auxiliar, enriquecedor ou fonte de candidatos.
+
+Crossref
+
+Reavalie seu papel.
+
+A busca geral por ficção não deve ser contaminada por artigos e monografias.
+
+Determine se deve ser utilizada:
+
+- Apenas por ISBN/DOI.
+- Sob demanda.
+- Em pesquisa explicitamente acadêmica.
+- Em uma etapa secundária.
+
+Apple Books — NOVA FONTE EXPERIMENTAL
+
+Investigue a viabilidade de integrar a Apple Books através da iTunes Search API, utilizando o catálogo brasileiro.
+
+Avalie:
+
+- Busca por título.
+- Busca por autor.
+- Consulta por ISBN.
+- "country=br".
+- Títulos.
+- Autores.
+- Editoras.
+- Sinopses.
+- Categorias.
+- Capas.
+- Qualidade das imagens.
+- Cobertura de e-books.
+- Limitações para livros exclusivamente impressos.
+- Ausência de informações de páginas.
+- Limites de requisições.
+- Termos de uso.
+- Condições de armazenamento e utilização de metadados.
+- Condições de utilização de imagens e capas.
+- Compatibilidade com CoverStorageManager e armazenamento offline.
+
+Determine seu potencial real para melhorar a identificação de títulos brasileiros.
+
+Não assuma que todas as informações ou imagens podem ser armazenadas permanentemente só porque o endpoint é público.
+
+Proponha uma integração experimental isolada, caso seja tecnicamente e legalmente viável.
+
+Hardcover
+
+Investigue a API GraphQL do Hardcover.
+
+Avalie:
+
+- Busca de obras.
+- Edições.
+- ISBN.
+- Idiomas.
+- Autores.
+- Capas.
+- Popularidade.
+- Cobertura brasileira.
+- Token.
+- Limites.
+- Exposição de credenciais no APK.
+- Necessidade de backend.
+- Alternativas de autenticação.
+- Benefício real para o Dipe Libris.
+
+Não recomende integração imediata se ela exigir comprometer segurança ou arquitetura.
+
+---
+
+6. FONTES DESCARTADAS OU INVIÁVEIS
+
+Considere a investigação anterior sobre:
+
+- Amazon Creators API.
+- Skoob.
+- Goodreads.
+- Bookinfo.
+- Metabooks.
+- ISBNdb.
+- Mercado Livre.
+- Biblioteca Nacional via Z39.50.
+- WorldCat.
+- BookBrainz.
+- Inventaire.
+- OpenAlex.
+
+Revalide apenas se necessário.
+
+Não proponha scraping, endpoints privados, contorno de bloqueios, coleta não autorizada ou mecanismos que dependam de violar os termos das plataformas.
+
+Não desperdice tempo propondo integrar fontes que já foram consideradas inviáveis sem evidências de que sua situação mudou.
+
+---
+
+7. ARQUITETURA DESEJADA
+
+Proponha uma arquitetura modular que preserve o que já funciona e substitua o que estiver estruturalmente inadequado.
+
+Considere a separação entre:
+
+- Search Intent.
+- Query Planner.
+- Source Orchestration.
+- Source Adapters.
+- Candidate Normalization.
+- Bibliographic Validation.
+- Derivative Classification.
+- Work Resolution.
+- Edition Resolution.
+- Ranking.
+- Cover Resolution.
+- Result Presentation.
+
+Avalie se essa separação é adequada ao Kotlin e à arquitetura atual.
+
+Não crie complexidade desnecessária.
+
+A pesquisa deve:
+
+- Continuar progressiva quando apropriado.
+- Não bloquear a interface.
+- Cancelar pesquisas anteriores quando uma nova for iniciada.
+- Evitar respostas antigas substituindo resultados novos.
+- Respeitar limites de cada API.
+- Evitar consultas redundantes.
+- Priorizar resultados confiáveis.
+- Persistir dados de forma responsável.
+- Funcionar offline com dados já salvos.
+- Permitir pesquisa online quando houver conexão.
+- Ter comportamento previsível quando uma fonte falhar.
+- Evitar que uma fonte lenta bloqueie todas as demais.
+- Preservar resultados já validados enquanto fontes adicionais carregam.
+
+---
+
+8. TESTES OBRIGATÓRIOS DE ACEITAÇÃO
+
+Crie uma matriz de testes para a arquitetura proposta.
+
+Utilize os testes anteriores como regressão e amplie-os.
+
+Casos essenciais
+
+A. Jogos Vorazes
+
+Pesquisa:
+Jogos Vorazes
+
+Esperado:
+
+- A obra original de Suzanne Collins deve aparecer em primeiro lugar.
+- Estudos como "Jogos Vorazes: uma reflexão sobre o mundo contemporâneo" não podem ser confundidos com o romance.
+- Edições brasileiras devem ser identificadas.
+- Edições diferentes devem ser agrupadas corretamente.
+
+B. O Senhor dos Anéis
+
+Pesquisa:
+O Senhor dos Anéis
+
+Esperado:
+
+- A obra correta deve dominar os primeiros resultados.
+- "O Senhor dos Anais" deve ser rejeitado ou claramente classificado como não correspondente.
+- Estudos acadêmicos não devem competir com a obra original.
+- Os três volumes da série devem permanecer distinguíveis.
+- Box sets devem ser reconhecidos como conjuntos.
+
+C. Coraline
+
+Pesquisa:
+Coraline
+
+Esperado:
+
+- A obra correta aparece entre os primeiros resultados.
+- Homônimos, obras derivadas e títulos irrelevantes não ultrapassam a obra correta.
+- Edições brasileiras são recuperadas quando disponíveis.
+
+D. Machado de Assis
+
+Pesquisa:
+Machado de Assis
+
+Esperado:
+
+- Busca reconhecida como pesquisa de autor.
+- Obras do autor aparecem.
+- Estudos acadêmicos não dominam a bibliografia.
+
+E. O Pequeno Príncipe
+
+Esperado:
+
+- Identificação correta da obra.
+- Títulos traduzidos e originais consolidados.
+- Resultados irrelevantes significativamente reduzidos.
+- Edições corretamente organizadas.
+
+F. Que tal mais um gato?
+
+Esperado:
+
+- Todas as palavras relevantes preservadas.
+- O título não reduzido simplesmente a "gato".
+- A obra correta é identificada.
+
+G. Vou te receitar um gato
+
+Esperado:
+
+- Identificação correta.
+- Não misturar com a sequência ou obras semelhantes.
+- Autor corretamente identificado.
+- Edições organizadas.
+
+H. ISBN
+
+Esperado:
+
+- Consulta direta.
+- Identificação da edição.
+- Metadados recuperados com precisão.
+- Sem misturar ISBNs diferentes como se fossem a mesma edição.
+
+I. Títulos sem acentos
+
+Esperado:
+
+- "Coraline", "Coraline" com variações de acentuação quando aplicável, e outros testes sem acentos devem funcionar.
+- A normalização não pode causar falsos positivos.
+
+J. Pesquisa inexistente
+
+Esperado:
+
+- Não inventar livros.
+- Não preencher resultados com correspondências irrelevantes.
+- Exibir estado de pesquisa sem resultados.
+
+K. Pesquisa por autor
+
+Esperado:
+
+- Bibliografia relevante.
+- Identificação do autor.
+- Não transformar automaticamente a pesquisa em busca de texto completo.
+
+L. Pesquisas consecutivas
+
+Esperado:
+
+- Resultados de consultas anteriores não contaminam consultas novas.
+- Cancelamento funciona.
+- Cache funciona sem devolver resultados incorretos.
+
+M. Paginação
+
+Esperado:
+
+- Não repetir páginas.
+- Não perder resultados.
+- Contagem consistente.
+- Paginação respeitada por fonte.
+
+N. Edições brasileiras
+
+Esperado:
+
+- Prioridade pt-BR.
+- Português europeu identificado separadamente.
+- Inglês priorizado depois de pt-BR quando apropriado.
+- Outros idiomas acessíveis sem serem confundidos com português brasileiro.
+
+O. Obras traduzidas
+
+Esperado:
+
+- Título brasileiro reconhecido mesmo quando o Work canônico possui título estrangeiro.
+- Relação entre título original e título traduzido corretamente estabelecida.
+
+P. Subtítulos legítimos
+
+Esperado:
+
+- Subtítulos preservados.
+- Obras diferentes não colapsadas.
+- Estudos que mencionam um título não tratados como título exato.
+
+Q. Volumes e coleções
+
+Esperado:
+
+- Volumes identificados.
+- Séries não agrupadas indiscriminadamente.
+- Box sets separados de volumes individuais.
+- Coletâneas e obras completas tratadas adequadamente.
+
+---
+
+9. TESTES REAIS, MOCKS E EVIDÊNCIAS
+
+Os testes não devem ser apenas mocks idealizados que passam facilmente.
+
+Planeje:
+
+- Testes unitários de normalização.
+- Testes de identidade bibliográfica.
+- Testes de agrupamento.
+- Testes de ranking.
+- Testes de classificação de derivados.
+- Testes de paginação.
+- Testes de cancelamento.
+- Testes de cache.
+- Testes de idiomas.
+- Fixtures baseadas em respostas reais e anonimizadas das APIs.
+- Testes com metadados incompletos.
+- Testes com informações conflitantes.
+- Testes de latência e falhas de fonte.
+- Testes de regressão para os problemas já observados.
+
+Sempre que possível, os dados de teste devem reproduzir os casos que causaram os erros reais.
+
+Não invente resultados de APIs como se fossem dados coletados.
+
+---
+
+10. DESEMPENHO E EXPERIÊNCIA DO USUÁRIO
+
+O desempenho é importante.
+
+Atualmente, uma pesquisa no Dipe Libris demora aproximadamente 8 segundos em alguns casos, enquanto plataformas de referência parecem responder em cerca de 2 segundos.
+
+Esses números são observações do usuário, não benchmarks controlados.
+
+Investigue:
+
+- Consultas redundantes.
+- Latência de cada fonte.
+- Consultas em série desnecessárias.
+- Consultas em paralelo.
+- Timeout.
+- Cancelamento.
+- Cache.
+- Pesquisa progressiva.
+- Debounce.
+- Estratégias de carregamento.
+- Quantidade de resultados iniciais.
+- Paginação.
+- Requisições de capas.
+
+Proponha metas mensuráveis, mas não prometa latência que depende da internet e de serviços externos.
+
+A experiência deve ser rápida sem sacrificar a precisão bibliográfica.
+
+---
+
+11. CACHE E INTEGRIDADE DOS DADOS
+
+Avalie a arquitetura de cache existente.
+
+Defina:
+
+- O que pode ser armazenado.
+- Quanto tempo pode permanecer.
+- Como cache de pesquisa é diferenciado de registros bibliográficos salvos.
+- Como evitar cache de falsos positivos.
+- Como invalidar resultados antigos.
+- Como invalidar o cache após reconstruir o mecanismo.
+- Como preservar obras e exemplares já cadastrados.
+- Como evitar sobrescrever escolhas do usuário.
+
+O cache não deve perpetuar uma pesquisa ruim.
+
+Dados bibliográficos já aprovados e armazenados pelo usuário não devem ser alterados silenciosamente por uma nova busca.
+
+---
+
+12. PLANO DE IMPLEMENTAÇÃO
+
+Apresente um plano dividido em fases pequenas e verificáveis.
+
+Cada fase deve conter:
+
+- Objetivo.
+- Arquivos que provavelmente serão envolvidos.
+- Arquivos que deverão ser inspecionados antes da alteração.
+- Mudanças previstas.
+- Dependências.
+- Riscos.
+- Testes.
+- Critério de conclusão.
+- Forma de validação no aplicativo.
+
+A implementação futura deverá preservar:
+
+- Kotlin.
+- Jetpack Compose.
+- Android nativo.
+- Room.
+- Arquitetura offline-first.
+- Sistema atual de armazenamento de capas, salvo necessidade comprovada de mudança.
+- Dados já armazenados.
+- Funcionalidades que não estejam relacionadas à pesquisa.
+
+Não faça uma reescrita indiscriminada do aplicativo.
+
+Não altere arquivos de outras funcionalidades apenas para facilitar a reconstrução da pesquisa.
+
+---
+
+13. CRITÉRIOS PARA APROVAR A NOVA ARQUITETURA
+
+A solução final deve:
+
+- Identificar obras com precisão.
+- Reduzir falsos positivos drasticamente.
+- Reconhecer títulos traduzidos.
+- Priorizar edições brasileiras.
+- Separar Work, Edition e Copy.
+- Evitar misturar volumes.
+- Evitar agrupar box sets com livros individuais.
+- Distinguir obras de estudos acadêmicos.
+- Utilizar fontes de maneira racional.
+- Não depender de APIs inviáveis.
+- Respeitar termos de uso e limites.
+- Não expor segredos no APK.
+- Manter o funcionamento offline.
+- Melhorar a velocidade percebida.
+- Ter testes robustos e reproduzíveis.
+- Não inventar metadados.
+- Não destruir dados existentes.
+
+---
+
+14. FORMATO DA RESPOSTA
+
+Apresente o relatório nesta ordem:
+
+1. Resumo executivo.
+2. Diagnóstico confirmado do código atual.
+3. Problemas comprovados versus hipóteses.
+4. Por que a arquitetura atual fracassa.
+5. Arquitetura bibliográfica proposta.
+6. Fluxo completo da pesquisa.
+7. Estratégia de consulta por fonte.
+8. Estratégia de validação e classificação.
+9. Estratégia de agrupamento Work/Edition.
+10. Estratégia de ranking.
+11. Avaliação definitiva de cada API.
+12. Recomendação para Apple Books.
+13. Recomendação para Wikidata.
+14. Plano de cache e desempenho.
+15. Plano de testes.
+16. Matriz de critérios de aceitação.
+17. Plano de implementação faseado.
+18. Riscos e mitigação.
+19. Decisões que ainda precisam da minha aprovação.
+
+Se houver uma solução melhor do que a arquitetura sugerida neste documento, apresente-a e justifique.
+
+Não se limite a concordar com minhas ideias. Faça uma análise crítica, técnica e independente.
+
+Não modifique nenhum arquivo. Não implemente. Não inicie refatoração. Não aplique correções.
+
+Quero um plano definitivo, baseado nos arquivos reais do projeto, para que eu possa aprová-lo antes de iniciarmos a implementação.
