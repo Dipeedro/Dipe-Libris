@@ -65,6 +65,17 @@ private data class PaginationSession(
   val statuses: Map<MetadataSource, SourceQueryStatus>,
 )
 
+data class ExpandedWorkResult(
+  val group: SearchWorkGroup,
+  val hasMoreToLoad: Boolean,
+)
+
+private data class WorkExpansionCursor(
+  val nextOlOffset: Int = 0,
+  val olHasMore: Boolean = true,
+  val gbFetched: Boolean = false,
+)
+
 class HybridSearchOrchestrator(
   private val openLibraryAdapter: BibliographicSourceAdapter,
   private val googleBooksAdapter: BibliographicSourceAdapter,
@@ -89,6 +100,9 @@ class HybridSearchOrchestrator(
 
   private val paginationLock = Any()
   private val paginationSessions = mutableMapOf<String, PaginationSession>()
+
+  private val expansionLock = Any()
+  private val expansionCursors = mutableMapOf<String, WorkExpansionCursor>()
 
   suspend fun findLocalMatchesOnly(rawQuery: String): List<CatalogBook> {
     val trimmed = rawQuery.trim()
@@ -633,39 +647,192 @@ class HybridSearchOrchestrator(
     workGroup: SearchWorkGroup,
     preferredLanguage: String? = null,
     originalQuery: String? = null,
-  ): SearchWorkGroup {
-    val workKey = workGroup.externalWorkKey ?: return workGroup
-    if (!connectivityChecker.isOnline()) return workGroup
+  ): SearchWorkGroup =
+    expandWorkEditionsDetailed(
+      workGroup = workGroup,
+      preferredLanguage = preferredLanguage,
+      originalQuery = originalQuery,
+    ).group
 
-    val extra =
-      runCatching { openLibraryAdapter.fetchEditionsForWork(workKey) }.getOrNull()
-        ?: return workGroup
-    if (extra.candidates.isEmpty()) return workGroup
+  suspend fun expandWorkEditionsDetailed(
+    workGroup: SearchWorkGroup,
+    preferredLanguage: String? = null,
+    originalQuery: String? = null,
+  ): ExpandedWorkResult {
+    if (!connectivityChecker.isOnline()) {
+      return ExpandedWorkResult(workGroup, hasMoreToLoad = false)
+    }
+
+    val workKey = workGroup.externalWorkKey
+    val cursorKey = "${workGroup.groupId}|${workKey.orEmpty()}"
+    val currentCursor =
+      synchronized(expansionLock) {
+        expansionCursors[cursorKey] ?: WorkExpansionCursor(
+          nextOlOffset = 0,
+          olHasMore = workKey?.startsWith("/works/") == true,
+          gbFetched = false,
+        )
+      }
 
     val intentForExpansion = originalQuery?.takeIf { it.isNotBlank() }?.let { QueryIntentParser.parse(it) }
-    val mergedGroups =
-      WorkGroupingEngine.groupCandidates(
-        rawCandidates = workGroup.editions + extra.candidates,
+    val primaryAuthor = workGroup.primaryAuthors.firstOrNull()?.name?.takeIf { it.isNotBlank() }
+    val gbTargetQuery =
+      listOfNotNull(workGroup.canonicalTitle.takeIf { it.isNotBlank() }, primaryAuthor)
+        .joinToString(" - ")
+
+    val collectedExtras = mutableListOf<SearchEditionCandidate>()
+    var reportedTotal: Int? = workGroup.totalAvailableEditionsHint
+    var nextOlOffset = currentCursor.nextOlOffset
+    var olHasMore = currentCursor.olHasMore && workKey?.startsWith("/works/") == true
+    var gbFetched = currentCursor.gbFetched
+
+    supervisorScope {
+      val olJob =
+        if (olHasMore && workKey != null) {
+          async {
+            runCatching {
+              withTimeoutOrNull(WORK_EXPANSION_TIMEOUT_MS) {
+                val hintCount = workGroup.totalAvailableEditionsHint ?: 0
+                if (nextOlOffset == 0 && hintCount >= 100) {
+                  val (p1, p2) =
+                    coroutineScope {
+                      val d1 = async { openLibraryAdapter.fetchEditionsForWorkPage(workKey, offset = 0, limit = 100) }
+                      val d2 = async { openLibraryAdapter.fetchEditionsForWorkPage(workKey, offset = 100, limit = 100) }
+                      d1.await() to d2.await()
+                    }
+                  val combined = p1.candidates + p2.candidates
+                  val maxTotal = listOfNotNull(p1.status.totalAvailable, p2.status.totalAvailable).maxOrNull()
+                  val stillMore =
+                    if (p2.status.state == ProviderOutcomeState.EMPTY && p2.candidates.isEmpty()) {
+                      false
+                    } else {
+                      p2.status.hasMore
+                    }
+                  Triple(combined, 200 to stillMore, maxTotal)
+                } else {
+                  val p1 = openLibraryAdapter.fetchEditionsForWorkPage(workKey, offset = nextOlOffset, limit = 100)
+                  val page1PtCount = p1.candidates.count { it.languageTierRank <= com.example.core.model.LanguageTier.PT_UNCERTAIN.rank }
+                  if (p1.status.hasMore && page1PtCount < 10) {
+                    val p2 = openLibraryAdapter.fetchEditionsForWorkPage(workKey, offset = nextOlOffset + 100, limit = 100)
+                    val combined = p1.candidates + p2.candidates
+                    val maxTotal = listOfNotNull(p1.status.totalAvailable, p2.status.totalAvailable).maxOrNull()
+                    val stillMore =
+                      if (p2.status.state == ProviderOutcomeState.EMPTY && p2.candidates.isEmpty()) false
+                      else p2.status.hasMore
+                    Triple(combined, (nextOlOffset + 200) to stillMore, maxTotal)
+                  } else {
+                    Triple(p1.candidates, (nextOlOffset + 100) to p1.status.hasMore, p1.status.totalAvailable)
+                  }
+                }
+              }
+            }.getOrNull()
+          }
+        } else {
+          null
+        }
+
+      val gbJob =
+        if (!gbFetched && gbTargetQuery.isNotBlank()) {
+          async<List<SearchEditionCandidate>> {
+            runCatching {
+              withTimeoutOrNull(WORK_EXPANSION_TIMEOUT_MS) {
+                val targetIntent = QueryIntentParser.parse(gbTargetQuery)
+                val req1 =
+                  AdapterSearchRequest(
+                    rawQuery = gbTargetQuery,
+                    parsedIntent = targetIntent,
+                    page = 1,
+                    pageSize = 40,
+                    expandSecondary = true,
+                  )
+                val p1 = googleBooksAdapter.searchPaginated(req1)
+                val p2Candidates =
+                  if (p1.status.hasMore && p1.candidates.size >= 10) {
+                    googleBooksAdapter.searchPaginated(req1.copy(page = 2)).candidates
+                  } else {
+                    emptyList()
+                  }
+                p1.candidates + p2Candidates
+              }.orEmpty()
+            }.getOrDefault(emptyList<SearchEditionCandidate>())
+          }
+        } else {
+          null
+        }
+
+      olJob?.await()?.let { (olCands, offsetAndMore, maxTotal) ->
+        collectedExtras.addAll(olCands)
+        nextOlOffset = offsetAndMore.first
+        olHasMore = offsetAndMore.second
+        if (maxTotal != null) {
+          reportedTotal = listOfNotNull(reportedTotal, maxTotal).maxOrNull()
+        }
+      }
+      gbJob?.await()?.let { gbCands ->
+        collectedExtras.addAll(gbCands)
+        gbFetched = true
+      }
+    }
+
+    synchronized(expansionLock) {
+      expansionCursors[cursorKey] =
+        WorkExpansionCursor(
+          nextOlOffset = nextOlOffset,
+          olHasMore = olHasMore,
+          gbFetched = gbFetched,
+        )
+    }
+
+    val mergedGroup =
+      WorkGroupingEngine.mergeExpandedEditionsIntoGroup(
+        workGroup = workGroup,
+        extraCandidates = collectedExtras,
         preferredLanguage = preferredLanguage,
         parsedIntent = intentForExpansion,
+        reportedTotalEditions = reportedTotal,
       )
-    val combined =
-      mergedGroups.firstOrNull { !it.isDerivative() } ?: mergedGroups.firstOrNull() ?: return workGroup
     val allBooks = libraryRepository.observeAllBooks().first()
-    return annotateGroups(
-      listOf(
-        combined.copy(
-          groupId = workGroup.groupId,
-          canonicalTitle = workGroup.canonicalTitle,
-          externalWorkKey = workKey,
-        )
-      ),
-      allBooks,
-    ).first()
-  }
+    val annotated = annotateGroups(listOf(mergedGroup), allBooks).first()
 
-  private fun SearchWorkGroup.isDerivative(): Boolean =
-    effectiveMatchTier == com.example.core.model.MatchTier.DERIVATIVE_OR_ACADEMIC
+    synchronized(memoryCacheLock) {
+      val keys = memoryCache.keys.toList()
+      for (k in keys) {
+        val cached = memoryCache[k] ?: continue
+        var changed = false
+        val newPrimary =
+          cached.workGroups.map { g ->
+            if (g.groupId == annotated.groupId) {
+              changed = true
+              annotated
+            } else g
+          }
+        val newSecondary =
+          cached.secondaryWorkGroups.map { g ->
+            if (g.groupId == annotated.groupId) {
+              changed = true
+              annotated
+            } else g
+          }
+        val newDeriv =
+          cached.derivativeWorkGroups.map { g ->
+            if (g.groupId == annotated.groupId) {
+              changed = true
+              annotated
+            } else g
+          }
+        if (changed) {
+          memoryCache[k] =
+            cached.copy(
+              workGroups = newPrimary,
+              secondaryWorkGroups = newSecondary,
+              derivativeWorkGroups = newDeriv,
+            )
+        }
+      }
+    }
+
+    return ExpandedWorkResult(group = annotated, hasMoreToLoad = olHasMore)
+  }
 
   suspend fun fetchCandidatesForBookUpdate(
     title: String,
@@ -737,9 +904,9 @@ class HybridSearchOrchestrator(
     val langPart = BibliographicMath.normalizeLanguageCode(preferredLanguage).orEmpty()
     val isbn = intent.parsedIsbn
     return if (isbn != null) {
-      "v4:isbn:${isbn.isbn13 ?: isbn.isbn10 ?: isbn.cleaned}:lang=$langPart"
+      "v5:isbn:${isbn.isbn13 ?: isbn.cleaned}:lang=$langPart"
     } else {
-      "v4:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
+      "v5:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
     }
   }
 
@@ -853,6 +1020,7 @@ class HybridSearchOrchestrator(
     const val GOOGLE_BOOKS_TIMEOUT_MS = 2_800L
     const val APPLE_BOOKS_TIMEOUT_MS = 2_200L
     const val WIKIDATA_BRIDGE_DEADLINE_MS = 900L
+    const val WORK_EXPANSION_TIMEOUT_MS = 4_500L
     const val QUERY_CACHE_TTL_MS = 3L * 24L * 60L * 60L * 1000L
     const val ISBN_CACHE_TTL_MS = 15L * 24L * 60L * 60L * 1000L
     const val CACHE_MAX_ENTRIES = 120

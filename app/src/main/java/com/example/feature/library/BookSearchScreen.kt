@@ -381,6 +381,7 @@ fun BookSearchScreen(
               onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
               onLoadMoreEditions = { onLoadMoreEditions(group) },
               onSelectEdition = onSelectEdition,
+              isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
             )
           }
         }
@@ -451,6 +452,7 @@ fun BookSearchScreen(
                 onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
                 onLoadMoreEditions = { onLoadMoreEditions(group) },
                 onSelectEdition = onSelectEdition,
+                isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
               )
             }
           }
@@ -538,6 +540,7 @@ fun BookSearchScreen(
                 onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
                 onLoadMoreEditions = { onLoadMoreEditions(group) },
                 onSelectEdition = onSelectEdition,
+                isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
               )
             }
           }

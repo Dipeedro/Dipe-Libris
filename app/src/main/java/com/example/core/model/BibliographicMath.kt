@@ -375,6 +375,14 @@ object BibliographicMath {
       "jangada",
       "morro branco",
       "excelsior",
+      "circulo do livro",
+      "rocco digital",
+      "rocco jovens leitores",
+      "salamandra",
+      "lafonte",
+      "pandorga",
+      "camelot",
+      "ftd educacao",
     )
 
   private val portugalPublisherTokens =
@@ -499,6 +507,8 @@ object BibliographicMath {
         isPtIsbn && isPtPub -> Triple("pt-pt", LanguageConfidence.INFERRED_WITH_CONFLICT, false)
         isBrIsbn || isBrPub -> Triple("pt-br", LanguageConfidence.UNCERTAIN, false)
         isPtIsbn || isPtPub -> Triple("pt-pt", LanguageConfidence.UNCERTAIN, false)
+        !hasNonLatinTitle && !hasPtPtOrthography && looksPortugueseEditionTitle(editionTitle) ->
+          Triple("pt", LanguageConfidence.UNCERTAIN, false)
         else -> Triple(null, LanguageConfidence.UNCERTAIN, false)
       }
 
@@ -566,5 +576,52 @@ object BibliographicMath {
       .replace(Regex("\\n{3,}"), "\n\n")
       .trim()
       .takeIf { it.isNotEmpty() }
+  }
+
+  private val ptUniqueDiacriticsRegex = Regex("[ãõçáéíóúâêôà]", RegexOption.IGNORE_CASE)
+  private val ptFunctionOrBookWordsRegex =
+    Regex(
+      "\\b(e o|e a|dos|das|uma|para|com|sem|sobre|edicao|livro|prisioneiro|pedra|camara|calice|fenix|enigma|reliquias|memorias|senhor|aneis|principe|vorazes|sociedade|retorno|duas)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+  private val nonPtLatinExclusionRegex =
+    Regex(
+      "\\b(el|los|las|del|y|por|una|prisionero|piedra|camara|caliz|reliquias de la|le|les|du|des|et|prisonnier|chambre|coupe|der|die|das|und|gefangene|stein|kammer|the|and|of|with|prisoner|philosopher|sorcerer|chamber|goblet|phoenix|deathly|hallows|il|lo|gli|della|prigioniero|pietra)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+
+  fun looksPortugueseEditionTitle(rawTitle: String?): Boolean {
+    val clean = sanitizeDisplayText(rawTitle) ?: return false
+    if (nonLatinScriptRegex.containsMatchIn(clean)) return false
+    val norm = normalizeText(clean)
+    if (norm.isBlank()) return false
+    if (nonPtLatinExclusionRegex.containsMatchIn(norm)) return false
+    val hasPtDiacritics = ptUniqueDiacriticsRegex.containsMatchIn(clean) && !Regex("[ñ¿¡üößèìù]").containsMatchIn(clean.lowercase(Locale.ROOT))
+    val hasPtWords = ptFunctionOrBookWordsRegex.containsMatchIn(norm)
+    return hasPtDiacritics || hasPtWords
+  }
+
+  private val audiobookSignalRegex =
+    Regex(
+      "\\b(audiobook|audio\\s*book|audiolivro|audio\\s+cd|audio\\s+cassette|compact\\s+disc|mp3\\s*cd|unabridged\\s+audio|audible\\s+audio|spoken\\s+word|cd\\s+de\\s+audio|livro\\s+falado|audiotape)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+
+  fun isAudiobookSignal(raw: String?): Boolean {
+    if (raw.isNullOrBlank()) return false
+    return audiobookSignalRegex.containsMatchIn(normalizeText(raw))
+  }
+
+  fun isAudiobookCandidate(
+    workTitle: String?,
+    editionTitle: String?,
+    subtitle: String?,
+    editionLabel: String?,
+    categories: List<String> = emptyList(),
+  ): Boolean {
+    val combined = listOfNotNull(workTitle, editionTitle, subtitle, editionLabel)
+      .plus(categories)
+      .joinToString(" ")
+    return isAudiobookSignal(combined)
   }
 }

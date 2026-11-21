@@ -118,6 +118,7 @@ internal fun SearchWorkGroupCard(
   onToggleSecondaryEditions: () -> Unit,
   onLoadMoreEditions: () -> Unit,
   onSelectEdition: (SearchEditionCandidate) -> Unit,
+  isExpansionExhausted: Boolean = false,
 ) {
   val editionCount = group.editions.size
   val visibleEditions =
@@ -392,11 +393,13 @@ internal fun SearchWorkGroupCard(
             }
           }
 
-          if (group.externalWorkKey != null) {
+          if ((group.externalWorkKey != null || group.displayAuthors.isNotBlank()) && !isExpansionExhausted) {
             TextButton(
               onClick = onLoadMoreEditions,
               enabled = !isLoadingMore,
-              modifier = Modifier.minimumInteractiveComponentSize(),
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .testTag("search_edition_load_more_$groupIndex"),
             ) {
               if (isLoadingMore) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)

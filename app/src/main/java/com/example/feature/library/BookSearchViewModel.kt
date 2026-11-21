@@ -47,6 +47,7 @@ data class BookSearchUiState(
   val isSecondaryLanguagesExpanded: Boolean = false,
   val isDerivativeWorksExpanded: Boolean = false,
   val expandedSecondaryEditionGroupIds: Set<String> = emptySet(),
+  val exhaustedEditionGroupIds: Set<String> = emptySet(),
 )
 
 class BookSearchViewModel(
@@ -69,6 +70,7 @@ class BookSearchViewModel(
   private val isSecondaryLanguagesExpanded = MutableStateFlow(false)
   private val isDerivativeWorksExpanded = MutableStateFlow(false)
   private val expandedSecondaryEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
+  private val exhaustedEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
 
   private val searchGenerationId = AtomicLong(0L)
   private var localSearchJob: Job? = null
@@ -76,15 +78,20 @@ class BookSearchViewModel(
   private var paginationJob: Job? = null
   private var userToggledGroupInCurrentSearch: Boolean = false
 
+  private val editionTogglePair =
+    combine(expandedSecondaryEditionGroupIds, exhaustedEditionGroupIds) { secEditions, exhausted ->
+      secEditions to exhausted
+    }
+
   private val extraState =
     combine(
       localLiveMatches,
       isLoadingMoreResults,
       isSecondaryLanguagesExpanded,
       isDerivativeWorksExpanded,
-      expandedSecondaryEditionGroupIds,
-    ) { localMatches, loadingMore, secondaryExpanded, derivativeExpanded, secEditions ->
-      ExtraSearchState(localMatches, loadingMore, secondaryExpanded, derivativeExpanded, secEditions)
+      editionTogglePair,
+    ) { localMatches, loadingMore, secondaryExpanded, derivativeExpanded, (secEditions, exhausted) ->
+      ExtraSearchState(localMatches, loadingMore, secondaryExpanded, derivativeExpanded, secEditions, exhausted)
     }
 
   private val detailState =
@@ -120,6 +127,7 @@ class BookSearchViewModel(
           isSecondaryLanguagesExpanded = extra.secondaryExpanded,
           isDerivativeWorksExpanded = extra.derivativeExpanded,
           expandedSecondaryEditionGroupIds = extra.expandedSecondaryEditionGroupIds,
+          exhaustedEditionGroupIds = extra.exhaustedEditionGroupIds,
         )
       }
       .stateIn(
@@ -141,6 +149,7 @@ class BookSearchViewModel(
     val secondaryExpanded: Boolean,
     val derivativeExpanded: Boolean,
     val expandedSecondaryEditionGroupIds: Set<String>,
+    val exhaustedEditionGroupIds: Set<String>,
   )
 
   init {
@@ -189,6 +198,8 @@ class BookSearchViewModel(
     isSecondaryLanguagesExpanded.value = false
     isDerivativeWorksExpanded.value = false
     expandedSecondaryEditionGroupIds.value = emptySet()
+    exhaustedEditionGroupIds.value = emptySet()
+    loadingMoreEditions.value = emptySet()
 
     searchJob =
       viewModelScope.launch {
@@ -276,13 +287,22 @@ class BookSearchViewModel(
   }
 
   fun loadMoreEditionsForWork(group: SearchWorkGroup) {
-    if (group.externalWorkKey == null || group.groupId in loadingMoreEditions.value) return
+    if ((group.externalWorkKey == null && group.canonicalTitle.isBlank()) ||
+      group.groupId in loadingMoreEditions.value ||
+      group.groupId in exhaustedEditionGroupIds.value
+    ) {
+      return
+    }
     viewModelScope.launch {
       loadingMoreEditions.value = loadingMoreEditions.value + group.groupId
       try {
         val preferredLang = preferencesRepository.preferences.first().language.tag
         val currentQuery = response.value?.query
-        val updatedGroup = orchestrator.expandWorkEditions(group, preferredLang, currentQuery)
+        val expandedResult = orchestrator.expandWorkEditionsDetailed(group, preferredLang, currentQuery)
+        val updatedGroup = expandedResult.group
+        if (!expandedResult.hasMoreToLoad) {
+          exhaustedEditionGroupIds.value = exhaustedEditionGroupIds.value + group.groupId
+        }
         val currentResp = response.value ?: return@launch
         val updatedPrimary =
           currentResp.workGroups.map { existing ->

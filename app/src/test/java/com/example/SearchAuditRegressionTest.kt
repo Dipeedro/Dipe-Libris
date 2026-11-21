@@ -714,4 +714,279 @@ class SearchAuditRegressionTest {
     composeTestRule.onNodeWithTag("search_edition_select_0_14").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_show_more_0").assertDoesNotExist()
   }
+
+  @Test
+  fun auditG_t13UntaggedPortugueseEditionsInferredOffsetPaginationAndExpansionMergeWork() = runBlocking {
+    // 1. Untagged Portuguese edition title is inferred as PT_UNCERTAIN (not UNKNOWN)
+    val inferredPt =
+      com.example.core.model.BibliographicMath.assessLanguage(
+        explicitLanguageRaw = null,
+        isbn13Or10 = null,
+        publisher = null,
+        editionTitle = "Harry Potter e o Prisioneiro de Azkaban",
+      )
+    assertEquals("pt", inferredPt.normalizedCode)
+    assertEquals(LanguageTier.PT_UNCERTAIN, inferredPt.tier)
+
+    val nonPtTitle =
+      com.example.core.model.BibliographicMath.assessLanguage(
+        explicitLanguageRaw = null,
+        isbn13Or10 = null,
+        publisher = null,
+        editionTitle = "Harry Potter y el prisionero de Azkaban",
+      )
+    assertEquals(LanguageTier.UNKNOWN, nonPtTitle.tier)
+
+    // 2. OpenLibraryAdapter offset pagination + audiobook exclusion + GoogleBooks merge in orchestrator
+    val mockClient =
+      OkHttpClient.Builder()
+        .addInterceptor { chain ->
+          val url = chain.request().url.toString()
+          val jsonBody =
+            when {
+              url.contains("/works/OL82586W.json") ->
+                """{"key":"/works/OL82586W","title":"Harry Potter and the Prisoner of Azkaban","authors":[{"author":{"key":"/authors/OL23919A"}}]}"""
+              url.contains("/authors/OL23919A.json") ->
+                """{"key":"/authors/OL23919A","name":"J. K. Rowling"}"""
+              url.contains("/works/OL82586W/editions.json") && url.contains("offset=100") ->
+                """
+                {
+                  "size": 125,
+                  "entries": [
+                    {
+                      "key": "/books/OL_PT_COMEM",
+                      "title": "Harry Potter e o Prisioneiro de Azkaban: Edição comemorativa de 20 anos",
+                      "publishers": ["Rocco"],
+                      "isbn_13": ["9788532531780"],
+                      "publish_date": "2020"
+                    }
+                  ]
+                }
+                """.trimIndent()
+              url.contains("/works/OL82586W/editions.json") ->
+                """
+                {
+                  "size": 125,
+                  "entries": [
+                    {
+                      "key": "/books/OL_PT_UNTAGGED",
+                      "title": "Harry Potter e o Prisioneiro de Azkaban",
+                      "publishers": ["Rocco"],
+                      "isbn_13": ["9788532512062"],
+                      "publish_date": "2000"
+                    },
+                    {
+                      "key": "/books/OL_AUDIO_CD",
+                      "title": "Harry Potter and the Prisoner of Azkaban",
+                      "physical_format": "Audio CD",
+                      "languages": [{"key": "/languages/eng"}],
+                      "isbn_13": ["9780807282328"]
+                    }
+                  ]
+                }
+                """.trimIndent()
+              else -> "{}"
+            }
+          Response.Builder()
+            .request(chain.request())
+            .protocol(Protocol.HTTP_1_1)
+            .code(if (jsonBody == "{}") 404 else 200)
+            .message("OK")
+            .body(jsonBody.toResponseBody("application/json".toMediaType()))
+            .build()
+        }
+        .build()
+
+    val olAdapter = OpenLibraryAdapter(client = mockClient, baseUrl = "https://openlibrary.test")
+    val gbExpandedAdapter =
+      AuditFakeAdapter(MetadataSource.GOOGLE_BOOKS) { req ->
+        SourceAdapterResult(
+          SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 2),
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "gb_hp3_livro3",
+              workTitle = "Harry Potter e o Prisioneiro de Azkaban (Livro 3)",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              publisher = "Pottermore Publishing",
+              isbn13 = "9781781103098",
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
+            ),
+            SearchEditionCandidate(
+              candidateId = "gb_hp3_audio",
+              workTitle = "Harry Potter and the Prisoner of Azkaban (Audiobook)",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              language = "en",
+              format = com.example.core.model.EditionFormat.OTHER,
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
+            ),
+          ),
+        )
+      }
+    val emptyOther = { src: MetadataSource ->
+      AuditFakeAdapter(src) { SourceAdapterResult(SourceQueryStatus(src, ProviderOutcomeState.EMPTY)) }
+    }
+    val orchestrator =
+      HybridSearchOrchestrator(
+        openLibraryAdapter = olAdapter,
+        googleBooksAdapter = gbExpandedAdapter,
+        crossrefAdapter = emptyOther(MetadataSource.CROSSREF),
+        wikidataAdapter = emptyOther(MetadataSource.WIKIDATA),
+        brasilApiAdapter = emptyOther(MetadataSource.BRASIL_API),
+        connectivityChecker = object : ConnectivityChecker { override fun isOnline(): Boolean = true },
+        searchCacheDao = db.searchCacheDao(),
+        editionDao = db.editionDao(),
+        bookDao = db.bookDao(),
+        libraryRepository = libraryRepo,
+      )
+
+    val initialGroup =
+      SearchWorkGroup(
+        groupId = "wg_hp3_test",
+        canonicalTitle = "Harry Potter e o Prisioneiro de Azkaban",
+        originalTitle = "Harry Potter and the Prisoner of Azkaban",
+        primaryAuthors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+        externalWorkKey = "/works/OL82586W",
+        editions =
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "ol_seed",
+              workTitle = "Harry Potter and the Prisoner of Azkaban",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              language = "en",
+              canonicalLanguageTag = "en",
+              languageTierRank = LanguageTier.EN.rank,
+              isbn13 = "9780747546290",
+              externalWorkKey = "/works/OL82586W",
+              workEditionCount = 125,
+              sources = listOf(MetadataSource.OPEN_LIBRARY),
+            )
+          ),
+        totalAvailableEditionsHint = 125,
+      )
+
+    val expanded =
+      orchestrator.expandWorkEditionsDetailed(
+        workGroup = initialGroup,
+        preferredLanguage = "pt-BR",
+        originalQuery = "Harry Potter e o Prisioneiro de Azkaban",
+      )
+
+    assertEquals("wg_hp3_test", expanded.group.groupId)
+    val isbns = expanded.group.editions.mapNotNull { it.isbn13 }.toSet()
+    assertTrue("Expected untagged OL PT edition 9788532512062", "9788532512062" in isbns)
+    assertTrue("Expected offset=100 commemorative OL edition 9788532531780", "9788532531780" in isbns)
+    assertTrue("Expected Google Books '(Livro 3)' edition 9781781103098", "9781781103098" in isbns)
+    assertFalse("Audio CD must be filtered out", "9780807282328" in isbns)
+    assertFalse("Google Books audiobook must be filtered out", expanded.group.editions.any { it.candidateId == "gb_hp3_audio" })
+  }
+
+  @Test
+  fun auditH_wdBridgeExcludedFromDisplaySingleVolumeBridgeSafeAndUiHidesExhaustedButton() {
+    val hpIntent = QueryIntentParser.parse("Harry Potter e o Prisioneiro de Azkaban")
+    val outcome =
+      WorkGroupingEngine.groupSeparated(
+        rawCandidates =
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "wd_bridge_hp3",
+              workTitle = "Harry Potter e o Prisioneiro de Azkaban",
+              originalTitle = "Harry Potter and the Prisoner of Azkaban",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              externalWorkKey = "/works/OL82586W",
+              externalIds = mapOf("wikidata_work" to "Q47598"),
+              sources = listOf(MetadataSource.WIKIDATA),
+            ),
+            SearchEditionCandidate(
+              candidateId = "wd_bridge_orphan",
+              workTitle = "Obra Sintética Isolada",
+              contributors = listOf(CandidateContributor("Outro Autor", ContributorRole.AUTHOR)),
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.WIKIDATA),
+            ),
+            SearchEditionCandidate(
+              candidateId = "hp3_rocco",
+              workTitle = "Harry Potter e o Prisioneiro de Azkaban",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              publisher = "Rocco",
+              isbn13 = "9788532512062",
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              externalWorkKey = "/works/OL82586W",
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
+            ),
+            SearchEditionCandidate(
+              candidateId = "hp3_pottermore",
+              workTitle = "Harry Potter e o Prisioneiro de Azkaban (Livro 3)",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              publisher = "Pottermore",
+              isbn13 = "9781781103098",
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.APPLE_BOOKS),
+            ),
+          ),
+        preferredLanguage = "pt-BR",
+        parsedIntent = hpIntent,
+      )
+
+    assertEquals(1, outcome.primaryGroups.size)
+    val hpGroup = outcome.primaryGroups.first()
+    assertEquals(2, hpGroup.editions.size)
+    assertFalse(hpGroup.editions.any { it.candidateId.startsWith("wd_bridge_") })
+
+    // Verify load more editions button hides when group is exhausted
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Harry Potter e o Prisioneiro de Azkaban",
+                hasSearched = true,
+                expandedGroupIds = setOf(hpGroup.groupId),
+                exhaustedEditionGroupIds = setOf(hpGroup.groupId),
+                response =
+                  HybridSearchResponse(
+                    query = "Harry Potter e o Prisioneiro de Azkaban",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(hpGroup),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 2)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
+    composeTestRule.onNodeWithTag("search_edition_load_more_0").assertDoesNotExist()
+  }
 }

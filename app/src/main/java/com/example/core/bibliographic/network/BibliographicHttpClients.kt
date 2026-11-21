@@ -130,6 +130,17 @@ interface BibliographicSourceAdapter {
       status = SourceQueryStatus(source = source, state = ProviderOutcomeState.EMPTY),
       candidates = emptyList(),
     )
+
+  suspend fun fetchEditionsForWorkPage(
+    externalWorkKey: String,
+    offset: Int = 0,
+    limit: Int = 100,
+  ): SourceAdapterResult =
+    if (offset == 0) fetchEditionsForWork(externalWorkKey)
+    else SourceAdapterResult(
+      status = SourceQueryStatus(source = source, state = ProviderOutcomeState.EMPTY),
+      candidates = emptyList(),
+    )
 }
 
 object BibliographicHttpClients {

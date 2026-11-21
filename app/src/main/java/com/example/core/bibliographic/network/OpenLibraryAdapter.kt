@@ -51,12 +51,14 @@ private data class OlSearchEditionsWrapper(
 private data class OlSearchEditionDoc(
   val key: String? = null,
   val title: String? = null,
+  val subtitle: String? = null,
   val language: List<String> = emptyList(),
   val publisher: List<String> = emptyList(),
   val isbn: List<String> = emptyList(),
   @SerialName("cover_i") val coverId: Long? = null,
   @SerialName("publish_year") val publishYear: List<Int> = emptyList(),
   @SerialName("number_of_pages_median") val pagesMedian: Int? = null,
+  @SerialName("physical_format") val physicalFormat: String? = null,
 )
 
 @Serializable
@@ -148,6 +150,13 @@ class OpenLibraryAdapter(
 
   override val source: MetadataSource = MetadataSource.OPEN_LIBRARY
   private val json = BibliographicHttpClients.json
+  private val workCacheLock = Any()
+  private val workMetadataCache =
+    object : LinkedHashMap<String, Pair<OlWorkRecord?, List<CandidateContributor>>>(24, 0.75f, true) {
+      override fun removeEldestEntry(
+        eldest: MutableMap.MutableEntry<String, Pair<OlWorkRecord?, List<CandidateContributor>>>?
+      ): Boolean = size > 24
+    }
 
   override suspend fun searchByIsbn(
     isbn13: String?,
@@ -199,19 +208,28 @@ class OpenLibraryAdapter(
                 fetchedWork to authors
               }
 
-            val candidate = buildCandidateFromEdition(edition, work, resolvedAuthors, explicitRequestedLang = null)
-            return@withContext SourceAdapterResult(
-              status =
-                SourceQueryStatus(
-                  source = source,
-                  state = ProviderOutcomeState.SUCCESS,
-                  count = 1,
-                  totalAvailable = 1,
-                  hasMore = false,
-                  durationMs = System.currentTimeMillis() - startMs,
-                ),
-              candidates = listOf(candidate),
-            )
+            val candidate =
+              buildCandidateFromEdition(
+                edition = edition,
+                work = work,
+                resolvedWorkAuthors = resolvedAuthors,
+                explicitRequestedLang = null,
+                allowAudiobookFormat = true,
+              )
+            if (candidate != null) {
+              return@withContext SourceAdapterResult(
+                status =
+                  SourceQueryStatus(
+                    source = source,
+                    state = ProviderOutcomeState.SUCCESS,
+                    count = 1,
+                    totalAvailable = 1,
+                    hasMore = false,
+                    durationMs = System.currentTimeMillis() - startMs,
+                  ),
+                candidates = listOf(candidate),
+              )
+            }
           }
 
           // Fallback to search.json?isbn=...
@@ -298,9 +316,13 @@ class OpenLibraryAdapter(
               .flatMap { it.candidates }
               .distinctBy { it.candidateId }
 
+          val distinctWorks = combinedInitial.mapNotNull { it.externalWorkKey }.distinct().size
+          val maxEditionCount = combinedInitial.maxOfOrNull { it.workEditionCount } ?: 0
           val shouldRunFallback =
             plan.fallbackQuery != null &&
-              (combinedInitial.isEmpty() || (intent.significantTokens.size >= 3 && combinedInitial.size < 2))
+              (combinedInitial.isEmpty() ||
+                (intent.significantTokens.size >= 3 && combinedInitial.size < 2) ||
+                (intent.significantTokens.size >= 3 && distinctWorks < 2 && maxEditionCount in 1..4))
 
           val allOutcomes =
             if (shouldRunFallback) {
@@ -322,10 +344,12 @@ class OpenLibraryAdapter(
               .flatMap { it.candidates }
               .distinctBy { it.candidateId }
 
-          if (plan.shouldEnrichMissingPtWorks && combined.isNotEmpty()) {
+          val searchElapsedMs = System.currentTimeMillis() - startMs
+          val enrichBudgetMs = (2_750L - searchElapsedMs).coerceAtMost(1_600L)
+          if (plan.shouldEnrichMissingPtWorks && combined.isNotEmpty() && enrichBudgetMs >= 450L) {
             val enrichedExtras =
-              withTimeoutOrNull(1_800L) {
-                enrichWorksMissingPortugueseEditions(combined, explicitLang)
+              withTimeoutOrNull(enrichBudgetMs) {
+                enrichWorksMissingPortugueseEditions(combined, explicitLang, (enrichBudgetMs - 100L).coerceAtLeast(350L))
               }.orEmpty()
             if (enrichedExtras.isNotEmpty()) {
               combined = (combined + enrichedExtras).distinctBy { it.candidateId }
@@ -378,6 +402,7 @@ class OpenLibraryAdapter(
   private suspend fun enrichWorksMissingPortugueseEditions(
     candidates: List<SearchEditionCandidate>,
     explicitRequestedLang: String?,
+    perWorkTimeoutMs: Long,
   ): List<SearchEditionCandidate> = supervisorScope {
     val byWork = candidates.filter { it.externalWorkKey?.startsWith("/works/") == true }.groupBy { it.externalWorkKey!! }
     val targetWorks =
@@ -386,8 +411,8 @@ class OpenLibraryAdapter(
           val rep = workCands.maxByOrNull { it.workEditionCount } ?: return@mapNotNull null
           val claimsPt = "pt" in rep.availableWorkLanguages
           val embeddedPtCount = workCands.count { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
-          if ((claimsPt && embeddedPtCount < 5 && rep.workEditionCount >= 8) ||
-            (workCands.size < 4 && rep.workEditionCount >= 12)
+          if ((claimsPt && embeddedPtCount < 8 && rep.workEditionCount >= 8) ||
+            (workCands.size < 5 && rep.workEditionCount >= 10)
           ) {
             Triple(workKey, rep, workCands.mapNotNull { it.externalIds["openlibrary_edition"] }.toSet())
           } else {
@@ -402,9 +427,9 @@ class OpenLibraryAdapter(
     targetWorks
       .map { (workKey, rep, existingEdKeys) ->
         async {
-          withTimeoutOrNull(1_400L) {
+          withTimeoutOrNull(perWorkTimeoutMs) {
             runCatching {
-                val resp = fetchJson("$baseUrl$workKey/editions.json?limit=60")
+                val resp = fetchJson("$baseUrl$workKey/editions.json?limit=80&offset=0")
                 val body = resp.body?.takeIf { resp.code == 200 } ?: return@runCatching emptyList()
                 val parsed = json.decodeFromString<OlWorkEditionsResponse>(body)
                 val syntheticWork =
@@ -413,26 +438,30 @@ class OpenLibraryAdapter(
                     title = rep.workTitle,
                     subtitle = rep.subtitle,
                   )
-                parsed.entries
-                  .asSequence()
-                  .filter { ed -> ed.key == null || ed.key !in existingEdKeys }
-                  .map { ed ->
-                    buildCandidateFromEdition(
-                      edition = ed,
-                      work = syntheticWork,
-                      resolvedWorkAuthors = rep.contributors,
-                      explicitRequestedLang = explicitRequestedLang,
-                    ).copy(
-                      workEditionCount = rep.workEditionCount,
-                      workReadingLogCount = rep.workReadingLogCount,
-                      workRatingsCount = rep.workRatingsCount,
-                      availableWorkLanguages = rep.availableWorkLanguages,
-                    )
-                  }
-                  .filter { it.languageTierRank <= LanguageTier.EN.rank }
-                  .sortedWith(editionRichnessComparator())
-                  .take(16)
-                  .toList()
+                val built =
+                  parsed.entries
+                    .asSequence()
+                    .filter { ed -> ed.key == null || ed.key !in existingEdKeys }
+                    .mapNotNull { ed ->
+                      buildCandidateFromEdition(
+                        edition = ed,
+                        work = syntheticWork,
+                        resolvedWorkAuthors = rep.contributors,
+                        explicitRequestedLang = explicitRequestedLang,
+                        allowAudiobookFormat = false,
+                      )?.copy(
+                        workEditionCount = rep.workEditionCount,
+                        workReadingLogCount = rep.workReadingLogCount,
+                        workRatingsCount = rep.workRatingsCount,
+                        availableWorkLanguages = rep.availableWorkLanguages,
+                      )
+                    }
+                    .sortedWith(editionRichnessComparator())
+                    .toList()
+                val ptTier = built.filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }.take(18)
+                val enTier = built.filter { it.languageTierRank == LanguageTier.EN.rank }.take(6)
+                val otherTier = built.filter { it.languageTierRank > LanguageTier.EN.rank }.take(4)
+                (ptTier + enTier + otherTier).ifEmpty { built.take(16) }
               }
               .getOrElse { err ->
                 if (err is CancellationException) throw err
@@ -446,22 +475,47 @@ class OpenLibraryAdapter(
   }
 
   override suspend fun fetchEditionsForWork(externalWorkKey: String): SourceAdapterResult =
+    fetchEditionsForWorkPage(externalWorkKey = externalWorkKey, offset = 0, limit = 100)
+
+  override suspend fun fetchEditionsForWorkPage(
+    externalWorkKey: String,
+    offset: Int,
+    limit: Int,
+  ): SourceAdapterResult =
     withContext(Dispatchers.IO) {
       val startMs = System.currentTimeMillis()
       if (!externalWorkKey.startsWith("/works/")) {
         return@withContext SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
       }
+      val safeOffset = offset.coerceAtLeast(0)
+      val safeLimit = limit.coerceIn(20, 100)
       runCatching {
-          val (work, editionsResp) =
+          val cachedMeta = synchronized(workCacheLock) { workMetadataCache[externalWorkKey] }
+          val (work, authorNames, editionsResp) =
             coroutineScope {
-              val wDef = async {
-                val resp = fetchJson("$baseUrl$externalWorkKey.json")
-                resp.body?.takeIf { resp.code == 200 }?.let {
-                  runCatching { json.decodeFromString<OlWorkRecord>(it) }.getOrNull()
+              val metaDef =
+                if (cachedMeta == null) {
+                  async {
+                    val wResp = fetchJson("$baseUrl$externalWorkKey.json")
+                    val fetchedWork =
+                      wResp.body?.takeIf { wResp.code == 200 }?.let {
+                        runCatching { json.decodeFromString<OlWorkRecord>(it) }.getOrNull()
+                      }
+                    val authors =
+                      fetchedWork?.authors?.mapNotNull { it.author?.key }?.take(3)?.map { aKey ->
+                        async { fetchAuthorContributor(aKey) }
+                      }?.awaitAll()?.filterNotNull().orEmpty()
+                    fetchedWork to authors
+                  }
+                } else {
+                  null
                 }
+              val eDef = async { fetchJson("$baseUrl$externalWorkKey/editions.json?limit=$safeLimit&offset=$safeOffset") }
+              val resolvedMeta = metaDef?.await() ?: cachedMeta!!
+              if (metaDef != null) {
+                synchronized(workCacheLock) { workMetadataCache[externalWorkKey] = resolvedMeta }
               }
-              val eDef = async { fetchJson("$baseUrl$externalWorkKey/editions.json?limit=80") }
-              wDef.await() to eDef.await()
+              Triple(resolvedMeta.first, resolvedMeta.second, eDef.await())
             }
 
           if (editionsResp.code == 429) {
@@ -472,22 +526,35 @@ class OpenLibraryAdapter(
           val body = editionsResp.body
           if (editionsResp.code != 200 || body == null) {
             return@withContext SourceAdapterResult(
-              SourceQueryStatus(source, ProviderOutcomeState.EMPTY, durationMs = System.currentTimeMillis() - startMs)
+              SourceQueryStatus(
+                source = source,
+                state = if (editionsResp.code >= 500) ProviderOutcomeState.ERROR else ProviderOutcomeState.EMPTY,
+                message = if (editionsResp.code != 200) "HTTP ${editionsResp.code}" else null,
+                durationMs = System.currentTimeMillis() - startMs,
+              )
             )
           }
           val parsed = json.decodeFromString<OlWorkEditionsResponse>(body)
-          val authorNames =
-            coroutineScope {
-              work?.authors?.mapNotNull { it.author?.key }?.take(3)?.map { aKey ->
-                async { fetchAuthorContributor(aKey) }
-              }?.awaitAll()?.filterNotNull().orEmpty()
-            }
-
           val candidates =
             parsed.entries
+              .asSequence()
               .filter { !it.title.isNullOrBlank() || work?.title != null }
-              .map { ed -> buildCandidateFromEdition(ed, work, authorNames, explicitRequestedLang = null) }
+              .mapNotNull { ed ->
+                buildCandidateFromEdition(
+                  edition = ed,
+                  work = work,
+                  resolvedWorkAuthors = authorNames,
+                  explicitRequestedLang = null,
+                  allowAudiobookFormat = false,
+                )
+              }
               .sortedWith(editionRichnessComparator())
+              .toList()
+
+          val totalSize = parsed.size
+          val hasMore =
+            parsed.entries.isNotEmpty() &&
+              (totalSize?.let { (safeOffset + parsed.entries.size) < it } ?: (parsed.entries.size >= safeLimit))
 
           SourceAdapterResult(
             status =
@@ -495,7 +562,8 @@ class OpenLibraryAdapter(
                 source = source,
                 state = if (candidates.isEmpty()) ProviderOutcomeState.EMPTY else ProviderOutcomeState.SUCCESS,
                 count = candidates.size,
-                totalAvailable = parsed.size ?: candidates.size,
+                totalAvailable = totalSize ?: (safeOffset + candidates.size),
+                hasMore = hasMore,
                 durationMs = System.currentTimeMillis() - startMs,
               ),
             candidates = candidates,
@@ -565,6 +633,7 @@ class OpenLibraryAdapter(
       // 1. Parse nested concrete editions returned by Open Library (each keeps its OWN explicit language!)
       val nestedCandidates =
         doc.editions?.docs.orEmpty().mapNotNull { ed ->
+          if (BibliographicMath.isAudiobookSignal(ed.physicalFormat)) return@mapNotNull null
           val edTitle = BibliographicMath.sanitizeDisplayText(ed.title) ?: workTitle
           val parsedIsbns = ed.isbn.mapNotNull { BibliographicMath.parseIsbn(it) }
           val isbn13 = parsedIsbns.firstNotNullOfOrNull { it.isbn13 }
@@ -614,7 +683,7 @@ class OpenLibraryAdapter(
           SearchEditionCandidate(
             candidateId = "ol_ed_${ed.key ?: doc.key ?: edTitle.hashCode()}_${isbn13 ?: ed.hashCode()}",
             workTitle = workTitle,
-            subtitle = BibliographicMath.sanitizeDisplayText(doc.subtitle),
+            subtitle = BibliographicMath.sanitizeDisplayText(ed.subtitle) ?: BibliographicMath.sanitizeDisplayText(doc.subtitle),
             originalTitle = origTitle,
             editionTitle = edTitle,
             contributors = contributors,
@@ -766,7 +835,11 @@ class OpenLibraryAdapter(
     work: OlWorkRecord?,
     resolvedWorkAuthors: List<CandidateContributor>,
     explicitRequestedLang: String?,
-  ): SearchEditionCandidate {
+    allowAudiobookFormat: Boolean = false,
+  ): SearchEditionCandidate? {
+    if (!allowAudiobookFormat && BibliographicMath.isAudiobookSignal(edition.physicalFormat)) {
+      return null
+    }
     val parsed13 = edition.isbn13.firstNotNullOfOrNull { BibliographicMath.parseIsbn(it) }
     val parsed10 = edition.isbn10.firstNotNullOfOrNull { BibliographicMath.parseIsbn(it) }
     val final13 = parsed13?.isbn13 ?: parsed10?.isbn13
@@ -938,6 +1011,6 @@ class OpenLibraryAdapter(
 
   private companion object {
     const val SEARCH_FIELDS =
-      "key,title,subtitle,author_name,author_key,first_publish_year,isbn,edition_key,edition_count,ratings_count,readinglog_count,language,subject,cover_i,number_of_pages_median,publisher,editions,editions.key,editions.title,editions.language,editions.publisher,editions.isbn,editions.cover_i,editions.publish_year,editions.number_of_pages_median"
+      "key,title,subtitle,author_name,author_key,first_publish_year,isbn,edition_key,edition_count,ratings_count,readinglog_count,language,subject,cover_i,number_of_pages_median,publisher,editions,editions.key,editions.title,editions.subtitle,editions.language,editions.publisher,editions.isbn,editions.cover_i,editions.publish_year,editions.number_of_pages_median,editions.physical_format"
   }
 }

@@ -154,13 +154,20 @@ object RelevanceAndDerivativeFilter {
       "social science",
     )
 
+  private val audioIntentRegex =
+    Regex("\\b(audio|audiobook|audiolivro|audivel|cd)\\b", RegexOption.IGNORE_CASE)
+
   private val editionOnlySubtitleRegex =
     Regex(
-      "^(?:edicao(?:\\s+(?:especial|ilustrada|comemorativa|de\\s+luxo|definitiva|revista|ampliada|pocket|economica|bilingue|comentada|critica|anotada|bolso|capa\\s+dura|integrada|unica))?|" +
+      "^(?:(?:nova\\s+)?edicao(?:\\s+(?:especial|ilustrada|comemorativa|de\\s+luxo|de\\s+colecionador|definitiva|revista|revisada|ampliada|pocket|economica|bilingue|comentada|critica|anotada|bolso|capa\\s+dura|capa\\s+comum|brochura|integrada|unica|minalima|premium|limitada))*(?:\\s+(?:de\\s+)?\\d+\\s+anos)?|" +
+        "(?:edicao\\s+)?(?:grifinoria|sonserina|corvinal|lufa\\s+lufa|gryffindor|slytherin|ravenclaw|hufflepuff)(?:\\s+edition)?|" +
+        "minalima(?:\\s+edition)?|" +
+        "capa\\s+(?:dura|comum)|brochura|nova\\s+(?:capa|edicao)|" +
+        "\\d+(?:th|st|nd|rd)?\\s+anniversary(?:\\s+edition)?|" +
         "especial|ilustrada|comemorativa|critica|anotada|capa\\s+dura|texto\\s+integral|" +
         "com\\s+(?:ilustracoes|aquarelas)(?:\\s+do\\s+autor)?|" +
-        "(?:special|illustrated|deluxe|anniversary|revised|collectors?|standard|complete|unabridged)\\s+edition|" +
-        "illustrated|unabridged|volume\\s+unico|livro\\s+unico|livro\\s*\\d+|vol\\.?\\s*\\d+|part\\s*\\d+|parte\\s*\\d+)$",
+        "(?:special|illustrated|deluxe|anniversary|revised|collector'?s?|standard|complete|unabridged|minalima|house)\\s+(?:edition|hardcover|paperback)|" +
+        "illustrated|unabridged|volume\\s+unico|livro\\s+unico|(?:livro|vol\\.?|book|part(?:e)?|ano)\\s*(?:[0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x))$",
       RegexOption.IGNORE_CASE,
     )
 
@@ -450,6 +457,17 @@ object RelevanceAndDerivativeFilter {
         return true
       }
     }
+    if (!audioIntentRegex.containsMatchIn(intent.normalizedQuery) &&
+      BibliographicMath.isAudiobookCandidate(
+        workTitle = candidate.workTitle,
+        editionTitle = candidate.editionTitle,
+        subtitle = candidate.subtitle,
+        editionLabel = candidate.editionLabel,
+        categories = candidate.categories,
+      )
+    ) {
+      return true
+    }
     return false
   }
 
@@ -513,6 +531,17 @@ object RelevanceAndDerivativeFilter {
       if (hasHardSpamPhrase || isSummaryPublisher || startsWithResumoOrAnalise) {
         return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "derivative_summary_or_guide")
       }
+    }
+    if (!audioIntentRegex.containsMatchIn(intent.normalizedQuery) &&
+      BibliographicMath.isAudiobookCandidate(
+        workTitle = titleRaw,
+        editionTitle = editionTitleRaw,
+        subtitle = subtitleRaw,
+        editionLabel = candidate.editionLabel,
+        categories = candidate.categories,
+      )
+    ) {
+      return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "audiobook_excluded")
     }
 
     // 2. Preparar campos normalizados (workTitle, editionTitle, originalTitle, series, authors)

@@ -266,7 +266,8 @@ object WorkGroupingEngine {
         matchedBucket =
           buckets.firstOrNull { bIdx ->
             checked.add(bIdx)
-            workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
+              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
           } ?: -1
       }
 
@@ -276,7 +277,8 @@ object WorkGroupingEngine {
         matchedBucket =
           buckets.firstOrNull { bIdx ->
             if (!checked.add(bIdx)) false
-            else workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            else !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
+              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
           } ?: -1
       }
 
@@ -292,7 +294,8 @@ object WorkGroupingEngine {
         matchedBucket =
           candidateIndices.firstOrNull { bIdx ->
             if (!checked.add(bIdx)) false
-            else workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            else !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
+              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
           } ?: -1
       }
 
@@ -318,13 +321,17 @@ object WorkGroupingEngine {
     }
 
     val rankedKeys =
-      workBuckets.map { bucketItems ->
+      workBuckets.mapNotNull { bucketItems ->
+        val visibleItems = bucketItems.filterNot { it.candidate.candidateId.startsWith("wd_bridge_") }
+        if (visibleItems.isEmpty()) return@mapNotNull null
+
         val sortedItems =
-          bucketItems.sortedWith(
+          visibleItems.sortedWith(
             compareBy<EvaluatedCandidate> { it.candidate.languageTierRank }
               .thenByDescending { editionSelectionScore(it.candidate, it.evaluation) }
           )
         val sortedEditions = sortedItems.map { it.candidate }
+        val allBucketEditions = bucketItems.map { it.candidate }
         val primary = sortedEditions.first()
         val bestTier =
           sortedItems.minByOrNull { it.evaluation.matchTier.rank }?.evaluation?.matchTier
@@ -342,8 +349,10 @@ object WorkGroupingEngine {
           sortedEditions.firstNotNullOfOrNull { ed ->
             ed.subtitle?.takeIf { s -> s.isNotBlank() && BibliographicMath.normalizeBaseTitle(s) != canonicalNorm }
           }
-        val originalTitle = pickOriginalTitle(sortedEditions, canonicalTitle)
-        val externalWorkKey = sortedEditions.firstNotNullOfOrNull { it.externalWorkKey }
+        val originalTitle = pickOriginalTitle(allBucketEditions, canonicalTitle)
+        val externalWorkKey =
+          sortedEditions.firstNotNullOfOrNull { it.externalWorkKey }
+            ?: allBucketEditions.firstNotNullOfOrNull { it.externalWorkKey }
         val primaryAuthors =
           sortedEditions
             .flatMap { it.contributors }
@@ -358,7 +367,7 @@ object WorkGroupingEngine {
         val allCategories = sortedEditions.flatMap { it.categories }.distinct()
         val suggestedGenreSlug = GenreSuggester.suggestSlug(allCategories, canonicalTitle)
         val allSources = sortedEditions.flatMap { it.sources }.distinct()
-        val workPopScore = computeWorkPopularityScore(sortedEditions, allSources)
+        val workPopScore = computeWorkPopularityScore(allBucketEditions, allSources)
         val bestEval = sortedItems.maxByOrNull { it.evaluation.queryMatchScore }?.evaluation
         val queryRelevance =
           if (isPredominantlyAuthor) {
@@ -368,7 +377,7 @@ object WorkGroupingEngine {
           }
         val bestTierRank = sortedEditions.minOfOrNull { it.languageTierRank } ?: LanguageTier.UNKNOWN.rank
         val totalHints =
-          sortedEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > sortedEditions.size }
+          allBucketEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > sortedEditions.size }
         val repStruct = sortedItems.first().titleStructure
 
         val deterministicGroupId =
@@ -603,6 +612,242 @@ object WorkGroupingEngine {
     return merged.copy(reliabilityScore = computeEditionReliability(merged, preferredLanguage))
   }
 
+  private fun hasExplicitVolumeConflict(
+    bucket: List<EvaluatedCandidate>,
+    incoming: EvaluatedCandidate,
+  ): Boolean {
+    val inVol = incoming.titleStructure.volumeNumber ?: return false
+    return bucket.any { member ->
+      val mVol = member.titleStructure.volumeNumber
+      mVol != null && mVol != inVol
+    }
+  }
+
+  fun mergeExpandedEditionsIntoGroup(
+    workGroup: SearchWorkGroup,
+    extraCandidates: List<SearchEditionCandidate>,
+    preferredLanguage: String? = null,
+    parsedIntent: ParsedSearchIntent? = null,
+    reportedTotalEditions: Int? = null,
+  ): SearchWorkGroup {
+    if (extraCandidates.isEmpty()) {
+      val updatedHint =
+        listOfNotNull(workGroup.totalAvailableEditionsHint, reportedTotalEditions)
+          .maxOrNull()
+          ?.takeIf { it > workGroup.editions.size }
+      return if (updatedHint != workGroup.totalAvailableEditionsHint) {
+        workGroup.copy(totalAvailableEditionsHint = updatedHint)
+      } else {
+        workGroup
+      }
+    }
+
+    val explicitRequestedLang = parsedIntent?.explicitLanguageRequest
+    val audioRequested =
+      parsedIntent?.normalizedQuery?.let {
+        Regex("\\b(audio|audiobook|audiolivro|audivel|cd)\\b", RegexOption.IGNORE_CASE).containsMatchIn(it)
+      } == true
+    val allowGuides = parsedIntent?.allowGuidesOrAnalyses == true
+    val groupBundleKind = workGroup.effectiveBundleKind
+    val groupAuthorSurname = BibliographicMath.normalizeAuthorSurname(workGroup.displayAuthors)
+    val groupTitleForms =
+      listOfNotNull(
+          BibliographicMath.normalizeBaseTitle(workGroup.canonicalTitle).takeIf { it.isNotBlank() },
+          BibliographicMath.normalizeTitleCore(workGroup.canonicalTitle).takeIf { it.isNotBlank() },
+          workGroup.originalTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+          workGroup.originalTitle?.let { BibliographicMath.normalizeTitleCore(it) }?.takeIf { it.isNotBlank() },
+        )
+        .distinct()
+
+    val normalizedIncoming =
+      extraCandidates.mapNotNull { raw ->
+        if (raw.candidateId.startsWith("wd_bridge_")) return@mapNotNull null
+        val cleanTitle = BibliographicMath.sanitizeDisplayText(raw.workTitle) ?: return@mapNotNull null
+        if (!audioRequested &&
+          BibliographicMath.isAudiobookCandidate(
+            workTitle = cleanTitle,
+            editionTitle = raw.editionTitle,
+            subtitle = raw.subtitle,
+            editionLabel = raw.editionLabel,
+            categories = raw.categories,
+          )
+        ) {
+          return@mapNotNull null
+        }
+
+        val parsed13 = BibliographicMath.parseIsbn(raw.isbn13)
+        val parsed10 = BibliographicMath.parseIsbn(raw.isbn10)
+        val isbn13 = parsed13?.isbn13 ?: parsed10?.isbn13
+        val isbn10 = parsed10?.isbn10 ?: parsed13?.isbn10
+
+        val langAssessment =
+          if (raw.languageConfidenceName == null || explicitRequestedLang != null) {
+            BibliographicMath.assessLanguage(
+              explicitLanguageRaw = raw.canonicalLanguageTag ?: raw.language,
+              isbn13Or10 = isbn13 ?: isbn10,
+              publisher = raw.publisher,
+              editionTitle = raw.editionTitle ?: cleanTitle,
+              explicitRequestedLanguage = explicitRequestedLang,
+            )
+          } else {
+            null
+          }
+
+        val normLang = langAssessment?.normalizedCode ?: BibliographicMath.normalizeLanguageCode(raw.language)
+        val canonicalLang = langAssessment?.canonicalTag ?: raw.canonicalLanguageTag ?: normLang
+        val tierRank = langAssessment?.tier?.rank ?: raw.languageTierRank
+        val confName = langAssessment?.confidence?.name ?: raw.languageConfidenceName ?: LanguageConfidence.UNCERTAIN.name
+        val hasConflict = langAssessment?.hasConflict ?: raw.hasLanguageConflict
+
+        val cleaned =
+          raw.copy(
+            workTitle = cleanTitle,
+            subtitle = BibliographicMath.sanitizeDisplayText(raw.subtitle),
+            originalTitle = BibliographicMath.sanitizeDisplayText(raw.originalTitle),
+            editionTitle = BibliographicMath.sanitizeDisplayText(raw.editionTitle),
+            publisher = BibliographicMath.sanitizeDisplayText(raw.publisher),
+            contributors = raw.contributors.ifEmpty { workGroup.primaryAuthors },
+            isbn13 = isbn13,
+            isbn10 = isbn10,
+            language = normLang,
+            canonicalLanguageTag = canonicalLang,
+            languageTierRank = tierRank,
+            languageConfidenceName = confName,
+            hasLanguageConflict = hasConflict,
+            coverCandidates = CoverRanker.rankAndDeduplicate(raw.coverCandidates),
+            synopsisCandidates = SynopsisSelector.rankAndDeduplicate(raw.synopsisCandidates, preferredLanguage, normLang),
+            externalWorkKey = raw.externalWorkKey ?: workGroup.externalWorkKey,
+          )
+
+        val struct = BibliographicMath.extractTitleStructure(cleaned.editionTitle ?: cleanTitle, cleaned.subtitle)
+        if (!allowGuides && RelevanceAndDerivativeFilter.hasExplanatoryCompanionOrAcademicCue(struct.subtitleNormalized) &&
+          !RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(struct.subtitleNormalized)
+        ) {
+          return@mapNotNull null
+        }
+        val candBundle = struct.bundleKind
+        if (candBundle != groupBundleKind &&
+          (candBundle == TitleBundleKind.COLLECTION_OR_BOX ||
+            candBundle == TitleBundleKind.OMNIBUS_SINGLE_VOLUME ||
+            groupBundleKind == TitleBundleKind.COLLECTION_OR_BOX ||
+            groupBundleKind == TitleBundleKind.OMNIBUS_SINGLE_VOLUME)
+        ) {
+          return@mapNotNull null
+        }
+
+        val candSurname = BibliographicMath.normalizeAuthorSurname(cleaned.primaryAuthorsText)
+        val authorOk =
+          groupAuthorSurname.isEmpty() ||
+            candSurname.isEmpty() ||
+            BibliographicMath.tokenSimilarity(groupAuthorSurname, candSurname) >= 0.70f
+        if (!authorOk) return@mapNotNull null
+
+        val sharesWorkKey =
+          workGroup.externalWorkKey != null &&
+            cleaned.externalWorkKey != null &&
+            cleaned.externalWorkKey == workGroup.externalWorkKey
+        val candForms =
+          listOfNotNull(
+              struct.baseNormalizedWithArticle.takeIf { it.isNotBlank() },
+              struct.coreNormalized.takeIf { it.isNotBlank() },
+              cleaned.editionTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+              cleaned.originalTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() },
+            )
+            .distinct()
+        val maxTitleSim =
+          groupTitleForms.maxOfOrNull { gf ->
+            candForms.maxOfOrNull { cf -> BibliographicMath.tokenSimilarity(gf, cf) } ?: 0f
+          } ?: 0f
+
+        val subOk =
+          struct.subtitleNormalized.isEmpty() ||
+            RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(struct.subtitleNormalized) ||
+            (workGroup.subtitle != null &&
+              BibliographicMath.tokenSimilarity(workGroup.subtitle, struct.subtitleNormalized) >= 0.70f)
+
+        val acceptsIntoWork =
+          sharesWorkKey || (maxTitleSim >= 0.85f && subOk)
+        if (!acceptsIntoWork) return@mapNotNull null
+
+        val eval =
+          CandidateMatchEvaluation(
+            accepted = true,
+            queryMatchScore = if (sharesWorkKey) 105 else 95,
+            titleMatchScore = (maxTitleSim * 100).toInt().coerceAtLeast(85),
+            authorMatchScore = if (authorOk) 95 else 0,
+            significantTokenCoverage = 1f,
+            matchTier = workGroup.effectiveMatchTier,
+            matchedField = MatchedTitleField.WORK_TITLE,
+            identityMatchBucket = if (sharesWorkKey) 95 else 85,
+            isAcademicOrDerivative = workGroup.effectiveMatchTier == MatchTier.DERIVATIVE_OR_ACADEMIC,
+            hasCanonicalAuthorConsensus = true,
+          )
+        val enriched =
+          cleaned.copy(
+            queryMatchScore = maxOf(cleaned.queryMatchScore, eval.queryMatchScore),
+            reliabilityScore = computeEditionReliability(cleaned, preferredLanguage),
+          )
+        EvaluatedCandidate(enriched, eval, struct)
+      }
+
+    if (normalizedIncoming.isEmpty()) {
+      val updatedHint =
+        listOfNotNull(workGroup.totalAvailableEditionsHint, reportedTotalEditions)
+          .maxOrNull()
+          ?.takeIf { it > workGroup.editions.size }
+      return if (updatedHint != workGroup.totalAvailableEditionsHint) {
+        workGroup.copy(totalAvailableEditionsHint = updatedHint)
+      } else {
+        workGroup
+      }
+    }
+
+    val existingEvaluated =
+      workGroup.editions.map { existing ->
+        val struct = BibliographicMath.extractTitleStructure(existing.editionTitle ?: existing.workTitle, existing.subtitle)
+        val eval =
+          CandidateMatchEvaluation(
+            accepted = true,
+            queryMatchScore = existing.queryMatchScore.coerceAtLeast(100),
+            titleMatchScore = 100,
+            authorMatchScore = 95,
+            significantTokenCoverage = 1f,
+            matchTier = workGroup.effectiveMatchTier,
+            matchedField = MatchedTitleField.WORK_TITLE,
+            identityMatchBucket = 95,
+            isAcademicOrDerivative = workGroup.effectiveMatchTier == MatchTier.DERIVATIVE_OR_ACADEMIC,
+            hasCanonicalAuthorConsensus = true,
+          )
+        EvaluatedCandidate(existing, eval, struct)
+      }
+
+    val deduplicated = deduplicateEditions(existingEvaluated + normalizedIncoming, preferredLanguage)
+    val sortedEditions =
+      deduplicated
+        .sortedWith(
+          compareBy<EvaluatedCandidate> { it.candidate.languageTierRank }
+            .thenByDescending { editionSelectionScore(it.candidate, it.evaluation) }
+        )
+        .map { it.candidate }
+
+    val mergedSources = (workGroup.sources + sortedEditions.flatMap { it.sources }).distinct()
+    val updatedHint =
+      listOfNotNull(
+          workGroup.totalAvailableEditionsHint,
+          reportedTotalEditions,
+          sortedEditions.maxOfOrNull { it.workEditionCount },
+        )
+        .maxOrNull()
+        ?.takeIf { it > sortedEditions.size }
+
+    return workGroup.copy(
+      editions = sortedEditions,
+      sources = mergedSources,
+      primaryLanguageTierRank = sortedEditions.minOfOrNull { it.languageTierRank } ?: workGroup.primaryLanguageTierRank,
+      totalAvailableEditionsHint = updatedHint,
+    )
+  }
+
   private fun belongsToSameWork(itemA: EvaluatedCandidate, itemB: EvaluatedCandidate): Boolean {
     val structA = itemA.titleStructure
     val structB = itemB.titleStructure
@@ -610,8 +855,32 @@ object WorkGroupingEngine {
     // Barreira #1: Derivado/Acadêmico jamais se funde à obra literária
     if (itemA.evaluation.isAcademicOrDerivative != itemB.evaluation.isAcademicOrDerivative) return false
 
-    // Barreira #2: Pacote estrutural (SINGLE vs SERIES_VOLUME vs OMNIBUS_SINGLE_VOLUME vs COLLECTION_OR_BOX)
-    if (structA.bundleKind != structB.bundleKind) return false
+    val a = itemA.candidate
+    val b = itemB.candidate
+    val surnameA = BibliographicMath.normalizeAuthorSurname(a.primaryAuthorsText)
+    val surnameB = BibliographicMath.normalizeAuthorSurname(b.primaryAuthorsText)
+    val sharesSameWorkKey =
+      (a.externalWorkKey != null && b.externalWorkKey != null && a.externalWorkKey == b.externalWorkKey) ||
+        (a.externalIds["wikidata_work"] != null && a.externalIds["wikidata_work"] == b.externalIds["wikidata_work"])
+
+    val subA = structA.subtitleNormalized
+    val subB = structB.subtitleNormalized
+    val edA = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subA)
+    val edB = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subB)
+
+    // Barreira #2: Pacote estrutural (COLLECTION_OR_BOX e OMNIBUS jamais se misturam;
+    // SINGLE <-> SERIES_VOLUME só se conecta quando compartilha título-núcleo exato sem subtítulo temático, ex: "(Livro 3)")
+    if (structA.bundleKind != structB.bundleKind) {
+      val singleVolumeBridgeAllowed =
+        ((structA.bundleKind == TitleBundleKind.SINGLE && structB.bundleKind == TitleBundleKind.SERIES_VOLUME) ||
+          (structA.bundleKind == TitleBundleKind.SERIES_VOLUME && structB.bundleKind == TitleBundleKind.SINGLE)) &&
+          structA.coreNormalized.isNotEmpty() &&
+          structA.coreNormalized == structB.coreNormalized &&
+          edA &&
+          edB &&
+          (sharesSameWorkKey || (surnameA.isNotEmpty() && surnameB.isNotEmpty()))
+      if (!singleVolumeBridgeAllowed) return false
+    }
 
     // Barreira #3: Volume numérico e Subtítulo temático distinto em séries
     if (structA.volumeNumber != null && structB.volumeNumber != null && structA.volumeNumber != structB.volumeNumber) {
@@ -623,12 +892,8 @@ object WorkGroupingEngine {
     if ((structB.volumeNumber ?: 1) > 1 && structA.volumeNumber == null && structA.coreNormalized != structB.coreNormalized) {
       return false
     }
-    val a = itemA.candidate
-    val b = itemB.candidate
 
     // Barreira #4: Autor principal (impede fusão de homônimos como "Coraline" de autores distintos)
-    val surnameA = BibliographicMath.normalizeAuthorSurname(a.primaryAuthorsText)
-    val surnameB = BibliographicMath.normalizeAuthorSurname(b.primaryAuthorsText)
     val authorCompat =
       if (surnameA.isNotEmpty() && surnameB.isNotEmpty()) {
         BibliographicMath.tokenSimilarity(surnameA, surnameB) >= 0.70f
@@ -637,14 +902,6 @@ object WorkGroupingEngine {
       }
     if (!authorCompat) return false
 
-    val sharesSameWorkKey =
-      (a.externalWorkKey != null && b.externalWorkKey != null && a.externalWorkKey == b.externalWorkKey) ||
-        (a.externalIds["wikidata_work"] != null && a.externalIds["wikidata_work"] == b.externalIds["wikidata_work"])
-
-    val subA = structA.subtitleNormalized
-    val subB = structB.subtitleNormalized
-    val edA = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subA)
-    val edB = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subB)
     if (subA.isNotEmpty() && subB.isNotEmpty()) {
       if (!edA && !edB) {
         val subSim = BibliographicMath.tokenSimilarity(subA, subB)

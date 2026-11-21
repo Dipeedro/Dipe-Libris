@@ -103,7 +103,7 @@ object QueryPlanner {
           val combined = "intitle:\"$t\" inauthor:\"$a\""
           listOf(
             GoogleBooksQuerySpec(combined, maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"),
-            GoogleBooksQuerySpec(combined, maxResults = 15, startIndex = startIndex, langRestrict = null),
+            GoogleBooksQuerySpec(combined, maxResults = pageSize.coerceAtMost(25), startIndex = startIndex, langRestrict = null),
           )
         }
 
@@ -115,20 +115,20 @@ object QueryPlanner {
               intent.allowGuidesOrAnalyses -> {
                 add(GoogleBooksQuerySpec("intitle:\"$subj\" $modHint".trim(), maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
                 if (page == 1) {
-                  add(GoogleBooksQuerySpec("\"$subj\" guide", maxResults = 20, startIndex = 0, langRestrict = null))
-                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 20, startIndex = 0, langRestrict = "pt"))
+                  add(GoogleBooksQuerySpec("\"$subj\" guide", maxResults = 25, startIndex = 0, langRestrict = null))
+                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 25, startIndex = 0, langRestrict = "pt"))
                 }
               }
               intent.allowColoringBooks -> {
                 add(GoogleBooksQuerySpec("\"$subj\" colorir", maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
                 if (page == 1) {
-                  add(GoogleBooksQuerySpec("\"$subj\" coloring", maxResults = 20, startIndex = 0, langRestrict = null))
+                  add(GoogleBooksQuerySpec("\"$subj\" coloring", maxResults = 25, startIndex = 0, langRestrict = null))
                 }
               }
               else -> {
                 add(GoogleBooksQuerySpec("intitle:\"$subj\" $modHint".trim(), maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
                 if (page == 1) {
-                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 20, startIndex = 0, langRestrict = null))
+                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 25, startIndex = 0, langRestrict = null))
                 }
               }
             }
@@ -152,11 +152,11 @@ object QueryPlanner {
             if (page == 1) {
               // Segunda chamada prioriza títulos sem restrição rígida de aspas (acento/ortografia/tradução)
               val secondaryQ = if (tokenTitleQ != exactTitleQ) tokenTitleQ else exactTitleQ
-              add(GoogleBooksQuerySpec(secondaryQ, maxResults = 20, startIndex = 0, langRestrict = null))
+              add(GoogleBooksQuerySpec(secondaryQ, maxResults = 25, startIndex = 0, langRestrict = null))
               // Sondagem de autor SEPARADA (nunca via OR!) apenas se formato lembrar nome de pessoa
               if (intent.canProbeStructuredAuthor && intent.authorQueryPart != null) {
                 val auth = escapeQuotes(intent.authorQueryPart.trim())
-                add(GoogleBooksQuerySpec("inauthor:\"$auth\"", maxResults = 15, startIndex = 0, langRestrict = "pt"))
+                add(GoogleBooksQuerySpec("inauthor:\"$auth\"", maxResults = 20, startIndex = 0, langRestrict = "pt"))
               }
             }
           }
