@@ -146,7 +146,14 @@ object BibliographicMath {
 
   fun normalizeBaseTitle(rawTitle: String?): String {
     val sanitized = sanitizeDisplayText(rawTitle).orEmpty()
-    val beforeDelimiter = sanitized.substringBefore(':').substringBefore('(').trim()
+    val beforeDelimiter =
+      sanitized
+        .substringBefore(':')
+        .substringBefore('(')
+        .substringBefore(" - ")
+        .substringBefore(" — ")
+        .substringBefore(" – ")
+        .trim()
     return normalizeText(beforeDelimiter)
   }
 
@@ -173,8 +180,16 @@ object BibliographicMath {
   fun extractTitleStructure(rawTitle: String?, subtitle: String? = null): TitleStructure {
     val cleanTitle = sanitizeDisplayText(rawTitle).orEmpty()
     val cleanSubtitle = sanitizeDisplayText(subtitle).orEmpty()
+    val delimiterMatch =
+      listOfNotNull(
+          cleanTitle.indexOf(':').takeIf { it >= 0 }?.let { it to 1 },
+          cleanTitle.indexOf(" - ").takeIf { it >= 0 }?.let { it to 3 },
+          cleanTitle.indexOf(" — ").takeIf { it >= 0 }?.let { it to 3 },
+          cleanTitle.indexOf(" – ").takeIf { it >= 0 }?.let { it to 3 },
+        )
+        .minByOrNull { it.first }
     val inlineSubtitle =
-      if (':' in cleanTitle) cleanTitle.substringAfter(':').trim() else ""
+      if (delimiterMatch != null) cleanTitle.substring(delimiterMatch.first + delimiterMatch.second).trim() else ""
     val effectiveSubtitleRaw =
       listOf(inlineSubtitle, cleanSubtitle).filter { it.isNotBlank() }.joinToString(" ")
     val subtitleNorm = normalizeText(effectiveSubtitleRaw)

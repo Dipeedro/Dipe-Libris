@@ -1,18 +1,21 @@
 package com.example
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.bibliographic.domain.HybridSearchOrchestrator
 import com.example.core.bibliographic.domain.QueryIntentParser
-import com.example.core.bibliographic.domain.QueryIntentType
 import com.example.core.bibliographic.domain.QueryPlanner
 import com.example.core.bibliographic.domain.WorkGroupingEngine
 import com.example.core.bibliographic.network.AdapterSearchRequest
@@ -25,6 +28,7 @@ import com.example.core.bibliographic.network.OpenLibraryAdapter
 import com.example.core.bibliographic.network.SourceAdapterResult
 import com.example.core.bibliographic.network.WikidataAdapter
 import com.example.core.data.local.db.DipeLibrisDatabase
+import com.example.core.data.local.media.CoverStorageManager
 import com.example.core.data.local.preferences.PreferencesRepository
 import com.example.core.data.local.preferences.UserPreferences
 import com.example.core.data.repository.RoomLibraryRepository
@@ -42,10 +46,13 @@ import com.example.core.model.MatchTier
 import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
+import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
 import com.example.core.model.TitleBundleKind
 import com.example.core.model.TypographyPreset
+import com.example.feature.library.BookSearchScreen
+import com.example.feature.library.BookSearchUiState
 import java.net.URLDecoder
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -82,8 +89,14 @@ private class AcceptancePrefsRepo : PreferencesRepository {
   override suspend fun setLanguage(language: AppLanguage) {}
   override suspend fun setThemeMode(themeMode: AppThemeMode) {}
   override suspend fun setTypographyPreset(preset: TypographyPreset) {}
-  override suspend fun setLibraryViewMode(viewMode: LibraryViewMode) {}
-  override suspend fun setPrimaryCatalogLanguage(languageCode: String) {}
+  override suspend fun setDefaultLibraryViewMode(viewMode: LibraryViewMode) {}
+  override suspend fun setReduceMotion(reduceMotion: Boolean) {}
+  override suspend fun setReaderIdentity(name: String, bio: String) {}
+}
+
+private class AcceptanceNoOpCoverStorage : CoverStorageManager {
+  override suspend fun importCoverFromUri(sourceUri: Uri): String? = null
+  override suspend fun deleteCoverIfManaged(coverUri: String?) {}
 }
 
 private class FakeAdapter(
@@ -110,7 +123,7 @@ private class FakeAdapter(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class BibliographicReconstructionAcceptanceTest {
 
   @get:Rule val composeTestRule = createComposeRule()
@@ -124,17 +137,24 @@ class BibliographicReconstructionAcceptanceTest {
   fun setUp() {
     Dispatchers.setMain(dispatcher)
     context = ApplicationProvider.getApplicationContext()
-    db = Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java).allowMainThreadQueries().build()
+    db =
+      Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java)
+        .addCallback(DipeLibrisDatabase.SEED_CALLBACK)
+        .allowMainThreadQueries()
+        .build()
+    DipeLibrisDatabase.seedDefaultGenres(db.openHelper.writableDatabase)
     libraryRepo =
       RoomLibraryRepository(
-        db = db,
-        workDao = db.workDao(),
-        editionDao = db.editionDao(),
         bookDao = db.bookDao(),
+        shelfDao = db.shelfDao(),
+        editionDao = db.editionDao(),
+        copyDao = db.copyDao(),
+        readingJourneyDao = db.readingJourneyDao(),
+        database = db,
+        coverStorageManager = AcceptanceNoOpCoverStorage(),
         genreDao = db.genreDao(),
         contributorDao = db.contributorDao(),
-        readingSessionDao = db.readingSessionDao(),
-        coverStorageManager = com.example.core.data.local.media.InternalCoverStorageManager(context),
+        metadataSuggestionDao = db.metadataSuggestionDao(),
       )
   }
 
@@ -171,7 +191,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         publisher = "Editora Universitária",
         categories = listOf("Social Science", "Education"),
-        sources = setOf(MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
       )
     val ptOriginalRocco =
       SearchEditionCandidate(
@@ -184,9 +204,9 @@ class BibliographicReconstructionAcceptanceTest {
         publicationYear = 2010,
         externalWorkKey = "OL5735363W",
         workEditionCount = 120,
-        synopsisCandidates = listOf(SynopsisCandidate("Num futuro sombrio...", MetadataSource.GOOGLE_BOOKS, "pt-BR")),
+        synopsisCandidates = listOf(SynopsisCandidate(text = "Num futuro sombrio...", language = "pt-BR", source = MetadataSource.GOOGLE_BOOKS)),
         coverCandidates = listOf(CoverCandidate("https://books.google.com/jv.jpg", MetadataSource.GOOGLE_BOOKS)),
-        sources = setOf(MetadataSource.GOOGLE_BOOKS, MetadataSource.OPEN_LIBRARY),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS, MetadataSource.OPEN_LIBRARY),
       )
     val enWorkHungerGames =
       SearchEditionCandidate(
@@ -198,7 +218,7 @@ class BibliographicReconstructionAcceptanceTest {
         isbn13 = "9780439023481",
         externalWorkKey = "OL5735363W",
         workEditionCount = 180,
-        sources = setOf(MetadataSource.OPEN_LIBRARY),
+        sources = listOf(MetadataSource.OPEN_LIBRARY),
       )
     val bridgeEnCandidate =
       SearchEditionCandidate(
@@ -209,7 +229,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         externalWorkKey = "OL5735363W",
         externalIds = mapOf("wikidata_work" to "Q11679"),
-        sources = setOf(MetadataSource.WIKIDATA),
+        sources = listOf(MetadataSource.WIKIDATA),
       )
 
     val outcome =
@@ -243,7 +263,7 @@ class BibliographicReconstructionAcceptanceTest {
         contributors = listOf(CandidateContributor("Outro Autor", ContributorRole.AUTHOR)),
         language = "pt-BR",
         publisher = "Editora Aleatória",
-        sources = setOf(MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
       )
     val vol1 =
       SearchEditionCandidate(
@@ -253,7 +273,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788595084759",
         workEditionCount = 90,
-        sources = setOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
       )
     val vol2 =
       SearchEditionCandidate(
@@ -263,7 +283,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788595084766",
         workEditionCount = 85,
-        sources = setOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
       )
     val omnibus =
       SearchEditionCandidate(
@@ -273,7 +293,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788595086357",
         workEditionCount = 60,
-        sources = setOf(MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
       )
     val boxTrilogia =
       SearchEditionCandidate(
@@ -283,7 +303,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788595086333",
         workEditionCount = 50,
-        sources = setOf(MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
       )
     val unrelatedHobbit =
       SearchEditionCandidate(
@@ -294,7 +314,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788595084742",
         workEditionCount = 200,
-        sources = setOf(MetadataSource.OPEN_LIBRARY),
+        sources = listOf(MetadataSource.OPEN_LIBRARY),
       )
 
     val outcome =
@@ -327,7 +347,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788535920001",
         workEditionCount = 90,
-        sources = setOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.OPEN_LIBRARY, MetadataSource.GOOGLE_BOOKS),
       )
     val memorias =
       SearchEditionCandidate(
@@ -337,7 +357,7 @@ class BibliographicReconstructionAcceptanceTest {
         language = "pt-BR",
         isbn13 = "9788535920002",
         workEditionCount = 80,
-        sources = setOf(MetadataSource.OPEN_LIBRARY),
+        sources = listOf(MetadataSource.OPEN_LIBRARY),
       )
     val biographyByOther =
       SearchEditionCandidate(
@@ -347,7 +367,7 @@ class BibliographicReconstructionAcceptanceTest {
         contributors = listOf(CandidateContributor("Roberto Schwarz", ContributorRole.AUTHOR)),
         language = "pt-BR",
         categories = listOf("Literary Criticism"),
-        sources = setOf(MetadataSource.GOOGLE_BOOKS),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
       )
 
     val outcome =
@@ -365,14 +385,12 @@ class BibliographicReconstructionAcceptanceTest {
 
   @Test
   fun caseFGP_googleBooksAdapterUsesIntitleOrderByRelevanceCorrectPaginationAndNoKeyQuotaState() = runBlocking {
-    val capturedUrls = mutableListOf<String>()
+    val capturedUrls = java.util.concurrent.CopyOnWriteArrayList<String>()
     val client =
       jsonClient { url ->
         capturedUrls += url
         val decoded = URLDecoder.decode(url, "UTF-8")
-        if (decoded.contains("q=semfallback_primary") && decoded.contains("intitle:\"Nada Encontrado\"")) {
-          200 to """{"totalItems":0,"items":[]}"""
-        } else if (decoded.contains("startIndex=30")) {
+        if (decoded.contains("startIndex=30")) {
           200 to """{"totalItems":60,"items":[{"id":"gb2","volumeInfo":{"title":"Jogos Vorazes: Em Chamas","authors":["Suzanne Collins"],"language":"pt-BR"}}]}"""
         } else {
           200 to """{"totalItems":60,"items":[{"id":"gb1","volumeInfo":{"title":"Jogos Vorazes","authors":["Suzanne Collins"],"language":"pt-BR"}}]}"""
@@ -394,16 +412,16 @@ class BibliographicReconstructionAcceptanceTest {
     assertTrue(capturedUrls.any { it.contains("startIndex=30") })
 
     // Verify planner only runs fallback on page 1 when primary hits 0
+    val emptyUrls = java.util.concurrent.CopyOnWriteArrayList<String>()
     val emptyClient =
       jsonClient { url ->
-        capturedUrls += url
+        emptyUrls += url
         200 to """{"totalItems":0,"items":[]}"""
       }
-    capturedUrls.clear()
     val emptyAdapter = GoogleBooksAdapter(client = emptyClient, apiKeyProvider = { "" }, baseUrl = "https://mock.gb")
     val zeroIntent = QueryIntentParser.parse("Livro Raro Inexistente")
     emptyAdapter.searchPaginated(AdapterSearchRequest("Livro Raro Inexistente", zeroIntent, page = 1, pageSize = 30))
-    assertTrue(capturedUrls.size >= 3) // structured + fallback
+    assertTrue(emptyUrls.size >= 3) // structured + fallback
 
     // Page 2 with zero primary candidates must NOT invoke fallbackQuery
     val planP2 = QueryPlanner.planGoogleBooks(zeroIntent, page = 2, pageSize = 30)
@@ -484,16 +502,18 @@ class BibliographicReconstructionAcceptanceTest {
     assertTrue("Expected /works/OL5735363W/editions.json enrichment call", calledPaths.any { it.contains("/works/OL5735363W/editions.json") })
     val ptEdition = res.candidates.firstOrNull { it.isbn13 == "9788579800245" }
     assertTrue(ptEdition != null)
-    assertEquals("Jogos Vorazes", ptEdition!!.workTitle)
+    assertEquals("Jogos Vorazes", ptEdition!!.editionTitle)
     assertEquals("The Hunger Games", ptEdition.originalTitle)
-    assertEquals("OL5735363W", ptEdition.externalWorkKey)
+    assertEquals("/works/OL5735363W", ptEdition.externalWorkKey)
+    val grouped = WorkGroupingEngine.groupCandidates(res.candidates, "pt-BR", req.parsedIntent)
+    assertEquals("Jogos Vorazes", grouped.first().canonicalTitle)
   }
 
   @Test
   fun caseIJ_crossrefDisabledOutsideIsbnDoiAndWikidataMediaWikiBridgeFiltersNonBooks() = runBlocking {
     val crossrefHttpCalls = AtomicInteger(0)
     val crossrefClient =
-      jsonClient { url ->
+      jsonClient { _ ->
         crossrefHttpCalls.incrementAndGet()
         200 to
           """
@@ -563,7 +583,7 @@ class BibliographicReconstructionAcceptanceTest {
     val bridge = wikidata.fetchBilingualBridge("Jogos Vorazes")
     assertEquals(ProviderOutcomeState.SUCCESS, bridge.status.state)
     assertEquals(1, bridge.candidates.size)
-    assertEquals("OL5735363W", bridge.candidates.first().externalWorkKey)
+    assertEquals("/works/OL5735363W", bridge.candidates.first().externalWorkKey)
     assertEquals("The Hunger Games", bridge.candidates.first().originalTitle)
     assertEquals("Q11679", bridge.candidates.first().externalIds["wikidata_work"])
   }
@@ -643,7 +663,7 @@ class BibliographicReconstructionAcceptanceTest {
               contributors = listOf(CandidateContributor("Suzanne Collins", ContributorRole.AUTHOR)),
               language = "pt-BR",
               isbn13 = if (req.page == 1) "9788579800245" else "9788579800726",
-              sources = setOf(MetadataSource.OPEN_LIBRARY),
+              sources = listOf(MetadataSource.OPEN_LIBRARY),
             )
           ),
         )
@@ -712,10 +732,10 @@ class BibliographicReconstructionAcceptanceTest {
   @Test
   fun caseO_searchScreenDisplaysBadgesAppleAttributionAndCollapsedDerivativeDrawer() {
     val boxGroup =
-      com.example.core.model.SearchWorkGroup(
+      SearchWorkGroup(
         groupId = "g_box",
         canonicalTitle = "Box Trilogia O Senhor dos Anéis",
-        displayAuthors = "J. R. R. Tolkien",
+        primaryAuthors = listOf(CandidateContributor("J. R. R. Tolkien", ContributorRole.AUTHOR)),
         editions =
           listOf(
             SearchEditionCandidate(
@@ -725,18 +745,17 @@ class BibliographicReconstructionAcceptanceTest {
               language = "pt-BR",
               coverCandidates = listOf(CoverCandidate("https://is1-ssl.mzstatic.com/100x100bb.jpg", MetadataSource.APPLE_BOOKS)),
               externalIds = mapOf("apple_books_url" to "https://books.apple.com/br/book/id123"),
-              sources = setOf(MetadataSource.APPLE_BOOKS),
+              sources = listOf(MetadataSource.APPLE_BOOKS),
             )
           ),
-        effectiveBundleKind = TitleBundleKind.COLLECTION_OR_BOX,
-        bestCoverUrl = "https://is1-ssl.mzstatic.com/100x100bb.jpg",
+        bundleKindName = TitleBundleKind.COLLECTION_OR_BOX.name,
       )
 
     val derivativeGroup =
-      com.example.core.model.SearchWorkGroup(
+      SearchWorkGroup(
         groupId = "g_deriv",
         canonicalTitle = "O Senhor dos Anéis: Análise Filosófica",
-        displayAuthors = "Autor Acadêmico",
+        primaryAuthors = listOf(CandidateContributor("Autor Acadêmico", ContributorRole.AUTHOR)),
         editions =
           listOf(
             SearchEditionCandidate(
@@ -744,15 +763,18 @@ class BibliographicReconstructionAcceptanceTest {
               workTitle = "O Senhor dos Anéis: Análise Filosófica",
               contributors = listOf(CandidateContributor("Autor Acadêmico", ContributorRole.AUTHOR)),
               language = "pt-BR",
-              sources = setOf(MetadataSource.GOOGLE_BOOKS),
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
             )
           ),
-        effectiveMatchTier = MatchTier.DERIVATIVE_OR_ACADEMIC,
+        matchTierName = MatchTier.DERIVATIVE_OR_ACADEMIC.name,
       )
 
     val response =
       HybridSearchResponse(
         query = "O Senhor dos Anéis",
+        isIsbnQuery = false,
+        isFromCache = false,
+        isOffline = false,
         workGroups = listOf(boxGroup),
         derivativeWorkGroups = listOf(derivativeGroup),
         totalFoundHint = 152,
@@ -797,21 +819,20 @@ class BibliographicReconstructionAcceptanceTest {
 
     composeTestRule.waitForIdle()
     // Clean summary without noisy ~152 raw hint
-    composeTestRule.onNodeWithText("Exibindo 1 obra").assertIsDisplayed()
-    assertTrue(composeTestRule.onNodeWithText("152", substring = true).fetchSemanticsNodesOrEmpty().isEmpty())
+    val expectedSummary = context.getString(R.string.search_results_count_summary, 1)
+    composeTestRule.onNodeWithText(expectedSummary).assertIsDisplayed()
+    composeTestRule.onNodeWithText("152", substring = true).assertDoesNotExist()
 
     // Box badge + Apple Books attribution visible on primary card
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
     composeTestRule.onNodeWithTag("search_work_card_0").assertIsDisplayed()
-    composeTestRule.onNodeWithText("Box / Coleção").assertIsDisplayed()
-    composeTestRule.onNodeWithText("Capa via Apple Books").assertIsDisplayed()
+    composeTestRule.onNodeWithText(context.getString(R.string.search_bundle_box_badge), substring = true).performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithText(context.getString(R.string.search_source_attribution_apple), substring = true).performScrollTo().assertIsDisplayed()
 
     // Derivative drawer starts collapsed; academic item hidden until toggled
-    assertTrue(composeTestRule.onNodeWithText("O Senhor dos Anéis: Análise Filosófica").fetchSemanticsNodesOrEmpty().isEmpty())
+    composeTestRule.onNodeWithText("O Senhor dos Anéis: Análise Filosófica").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_derivative_works_toggle"))
     composeTestRule.onNodeWithTag("search_derivative_works_toggle").performClick()
     assertTrue(expandedDerivatives)
   }
-
-  private fun androidx.compose.ui.test.SemanticsNodeInteraction.fetchSemanticsNodesOrEmpty():
-    List<androidx.compose.ui.semantics.SemanticsNode> =
-    runCatching { fetchSemanticsNodes(atLeastOneRootRequired = false) }.getOrDefault(emptyList())
 }
