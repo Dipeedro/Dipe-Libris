@@ -691,7 +691,7 @@ class BibliographicReconstructionAcceptanceTest {
         libraryRepository = libraryRepo,
       )
 
-    // Verify Room cache roundtrip + Crossref bypassed
+    // Verify bounded deadline completes quickly & does NOT cache degraded partial response (v4)
     val start = System.currentTimeMillis()
     val emissions = orchestrator.searchProgressive("Jogos Vorazes", "pt-BR").toList()
     val elapsed = System.currentTimeMillis() - start
@@ -700,12 +700,72 @@ class BibliographicReconstructionAcceptanceTest {
     assertEquals(2, emissions.size)
     assertEquals("Jogos Vorazes", emissions.last().workGroups.first().canonicalTitle)
     assertEquals(0, emptyCr.calls.get())
+    assertTrue(
+      emissions.last().sourceStatuses.any {
+        it.source == MetadataSource.GOOGLE_BOOKS && it.state == ProviderOutcomeState.ERROR
+      }
+    )
 
-    // Cached second hit uses v3: cache without re-invoking OL/GB
-    val olCountAfterFirst = fastOl.calls.get()
-    val cachedEmissions = orchestrator.searchProgressive("Jogos Vorazes", "pt-BR").toList()
-    assertTrue(cachedEmissions.last().isFromCache)
-    assertEquals(olCountAfterFirst, fastOl.calls.get())
+    // Timed-out partial response must NOT poison v4 cache (next query retries sources)
+    val olCountAfterTimedOut = fastOl.calls.get()
+    val retryEmissions = orchestrator.searchProgressive("Jogos Vorazes", "pt-BR").toList()
+    assertFalse(retryEmissions.last().isFromCache)
+    assertTrue(fastOl.calls.get() > olCountAfterTimedOut)
+
+    // Complete healthy batch caches in v4 and serves subsequent query from cache without invoking OL/GB
+    val fastGb =
+      FakeAdapter(MetadataSource.GOOGLE_BOOKS) {
+        SourceAdapterResult(
+          SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 1),
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "gb_pp_1",
+              workTitle = "O Pequeno Príncipe",
+              contributors = listOf(CandidateContributor("Antoine de Saint-Exupéry", ContributorRole.AUTHOR)),
+              language = "pt-BR",
+              isbn13 = "9788522005239",
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
+            )
+          ),
+        )
+      }
+    val fastOlPp =
+      FakeAdapter(MetadataSource.OPEN_LIBRARY) {
+        SourceAdapterResult(
+          SourceQueryStatus(MetadataSource.OPEN_LIBRARY, ProviderOutcomeState.SUCCESS, 1),
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "ol_pp_1",
+              workTitle = "O Pequeno Príncipe",
+              contributors = listOf(CandidateContributor("Antoine de Saint-Exupéry", ContributorRole.AUTHOR)),
+              language = "pt-BR",
+              isbn13 = "9788522005239",
+              sources = listOf(MetadataSource.OPEN_LIBRARY),
+            )
+          ),
+        )
+      }
+    val healthyOrch =
+      HybridSearchOrchestrator(
+        openLibraryAdapter = fastOlPp,
+        googleBooksAdapter = fastGb,
+        crossrefAdapter = emptyCr,
+        wikidataAdapter = emptyWd,
+        brasilApiAdapter = emptyBr,
+        connectivityChecker = object : ConnectivityChecker { override fun isOnline(): Boolean = true },
+        searchCacheDao = db.searchCacheDao(),
+        editionDao = db.editionDao(),
+        bookDao = db.bookDao(),
+        libraryRepository = libraryRepo,
+      )
+    val firstHealthy = healthyOrch.searchProgressive("O Pequeno Príncipe", "pt-BR").toList().last()
+    assertFalse(firstHealthy.isFromCache)
+    val olHealthyCalls = fastOlPp.calls.get()
+    val gbHealthyCalls = fastGb.calls.get()
+    val secondHealthy = healthyOrch.searchProgressive("O Pequeno Príncipe", "pt-BR").toList().last()
+    assertTrue(secondHealthy.isFromCache)
+    assertEquals(olHealthyCalls, fastOlPp.calls.get())
+    assertEquals(gbHealthyCalls, fastGb.calls.get())
 
     // Negative-cache guard: an all-failed search must NOT overwrite valid cache or persist negative entry
     val brokenOl = FakeAdapter(MetadataSource.OPEN_LIBRARY) { SourceAdapterResult(SourceQueryStatus(MetadataSource.OPEN_LIBRARY, ProviderOutcomeState.ERROR)) }

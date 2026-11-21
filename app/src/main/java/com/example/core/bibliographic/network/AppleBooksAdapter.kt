@@ -11,8 +11,10 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -108,7 +110,7 @@ class AppleBooksAdapter(
       executeRequest(url, explicitRequestedLang = intent.explicitLanguageRequest)
     }
 
-  private fun executeRequest(
+  private suspend fun executeRequest(
     url: String,
     explicitRequestedLang: String?,
   ): SourceAdapterResult {
@@ -126,56 +128,57 @@ class AppleBooksAdapter(
 
     return runCatching {
         val request = Request.Builder().url(url).get().build()
-        client.newCall(request).execute().use { response ->
-          val elapsed = (clockMs() - startMs).coerceAtLeast(0L)
-          if (response.code == 429 || response.code == 403) {
-            cooldownUntilMs.set(clockMs() + COOLDOWN_DURATION_MS)
-            return SourceAdapterResult(
-              SourceQueryStatus(
-                source = source,
-                state = ProviderOutcomeState.RATE_LIMITED,
-                message = "HTTP ${response.code}",
-                durationMs = elapsed,
-              )
+        val response = client.executeTextCall(request)
+        val elapsed = (clockMs() - startMs).coerceAtLeast(0L)
+        if (response.code == 429 || response.code == 403) {
+          cooldownUntilMs.set(clockMs() + COOLDOWN_DURATION_MS)
+          return SourceAdapterResult(
+            SourceQueryStatus(
+              source = source,
+              state = ProviderOutcomeState.RATE_LIMITED,
+              message = "HTTP ${response.code}",
+              durationMs = elapsed,
             )
-          }
-          val body = response.body?.string()
-          if (!response.isSuccessful || body == null) {
-            return SourceAdapterResult(
-              SourceQueryStatus(
-                source = source,
-                state = ProviderOutcomeState.ERROR,
-                message = "HTTP ${response.code}",
-                durationMs = elapsed,
-              )
-            )
-          }
-
-          val parsed = json.decodeFromString<AppleBooksResponse>(body)
-          val candidates =
-            parsed.results
-              .filter { it.kind == null || it.kind == "ebook" }
-              .mapNotNull { item -> mapItemToCandidate(item, explicitRequestedLang) }
-
-          SourceAdapterResult(
-            status =
-              SourceQueryStatus(
-                source = source,
-                state = if (candidates.isEmpty()) ProviderOutcomeState.EMPTY else ProviderOutcomeState.SUCCESS,
-                count = candidates.size,
-                hasMore = false,
-                durationMs = elapsed,
-              ),
-            candidates = candidates,
           )
         }
+        val body = response.body
+        if (!response.isSuccessful || body == null) {
+          return SourceAdapterResult(
+            SourceQueryStatus(
+              source = source,
+              state = ProviderOutcomeState.ERROR,
+              message = "HTTP ${response.code}",
+              durationMs = elapsed,
+            )
+          )
+        }
+
+        val parsed = json.decodeFromString<AppleBooksResponse>(body)
+        val candidates =
+          parsed.results
+            .filter { it.kind == null || it.kind == "ebook" }
+            .mapNotNull { item -> mapItemToCandidate(item, explicitRequestedLang) }
+
+        SourceAdapterResult(
+          status =
+            SourceQueryStatus(
+              source = source,
+              state = if (candidates.isEmpty()) ProviderOutcomeState.EMPTY else ProviderOutcomeState.SUCCESS,
+              count = candidates.size,
+              hasMore = false,
+              durationMs = elapsed,
+            ),
+          candidates = candidates,
+        )
       }
       .getOrElse { err ->
+        if (err is CancellationException) throw err
+        val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
         SourceAdapterResult(
           SourceQueryStatus(
             source = source,
             state = ProviderOutcomeState.ERROR,
-            message = err.message,
+            message = msg,
             durationMs = (clockMs() - startMs).coerceAtLeast(0L),
           )
         )

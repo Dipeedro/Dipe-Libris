@@ -13,7 +13,9 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -138,15 +140,16 @@ class GoogleBooksAdapter(
             .awaitAll()
         }
 
-      val primaryHasCandidates =
-        primaryResults.filterIsInstance<SingleCallOutcome.Success>().any { it.candidates.isNotEmpty() }
+      val primaryCandidateCount =
+        primaryResults.filterIsInstance<SingleCallOutcome.Success>().sumOf { it.candidates.size }
+      val shouldRunFallback =
+        plan.fallbackQuery != null &&
+          primaryResults.any { it is SingleCallOutcome.Success } &&
+          (primaryCandidateCount == 0 || (intent.significantTokens.size >= 3 && primaryCandidateCount < 2))
 
       val allResults =
-        if (!primaryHasCandidates &&
-          plan.fallbackQuery != null &&
-          primaryResults.any { it is SingleCallOutcome.Success }
-        ) {
-          val fb = plan.fallbackQuery
+        if (shouldRunFallback) {
+          val fb = plan.fallbackQuery!!
           val fallbackOutcome =
             executeSingleQuery(
               qParam = fb.qParam,
@@ -180,7 +183,7 @@ class GoogleBooksAdapter(
     data class Error(val message: String?) : SingleCallOutcome
   }
 
-  private fun executeSingleQuery(
+  private suspend fun executeSingleQuery(
     qParam: String,
     maxResults: Int,
     startIndex: Int,
@@ -198,35 +201,45 @@ class GoogleBooksAdapter(
           if (hasValidKey) append("&key=${URLEncoder.encode(key, "UTF-8")}")
         }
         val request = Request.Builder().url(url).get().build()
-        client.newCall(request).execute().use { response ->
-          val body = response.body?.string()
-          if (
-            response.code == 429 ||
-              (response.code == 403 && isRateLimitErrorBody(body))
-          ) {
-            return if (!hasValidKey) {
-              SingleCallOutcome.SkippedNoKey("HTTP ${response.code} without configured API key")
-            } else {
-              SingleCallOutcome.RateLimited("HTTP ${response.code}")
-            }
+        val response = client.executeTextCall(request)
+        val body = response.body
+        if (response.code == 429) {
+          return if (!hasValidKey) {
+            SingleCallOutcome.SkippedNoKey("HTTP 429 without configured API key")
+          } else {
+            SingleCallOutcome.RateLimited("HTTP 429")
           }
-          if (!response.isSuccessful || body == null) {
-            return SingleCallOutcome.Error("HTTP ${response.code}")
-          }
-          val parsed = json.decodeFromString<GoogleBooksResponse>(body)
-          val candidates =
-            parsed.items.mapNotNull { item ->
-              mapItemToCandidate(item, explicitRequestedLang)
-            }
-          SingleCallOutcome.Success(
-            totalItems = parsed.totalItems.coerceAtLeast(parsed.items.size),
-            rawItemCount = parsed.items.size,
-            candidates = candidates,
-          )
         }
+        if (response.code == 403) {
+          if (!hasValidKey && (isRateLimitErrorBody(body) || isUnconfiguredKey403Body(body))) {
+            return SingleCallOutcome.SkippedNoKey("HTTP 403 without configured API key")
+          }
+          if (isRateLimitErrorBody(body)) {
+            return SingleCallOutcome.RateLimited("HTTP 403")
+          }
+          if (hasValidKey && isInvalidKeyErrorBody(body)) {
+            return SingleCallOutcome.Error("API key invalid (HTTP 403)")
+          }
+          return SingleCallOutcome.Error("HTTP 403")
+        }
+        if (!response.isSuccessful || body == null) {
+          return SingleCallOutcome.Error("HTTP ${response.code}")
+        }
+        val parsed = json.decodeFromString<GoogleBooksResponse>(body)
+        val candidates =
+          parsed.items.mapNotNull { item ->
+            mapItemToCandidate(item, explicitRequestedLang)
+          }
+        SingleCallOutcome.Success(
+          totalItems = parsed.totalItems.coerceAtLeast(parsed.items.size),
+          rawItemCount = parsed.items.size,
+          candidates = candidates,
+        )
       }
       .getOrElse { err ->
-        SingleCallOutcome.Error(err.message)
+        if (err is CancellationException) throw err
+        val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
+        SingleCallOutcome.Error(msg)
       }
   }
 
@@ -237,6 +250,21 @@ class GoogleBooksAdapter(
       text.contains("rateLimitExceeded", ignoreCase = true) ||
       text.contains("dailyLimitExceeded", ignoreCase = true) ||
       text.contains("userRateLimitExceeded", ignoreCase = true)
+  }
+
+  private fun isUnconfiguredKey403Body(body: String?): Boolean {
+    val text = body.orEmpty()
+    return text.contains("unregistered", ignoreCase = true) ||
+      text.contains("api key", ignoreCase = true) ||
+      text.contains("keyInvalid", ignoreCase = true) ||
+      text.contains("accessNotConfigured", ignoreCase = true)
+  }
+
+  private fun isInvalidKeyErrorBody(body: String?): Boolean {
+    val text = body.orEmpty()
+    return text.contains("keyInvalid", ignoreCase = true) ||
+      text.contains("API key not valid", ignoreCase = true) ||
+      text.contains("API_KEY_INVALID", ignoreCase = true)
   }
 
   private fun mapItemToCandidate(

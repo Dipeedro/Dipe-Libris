@@ -21,7 +21,7 @@ class DipeLibrisApplication : Application(), ImageLoaderFactory {
 
   override fun newImageLoader(): ImageLoader =
     ImageLoader.Builder(this)
-      .okHttpClient { BibliographicHttpClients.okHttpClient }
+      .okHttpClient { BibliographicHttpClients.imageOkHttpClient }
       .memoryCache {
         MemoryCache.Builder(this)
           .maxSizePercent(0.20)
@@ -30,10 +30,10 @@ class DipeLibrisApplication : Application(), ImageLoaderFactory {
       .diskCache {
         DiskCache.Builder()
           .directory(File(cacheDir, "cover_image_cache"))
-          .maxSizeBytes(25L * 1024L * 1024L)
+          .maxSizeBytes(50L * 1024L * 1024L)
           .build()
       }
-      .respectCacheHeaders(true)
+      .respectCacheHeaders(false)
       .crossfade(true)
       .build()
 }

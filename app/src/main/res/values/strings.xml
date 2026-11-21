@@ -365,11 +365,13 @@
     <string name="search_source_offline">%1$s (offline)</string>
     <string name="search_source_rate_limit">%1$s (limit)</string>
     <string name="search_source_error">%1$s (error)</string>
+    <string name="search_source_timeout">%1$s (timed out)</string>
     <string name="search_loading_progress">Searching bibliographic sources…</string>
     <string name="search_secondary_languages_toggle">Other languages &amp; Portugal editions (%1$d)</string>
     <string name="search_secondary_languages_only_notice">No editions found in Portuguese (Brazil) or English. Showing other languages:</string>
     <string name="search_edition_show_secondary_langs">Show editions in other languages (%1$d)</string>
     <string name="search_edition_hide_secondary_langs">Hide other languages</string>
+    <string name="search_edition_show_more_local">Show more editions (%1$d remaining)</string>
     <string name="search_action_load_more_results">Load more results</string>
     <string name="search_loading_more_results">Loading more results…</string>
     <string name="search_results_count_summary">Showing %1$d work(s)</string>

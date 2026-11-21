@@ -365,7 +365,7 @@ class HybridSearchOrchestrator(
               bridgeResult =
                 runCatching {
                     withTimeoutOrNull(WIKIDATA_BRIDGE_DEADLINE_MS) {
-                      (wikidataAdapter as WikidataAdapter).fetchBilingualBridge(intent.cleanQuery)
+                      (wikidataAdapter as WikidataAdapter).fetchBilingualBridge(intent.subjectQueryPart ?: intent.cleanQuery)
                     }
                   }
                   .getOrNull()
@@ -457,7 +457,16 @@ class HybridSearchOrchestrator(
     val allAdaptersErrored =
       statusesList.isNotEmpty() &&
         statusesList.none { it.state == ProviderOutcomeState.SUCCESS || it.state == ProviderOutcomeState.CACHED }
-    if (hasAnyLiteraryResults && !allAdaptersErrored) {
+    val essentialSourceDegraded =
+      statusesList.any { st ->
+        val isCorePrimary =
+          st.source == MetadataSource.OPEN_LIBRARY ||
+            st.source == MetadataSource.GOOGLE_BOOKS ||
+            (appleBooksAdapter != null && st.source == MetadataSource.APPLE_BOOKS)
+        isCorePrimary &&
+          (st.state == ProviderOutcomeState.ERROR || st.state == ProviderOutcomeState.RATE_LIMITED)
+      }
+    if (hasAnyLiteraryResults && !allAdaptersErrored && !essentialSourceDegraded) {
       synchronized(memoryCacheLock) { memoryCache[cacheKey] = finalResp }
       val ttlMillis = if (isIsbn) ISBN_CACHE_TTL_MS else QUERY_CACHE_TTL_MS
       val sourcesList =
@@ -728,9 +737,9 @@ class HybridSearchOrchestrator(
     val langPart = BibliographicMath.normalizeLanguageCode(preferredLanguage).orEmpty()
     val isbn = intent.parsedIsbn
     return if (isbn != null) {
-      "v3:isbn:${isbn.isbn13 ?: isbn.isbn10 ?: isbn.cleaned}:lang=$langPart"
+      "v4:isbn:${isbn.isbn13 ?: isbn.isbn10 ?: isbn.cleaned}:lang=$langPart"
     } else {
-      "v3:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
+      "v4:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
     }
   }
 

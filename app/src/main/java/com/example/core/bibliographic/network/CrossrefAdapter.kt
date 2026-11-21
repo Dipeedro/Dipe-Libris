@@ -10,7 +10,9 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -126,19 +128,19 @@ class CrossrefAdapter(
     withContext(Dispatchers.IO) {
       runCatching {
           val request = Request.Builder().url(url).get().build()
-          client.newCall(request).execute().use { response ->
-            if (response.code == 429) {
-              return@withContext SourceAdapterResult(
-                SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED)
-              )
-            }
-            val body = response.body?.string()
-            if (!response.isSuccessful || body == null) {
-              return@withContext SourceAdapterResult(
-                SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
-              )
-            }
-            val parsed = json.decodeFromString<CrossrefWorksResponse>(body)
+          val response = client.executeTextCall(request)
+          if (response.code == 429) {
+            return@withContext SourceAdapterResult(
+              SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED)
+            )
+          }
+          val body = response.body
+          if (!response.isSuccessful || body == null) {
+            return@withContext SourceAdapterResult(
+              SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
+            )
+          }
+          val parsed = json.decodeFromString<CrossrefWorksResponse>(body)
             val candidates =
               parsed.message?.items.orEmpty().mapNotNull { item ->
                 val title =
@@ -217,11 +219,12 @@ class CrossrefAdapter(
                 ),
               candidates = candidates,
             )
-          }
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg)
           )
         }
     }

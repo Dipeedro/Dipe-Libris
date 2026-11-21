@@ -107,6 +107,34 @@ object QueryPlanner {
           )
         }
 
+        intent.subjectQueryPart != null && intent.detachedModifierTokens.isNotEmpty() -> {
+          val subj = escapeQuotes(intent.subjectQueryPart.trim())
+          val modHint = intent.detachedModifierTokens.firstOrNull().orEmpty()
+          buildList {
+            when {
+              intent.allowGuidesOrAnalyses -> {
+                add(GoogleBooksQuerySpec("intitle:\"$subj\" $modHint".trim(), maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
+                if (page == 1) {
+                  add(GoogleBooksQuerySpec("\"$subj\" guide", maxResults = 20, startIndex = 0, langRestrict = null))
+                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 20, startIndex = 0, langRestrict = "pt"))
+                }
+              }
+              intent.allowColoringBooks -> {
+                add(GoogleBooksQuerySpec("\"$subj\" colorir", maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
+                if (page == 1) {
+                  add(GoogleBooksQuerySpec("\"$subj\" coloring", maxResults = 20, startIndex = 0, langRestrict = null))
+                }
+              }
+              else -> {
+                add(GoogleBooksQuerySpec("intitle:\"$subj\" $modHint".trim(), maxResults = pageSize, startIndex = startIndex, langRestrict = "pt"))
+                if (page == 1) {
+                  add(GoogleBooksQuerySpec("intitle:\"$subj\"", maxResults = 20, startIndex = 0, langRestrict = null))
+                }
+              }
+            }
+          }
+        }
+
         else -> {
           val exactTitleQ = "intitle:\"${escapeQuotes(cleanQ)}\""
           val sigTokens =
@@ -135,11 +163,17 @@ object QueryPlanner {
         }
       }
 
-    // Fallback sem intitle: só é disparado pelo adaptador na pág. 1 se TODAS as consultas estruturadas voltarem vazias
+    // Fallback sem intitle: só é disparado pelo adaptador na pág. 1 se as estruturadas retornarem vazias ou muito esparsas
     val fallback =
       if (page == 1 && intent.intentType != QueryIntentType.EXPLICIT_AUTHOR) {
+        val fallbackQ =
+          if (intent.subjectQueryPart != null && intent.allowGuidesOrAnalyses) {
+            intent.subjectQueryPart.trim()
+          } else {
+            cleanQ
+          }
         GoogleBooksQuerySpec(
-          qParam = cleanQ,
+          qParam = fallbackQ,
           maxResults = 15,
           startIndex = 0,
           langRestrict = apiLang ?: "pt",
@@ -165,6 +199,7 @@ object QueryPlanner {
       )
     }
 
+    val subjectQ = intent.subjectQueryPart?.trim()?.takeIf { it.isNotEmpty() }
     val primary =
       when {
         intent.intentType == QueryIntentType.EXPLICIT_AUTHOR && intent.authorQueryPart != null -> {
@@ -191,6 +226,30 @@ object QueryPlanner {
               page = page,
             )
           )
+        }
+
+        subjectQ != null && intent.detachedModifierTokens.isNotEmpty() -> {
+          val modHint = intent.detachedModifierTokens.firstOrNull().orEmpty()
+          buildList {
+            add(
+              OpenLibraryQuerySpec(
+                mode = OpenLibraryQuerySpec.Mode.GENERAL_Q,
+                queryValue = "$subjectQ $modHint".trim(),
+                limit = limit,
+                page = page,
+              )
+            )
+            if (page == 1 && intent.allowGuidesOrAnalyses) {
+              add(
+                OpenLibraryQuerySpec(
+                  mode = OpenLibraryQuerySpec.Mode.TITLE,
+                  queryValue = subjectQ,
+                  limit = limit,
+                  page = 1,
+                )
+              )
+            }
+          }
         }
 
         intent.canProbeStructuredAuthor && intent.authorQueryPart != null && page == 1 -> {
@@ -227,7 +286,7 @@ object QueryPlanner {
       if (page == 1 && intent.intentType != QueryIntentType.EXPLICIT_AUTHOR) {
         OpenLibraryQuerySpec(
           mode = OpenLibraryQuerySpec.Mode.GENERAL_Q,
-          queryValue = cleanQ,
+          queryValue = subjectQ?.takeIf { intent.allowGuidesOrAnalyses } ?: cleanQ,
           limit = limit,
           page = 1,
         )
@@ -249,6 +308,8 @@ object QueryPlanner {
           intent.authorQueryPart.trim()
         intent.intentType == QueryIntentType.EXPLICIT_TITLE && intent.titleQueryPart != null ->
           intent.titleQueryPart.trim()
+        intent.subjectQueryPart != null && intent.detachedModifierTokens.isNotEmpty() ->
+          "${intent.subjectQueryPart.trim()} ${intent.detachedModifierTokens.firstOrNull().orEmpty()}".trim()
         else -> intent.cleanQuery.trim()
       }
     val attribute =

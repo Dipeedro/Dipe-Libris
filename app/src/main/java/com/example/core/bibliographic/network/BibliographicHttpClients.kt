@@ -7,10 +7,69 @@ import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+
+data class HttpTextSnapshot(
+  val code: Int,
+  val isSuccessful: Boolean,
+  val body: String?,
+)
+
+suspend fun OkHttpClient.executeTextCall(request: Request): HttpTextSnapshot =
+  suspendCancellableCoroutine { cont ->
+    val call = newCall(request)
+    cont.invokeOnCancellation {
+      runCatching { call.cancel() }
+    }
+    call.enqueue(
+      object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+          if (!cont.isActive) return
+          if (call.isCanceled()) {
+            cont.resumeWithException(CancellationException("HTTP call cancelled", e))
+          } else {
+            cont.resumeWithException(e)
+          }
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+          try {
+            response.use { resp ->
+              val bodyStr = resp.body?.string()
+              if (cont.isActive) {
+                cont.resume(
+                  HttpTextSnapshot(
+                    code = resp.code,
+                    isSuccessful = resp.isSuccessful,
+                    body = bodyStr,
+                  )
+                )
+              }
+            }
+          } catch (t: Throwable) {
+            if (!cont.isActive) return
+            if (t is CancellationException || call.isCanceled()) {
+              cont.resumeWithException(CancellationException("HTTP call cancelled", t))
+            } else {
+              cont.resumeWithException(t)
+            }
+          }
+        }
+      }
+    )
+  }
 
 interface ConnectivityChecker {
   fun isOnline(): Boolean
@@ -100,6 +159,35 @@ object BibliographicHttpClients {
             .apply {
               if (original.header("Accept") == null) {
                 header("Accept", "application/json")
+              }
+            }
+            .build()
+        chain.proceed(request)
+      }
+      .build()
+  }
+
+  val imageOkHttpClient: OkHttpClient by lazy {
+    val imageDispatcher =
+      Dispatcher().apply {
+        maxRequests = 48
+        maxRequestsPerHost = 12
+      }
+    OkHttpClient.Builder()
+      .dispatcher(imageDispatcher)
+      .connectTimeout(5, TimeUnit.SECONDS)
+      .readTimeout(8, TimeUnit.SECONDS)
+      .writeTimeout(5, TimeUnit.SECONDS)
+      .connectionPool(okhttp3.ConnectionPool(12, 3, TimeUnit.MINUTES))
+      .addInterceptor { chain ->
+        val original: Request = chain.request()
+        val request =
+          original
+            .newBuilder()
+            .header("User-Agent", USER_AGENT)
+            .apply {
+              if (original.header("Accept") == null) {
+                header("Accept", "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8")
               }
             }
             .build()

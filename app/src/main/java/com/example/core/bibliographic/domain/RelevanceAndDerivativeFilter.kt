@@ -4,6 +4,8 @@ import com.example.core.model.BibliographicMath
 import com.example.core.model.MatchTier
 import com.example.core.model.MetadataSource
 import com.example.core.model.SearchEditionCandidate
+import java.text.Normalizer
+import java.util.Locale
 import kotlin.math.ceil
 
 enum class MatchedTitleField {
@@ -32,6 +34,17 @@ data class CandidateMatchEvaluation(
 
 object RelevanceAndDerivativeFilter {
 
+  private val diacriticsRegex = Regex("\\p{InCombiningDiacriticalMarks}+")
+
+  private fun stripAccentsLower(raw: String?): String {
+    if (raw.isNullOrBlank()) return ""
+    val decomposed = Normalizer.normalize(raw.trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
+    return diacriticsRegex
+      .replace(decomposed, "")
+      .replace(Regex("\\s+"), " ")
+      .trim()
+  }
+
   private val coloringCompoundRegex =
     Regex(
       "\\b(coloring\\s+book|colouring\\s+book|livro\\s+de\\s+colorir|caderno\\s+de\\s+colorir|colorir\\s+para\\s+adultos)\\b",
@@ -52,16 +65,79 @@ object RelevanceAndDerivativeFilter {
 
   private val hardGuideSpamRegex =
     Regex(
-      "\\b(summary\\s*(?:&|and)\\s*analysis\\s*(?:of)?|study\\s+guide\\s*[:\\-]|analise\\s+do\\s+livro|resumo\\s+da\\s+serie|resumo\\s+(?:&|e)\\s+analise|trivia\\s+(?:&|and)\\s+quiz|unofficial\\s+(?:guide|companion))\\b",
+      "\\b(" +
+        "summary\\s*(?:&|and)\\s*analysis\\s*(?:of)?|" +
+        "(?:resumo|analise)\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida)?\\s*(?:&|e)\\s*(?:analise|resumo)|" +
+        "analise\\s+(?:do\\s+livro|da\\s+obra)|" +
+        "resumo\\s+(?:da\\s+serie|da\\s+obra|do\\s+livro)|" +
+        "fichamento\\b|" +
+        "perguntas\\s*(?:&|e)\\s*respostas|" +
+        "study\\s+guide\\s*[:\\-]|" +
+        "complete\\s+study\\s+guide|" +
+        "trivia\\s*(?:&|and)\\s*quiz|" +
+        "quiz\\s+book\\b|" +
+        "unofficial\\s+(?:guide|companion|trivia)|" +
+        "guia\\s+nao\\s+oficial|" +
+        "guia\\s+de\\s+estudo" +
+        ")\\b",
       RegexOption.IGNORE_CASE,
     )
 
   private val derivativeSummaryPublishers =
-    setOf("sparknotes", "bookrags", "brightsummaries", "quickread", "cliffsnotes", "instaread", "supersummary")
+    setOf(
+      "sparknotes",
+      "bookrags",
+      "brightsummaries",
+      "quickread",
+      "cliffsnotes",
+      "instaread",
+      "supersummary",
+      "resumocast",
+      "12min",
+    )
 
   private val academicSubtitleOrTitleRegex =
     Regex(
-      "\\b(uma\\s+reflexao|reflexao\\s+sobre|o\\s+mundo\\s+contemporaneo|estudo\\s+critico|leitura\\s+critica|analise\\s+critica|ensaio(?:s)?\\s+sobre|abordagem\\s+pedagogica|dissertacao|tese\\s+de|critical\\s+essays?|philosophy\\s+and|perspectives\\s+on|companion\\s+to|critical\\s+guide|reading\\s+the)\\b",
+      "\\b(" +
+        "uma\\s+reflexao|" +
+        "reflexao\\s+sobre|" +
+        "o\\s+mundo\\s+contemporaneo|" +
+        "estudo\\s+critico|" +
+        "estudos?\\s+(?:sobre|criticos?|literarios?)|" +
+        "leitura\\s+critica|" +
+        "analise\\s+(?:critica|literaria|filosofica)|" +
+        "ensaio(?:s)?\\s+sobre|" +
+        "abordagem\\s+pedagogica|" +
+        "dissertacao|" +
+        "tese\\s+de|" +
+        "monografia|" +
+        "(?:e|and)\\s+a\\s+(?:filosofia|psicologia|ciencia|politica|historia|educacao|sociedade|etica|religiao)|" +
+        "(?:e|and)\\s+o\\s+direito|" +
+        "filosofia\\s+(?:e|de|em|na|no)\\b|" +
+        "philosophy\\s+and|" +
+        "and\\s+philosophy\\b|" +
+        "na\\s+sala\\s+de\\s+aula|" +
+        "perspectivas?\\s+(?:sobre|criticas?)|" +
+        "aspectos?\\s+(?:filosoficos|sociais|politicos|psicologicos)|" +
+        "guia\\s+de\\s+leitura|" +
+        "guia\\s+do\\s+leitor|" +
+        "critical\\s+(?:essays?|guide|reading)|" +
+        "perspectives\\s+on|" +
+        "companion\\s+to|" +
+        "reading\\s+the" +
+        ")\\b",
+      RegexOption.IGNORE_CASE,
+    )
+
+  private val explanatoryCompanionOrAcademicCueRegex =
+    Regex(
+      "\\b(" +
+        "guia|guide|manual|handbook|companion|" +
+        "analise|analysis|resumo|summary|reflexao|estudo|study|" +
+        "filosofia|philosophy|psicologia|tributo|tribute|" +
+        "ilustrado|illustrated|bastidores|making\\s+of|por\\s+tras|behind\\s+the|segredos|secrets|" +
+        "receitas|cookbook|trivia|quiz|fichamento|dissertacao|tese|monografia|critico|critica" +
+        ")\\b",
       RegexOption.IGNORE_CASE,
     )
 
@@ -80,19 +156,65 @@ object RelevanceAndDerivativeFilter {
 
   private val editionOnlySubtitleRegex =
     Regex(
-      "^(?:edicao(?:\\s+(?:especial|ilustrada|comemorativa|de\\s+luxo|definitiva|revista|ampliada|pocket|economica|bilingue|comentada|capa\\s+dura|integrada|unica))?|especial|ilustrada|comemorativa|capa\\s+dura|special\\s+edition|illustrated(?:\\s+edition)?|deluxe\\s+edition|anniversary\\s+edition|revised\\s+edition|volume\\s+unico|livro\\s+unico|livro\\s*\\d+|vol\\.?\\s*\\d+|part\\s*\\d+|parte\\s*\\d+)$",
+      "^(?:edicao(?:\\s+(?:especial|ilustrada|comemorativa|de\\s+luxo|definitiva|revista|ampliada|pocket|economica|bilingue|comentada|critica|anotada|bolso|capa\\s+dura|integrada|unica))?|" +
+        "especial|ilustrada|comemorativa|critica|anotada|capa\\s+dura|texto\\s+integral|" +
+        "com\\s+(?:ilustracoes|aquarelas)(?:\\s+do\\s+autor)?|" +
+        "(?:special|illustrated|deluxe|anniversary|revised|collectors?|standard|complete|unabridged)\\s+edition|" +
+        "illustrated|unabridged|volume\\s+unico|livro\\s+unico|livro\\s*\\d+|vol\\.?\\s*\\d+|part\\s*\\d+|parte\\s*\\d+)$",
       RegexOption.IGNORE_CASE,
     )
 
   private val benignSubtitlePrefixes =
-    setOf("romance", "novela", "conto", "contos", "poemas", "fiction", "a novel", "livro", "vol", "volume", "parte", "part")
+    setOf(
+      "romance",
+      "novela",
+      "conto",
+      "contos",
+      "poemas",
+      "fiction",
+      "a novel",
+      "livro",
+      "vol",
+      "volume",
+      "parte",
+      "part",
+      "texto integral",
+    )
+
+  private val guideCueKeywords =
+    setOf(
+      "guia",
+      "guide",
+      "manual",
+      "handbook",
+      "companion",
+      "tribute",
+      "tributos",
+      "ilustrado",
+      "illustrated",
+      "analise",
+      "analysis",
+      "resumo",
+      "summary",
+      "estudo",
+      "study",
+      "fichamento",
+    )
+
+  internal fun hasExplanatoryCompanionOrAcademicCue(text: String): Boolean {
+    val norm = stripAccentsLower(text)
+    if (norm.isBlank()) return false
+    return academicSubtitleOrTitleRegex.containsMatchIn(norm) ||
+      hardGuideSpamRegex.containsMatchIn(norm) ||
+      explanatoryCompanionOrAcademicCueRegex.containsMatchIn(norm)
+  }
 
   /**
    * Avaliação contextual em lote (Etapas C + D):
-   * 1. Valida título da obra, título da edição, título original, série e autor;
+   * 1. Valida título da obra, título da edição, título original, série, autor e cruzamento Título+Autor;
    * 2. Descobre consenso de autor canônico entre os acertos fortes;
    * 3. Rebaixa análises/estudos acadêmicos para T7 (DERIVATIVE_OR_ACADEMIC) sem contaminar T1;
-   * 4. Propaga ponte bibliográfica (externalWorkKey / wikidata_work) para edições irmãs (ex: tradução OL).
+   * 4. Propaga ponte bibliográfica (externalWorkKey / wikidata_work / sinônimo bilíngue de assunto) para edições irmãs.
    */
   fun classifyBatch(
     candidates: List<SearchEditionCandidate>,
@@ -151,38 +273,94 @@ object RelevanceAndDerivativeFilter {
         emptySet()
       }
 
-    // Passo 3: Reavaliar lote aplicando consenso canônico + Work-Bridge de edições traduzidas/irmãs
+    // Coletar chaves de obra e equivalentes bilíngues validados para ponte segura
     val validatedWorkKeys = linkedSetOf<String>()
     val validatedWikidataKeys = linkedSetOf<String>()
+    val bilingualSubjectTitles = linkedSetOf<String>()
     for ((cand, eval) in initial) {
       if (eval.accepted && !eval.isAcademicOrDerivative && (eval.titleMatchScore >= 85 || eval.authorMatchScore >= 90)) {
         cand.externalWorkKey?.let { validatedWorkKeys.add(it) }
         cand.externalIds["wikidata_work"]?.let { validatedWikidataKeys.add(it) }
+        if (intent.subjectQueryPart != null && intent.allowGuidesOrAnalyses) {
+          cand.originalTitle?.let { BibliographicMath.normalizeBaseTitle(it) }?.takeIf { it.isNotBlank() }?.let {
+            bilingualSubjectTitles.add(it)
+          }
+          cand.workTitle.let { BibliographicMath.normalizeBaseTitle(it) }.takeIf { it.isNotBlank() }?.let {
+            bilingualSubjectTitles.add(it)
+          }
+        }
       }
     }
 
+    // Passo 3: Reavaliar lote aplicando consenso canônico + Work-Bridge de edições traduzidas/guias equivalentes
     val refined =
       candidates.map { cand ->
         val eval = evaluateCandidateInternal(cand, intent, canonicalSurnames)
         if (eval.accepted) {
           cand to eval
         } else {
-          // Ponte bibliográfica de tradução/edição irmã via Work Key ou Wikidata
           val sharesWorkBridge =
             (cand.externalWorkKey != null && cand.externalWorkKey in validatedWorkKeys) ||
               (cand.externalIds["wikidata_work"] != null && cand.externalIds["wikidata_work"] in validatedWikidataKeys)
-          if (sharesWorkBridge && !isHardSpam(cand, intent)) {
+
+          // Ponte bilíngue específica para guias/manuais quando o usuário buscou "<assunto> guia"
+          val matchesBilingualGuideBridge =
+            intent.subjectQueryPart != null &&
+              intent.allowGuidesOrAnalyses &&
+              bilingualSubjectTitles.isNotEmpty() &&
+              !isHardSpam(cand, intent) &&
+              run {
+                val candFullNorm =
+                  BibliographicMath.normalizeText("${cand.workTitle} ${cand.subtitle.orEmpty()} ${cand.editionTitle.orEmpty()}")
+                val candWords = candFullNorm.split(' ').filter { it.isNotBlank() }.toSet()
+                val hasGuideMarker = candWords.any { it in guideCueKeywords }
+                val hitsAltSubject =
+                  bilingualSubjectTitles.any { altSubj ->
+                    val altTokens = altSubj.split(' ').filter { it.length > 1 }
+                    altTokens.isNotEmpty() &&
+                      countStrictTokenHits(altTokens, candWords, allowMorphological = true) >= altTokens.size
+                  }
+                hasGuideMarker && hitsAltSubject
+              }
+
+          if (matchesBilingualGuideBridge) {
             cand to
               eval.copy(
                 accepted = true,
-                queryMatchScore = maxOf(eval.queryMatchScore, 75),
+                queryMatchScore = maxOf(eval.queryMatchScore, 112),
+                titleMatchScore = maxOf(eval.titleMatchScore, 96),
+                significantTokenCoverage = 1f,
                 matchTier = MatchTier.TRANSLATION_OR_ALT_TITLE,
-                matchedField = MatchedTitleField.WORK_BRIDGE,
-                identityMatchBucket = 70,
+                matchedField = MatchedTitleField.ORIGINAL_TITLE,
+                identityMatchBucket = 96,
                 hasCanonicalAuthorConsensus =
                   BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText) in canonicalSurnames,
                 rejectionReason = null,
               )
+          } else if (sharesWorkBridge && !isHardSpam(cand, intent)) {
+            val struct = BibliographicMath.extractTitleStructure(cand.workTitle, cand.subtitle)
+            val bridgeCombinedNorm = stripAccentsLower("${cand.workTitle} ${cand.subtitle.orEmpty()} ${cand.synopsisCandidates.firstOrNull()?.text.orEmpty().take(180)}")
+            val bridgeHasAcademicSignal =
+              !intent.allowGuidesOrAnalyses &&
+                (academicSubtitleOrTitleRegex.containsMatchIn(bridgeCombinedNorm) ||
+                  (struct.subtitleNormalized.isNotEmpty() &&
+                    !isEditionOrVolumeSubtitle(struct.subtitleNormalized) &&
+                    BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText) !in canonicalSurnames))
+            if (bridgeHasAcademicSignal) {
+              cand to eval
+            } else {
+              cand to
+                eval.copy(
+                  accepted = true,
+                  queryMatchScore = maxOf(eval.queryMatchScore, 75),
+                  matchTier = MatchTier.TRANSLATION_OR_ALT_TITLE,
+                  matchedField = MatchedTitleField.WORK_BRIDGE,
+                  identityMatchBucket = 70,
+                  hasCanonicalAuthorConsensus =
+                    BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText) in canonicalSurnames,
+                  rejectionReason = null,
+                )
+            }
           } else {
             cand to eval
           }
@@ -240,29 +418,34 @@ object RelevanceAndDerivativeFilter {
       listOfNotNull(candidate.workTitle, candidate.subtitle, candidate.editionTitle)
         .joinToString(" ")
         .trim()
-    val synopsisRaw = candidate.synopsisCandidates.firstOrNull()?.text.orEmpty()
+    val titleNormPunct = stripAccentsLower(candidate.workTitle)
+    val combinedTitleNormPunct = stripAccentsLower(combinedTitleText)
+    val synopsisNormPunct = stripAccentsLower(candidate.synopsisCandidates.firstOrNull()?.text.orEmpty())
     val publisherNorm = BibliographicMath.normalizeText(candidate.publisher)
     val categoriesNorm = BibliographicMath.normalizeText(candidate.categories.joinToString(" "))
 
-    if (!intent.allowColoringBooks && coloringCompoundRegex.containsMatchIn(combinedTitleText)) {
+    if (!intent.allowColoringBooks && coloringCompoundRegex.containsMatchIn(combinedTitleNormPunct)) {
       return true
     }
     if (!intent.allowNotebooks) {
-      val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedTitleText)
+      val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedTitleNormPunct)
       val hasSecondaryStationeryCue =
-        stationerySecondarySignals.containsMatchIn("$combinedTitleText $synopsisRaw $categoriesNorm")
+        stationerySecondarySignals.containsMatchIn("$combinedTitleNormPunct $synopsisNormPunct $categoriesNorm")
       val endsWithNotebookOrJournal =
-        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(candidate.workTitle)
+        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(titleNormPunct)
       if (hasStrongStationeryPhrase || (endsWithNotebookOrJournal && (hasSecondaryStationeryCue || candidate.contributors.isEmpty()))) {
         return true
       }
     }
     if (!intent.allowGuidesOrAnalyses) {
-      val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedTitleText ${synopsisRaw.take(180)}")
-      val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm }
+      val authorNormSafe = BibliographicMath.normalizeText(candidate.primaryAuthorsText)
+      val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedTitleNormPunct ${synopsisNormPunct.take(200)}")
+      val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm || it in authorNormSafe }
       val startsWithResumoOrAnalise =
-        Regex("^\\s*(resumo|analise|study\\s+guide|summary)\\s*[:\\-]\\s*", RegexOption.IGNORE_CASE)
-          .containsMatchIn(candidate.workTitle)
+        Regex(
+          "^\\s*(?:resumo|analise|fichamento|study\\s+guide|summary)(?:\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida|essencial|pratico|pratica))?\\s*[:\\-]\\s*",
+          RegexOption.IGNORE_CASE,
+        ).containsMatchIn(titleNormPunct)
       if (hasHardSpamPhrase || isSummaryPublisher || startsWithResumoOrAnalise) {
         return true
       }
@@ -298,49 +481,58 @@ object RelevanceAndDerivativeFilter {
         if (subtitleRaw.isNotBlank() && !ed.contains(subtitleRaw, ignoreCase = true)) "$ed $subtitleRaw" else ed
       }
 
-    val synopsisRaw = candidate.synopsisCandidates.firstOrNull()?.text.orEmpty()
+    val titleNormPunct = stripAccentsLower(titleRaw)
+    val combinedWorkNormPunct = stripAccentsLower(combinedWorkText)
+    val synopsisNormPunct = stripAccentsLower(candidate.synopsisCandidates.firstOrNull()?.text.orEmpty())
     val publisherNorm = BibliographicMath.normalizeText(candidate.publisher)
     val categoriesNorm = BibliographicMath.normalizeText(candidate.categories.joinToString(" "))
+    val normAuthors = BibliographicMath.normalizeText(candidate.primaryAuthorsText)
 
-    // 1. Filtro de papelaria / colorir / guias apócrifos comerciais
-    if (!intent.allowColoringBooks && coloringCompoundRegex.containsMatchIn(combinedWorkText)) {
+    // 1. Filtro de papelaria / colorir / guias apócrifos comerciais (em texto normalizado sem diacríticos)
+    if (!intent.allowColoringBooks && coloringCompoundRegex.containsMatchIn(combinedWorkNormPunct)) {
       return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "coloring_book")
     }
     if (!intent.allowNotebooks) {
-      val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedWorkText)
+      val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedWorkNormPunct)
       val hasSecondaryStationeryCue =
-        stationerySecondarySignals.containsMatchIn("$combinedWorkText $synopsisRaw $categoriesNorm")
+        stationerySecondarySignals.containsMatchIn("$combinedWorkNormPunct $synopsisNormPunct $categoriesNorm")
       val endsWithNotebookOrJournal =
-        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(titleRaw)
+        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(titleNormPunct)
       if (hasStrongStationeryPhrase || (endsWithNotebookOrJournal && (hasSecondaryStationeryCue || candidate.contributors.isEmpty()))) {
         return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "stationery_notebook")
       }
     }
     if (!intent.allowGuidesOrAnalyses) {
-      val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedWorkText ${synopsisRaw.take(180)}")
-      val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm }
+      val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedWorkNormPunct ${synopsisNormPunct.take(200)}")
+      val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm || it in normAuthors }
       val startsWithResumoOrAnalise =
-        Regex("^\\s*(resumo|analise|study\\s+guide|summary)\\s*[:\\-]\\s*", RegexOption.IGNORE_CASE)
-          .containsMatchIn(titleRaw)
+        Regex(
+          "^\\s*(?:resumo|analise|fichamento|study\\s+guide|summary)(?:\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida|essencial|pratico|pratica))?\\s*[:\\-]\\s*",
+          RegexOption.IGNORE_CASE,
+        ).containsMatchIn(titleNormPunct)
       if (hasHardSpamPhrase || isSummaryPublisher || startsWithResumoOrAnalise) {
         return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "derivative_summary_or_guide")
       }
     }
 
     // 2. Preparar campos normalizados (workTitle, editionTitle, originalTitle, series, authors)
+    val subjectNorm = intent.subjectQueryPart?.let { BibliographicMath.normalizeText(it) }?.takeIf { it.isNotBlank() }
     val qTargetTitle =
-      if (intent.intentType == QueryIntentType.TITLE_AND_AUTHOR && !intent.titleQueryPart.isNullOrBlank()) {
-        BibliographicMath.normalizeText(intent.titleQueryPart)
-      } else {
-        intent.normalizedQuery
+      when {
+        intent.intentType == QueryIntentType.TITLE_AND_AUTHOR && !intent.titleQueryPart.isNullOrBlank() ->
+          BibliographicMath.normalizeText(intent.titleQueryPart)
+        subjectNorm != null -> subjectNorm
+        else -> intent.normalizedQuery
       }
     val qTargetAuthor =
       intent.authorQueryPart?.let { BibliographicMath.normalizeText(it) }
     val sigTokensTitle =
-      if (intent.intentType == QueryIntentType.TITLE_AND_AUTHOR && !intent.titleQueryPart.isNullOrBlank()) {
-        qTargetTitle.split(' ').filter { it.length > 1 }.ifEmpty { intent.significantTokens }
-      } else {
-        intent.significantTokens
+      when {
+        intent.intentType == QueryIntentType.TITLE_AND_AUTHOR && !intent.titleQueryPart.isNullOrBlank() ->
+          qTargetTitle.split(' ').filter { it.length > 1 }.ifEmpty { intent.significantTokens }
+        subjectNorm != null ->
+          subjectNorm.split(' ').filter { it.length > 1 && it !in queryStopwords }.ifEmpty { intent.significantTokens }
+        else -> intent.significantTokens
       }
 
     val titleForms =
@@ -354,19 +546,19 @@ object RelevanceAndDerivativeFilter {
         }
       }
 
-    val allowBilingualModifierSynonyms = intent.allowColoringBooks || intent.allowNotebooks
+    val allowBilingualModifierSynonyms =
+      intent.allowColoringBooks || intent.allowNotebooks || intent.allowGuidesOrAnalyses
     val bestFormMatch =
       titleForms
         .map { form -> evaluateTitleForm(form, qTargetTitle, sigTokensTitle, allowBilingualModifierSynonyms) }
         .maxByOrNull { it.score }
-        ?: TitleFormMatch(MatchedTitleField.NONE, 0, 0f, exactFull = false, exactBase = false, orderedContiguous = false, cleanSubtitle = true, fuzzyOnly = false)
+        ?: TitleFormMatch(MatchedTitleField.NONE, 0, 0f, exactFull = false, exactBase = false, orderedContiguous = false, cleanSubtitle = true, fuzzyOnly = false, matchedWordSet = emptySet(), baseNonStopwords = emptyList())
 
     val normSeries = BibliographicMath.normalizeText(candidate.seriesName)
     val seriesWords = normSeries.split(' ').filter { it.isNotBlank() }.toSet()
     val seriesHits = countStrictTokenHits(sigTokensTitle, seriesWords, allowMorphological = true)
     val seriesCoverage = if (sigTokensTitle.isEmpty()) 0f else seriesHits.toFloat() / sigTokensTitle.size.toFloat()
 
-    val normAuthors = BibliographicMath.normalizeText(candidate.primaryAuthorsText)
     val authorWords = normAuthors.split(' ').filter { it.isNotBlank() }.toSet()
     val authorTokens =
       if (intent.intentType == QueryIntentType.TITLE_AND_AUTHOR && qTargetAuthor != null) {
@@ -383,8 +575,44 @@ object RelevanceAndDerivativeFilter {
           (authorTokens.size >= 2 && authorCoverage >= 1f) ||
           (normAuthors.contains(authorQueryString) && authorQueryString.length >= 6))
 
+    // 2b. Detecção estruturada de consulta cruzada Título + Autor sem delimitador explícito (ex.: "Coraline Neil Gaiman")
+    val crossFieldEval =
+      if (intent.intentType !in setOf(QueryIntentType.EXPLICIT_AUTHOR, QueryIntentType.EXPLICIT_TITLE, QueryIntentType.TITLE_AND_AUTHOR) &&
+        intent.subjectQueryPart == null &&
+        intent.significantTokens.size >= 2 &&
+        bestFormMatch.field != MatchedTitleField.NONE &&
+        authorWords.isNotEmpty()
+      ) {
+        evaluateCrossFieldTitleAndAuthor(
+          queryTokens = intent.significantTokens,
+          titleForm = bestFormMatch,
+          authorWords = authorWords,
+          candidateSurname = BibliographicMath.normalizeAuthorSurname(candidate.primaryAuthorsText),
+          allowBilingualModifierSynonyms = allowBilingualModifierSynonyms,
+        )
+      } else {
+        null
+      }
+
+    // 2c. Verificar correspondência de modificador destacado (ex.: "Jogos Vorazes guia")
+    val guideMetadataNorm =
+      BibliographicMath.normalizeText("$combinedWorkText ${editionTitleRaw.orEmpty()} $categoriesNorm ${synopsisNormPunct.take(180)}")
+        .split(' ')
+        .filter { it.isNotBlank() }
+        .toSet()
+    val matchesDetachedGuideModifier =
+      intent.allowGuidesOrAnalyses &&
+        intent.detachedModifierTokens.isNotEmpty() &&
+        countStrictTokenHits(
+          intent.detachedModifierTokens,
+          guideMetadataNorm,
+          allowMorphological = true,
+          allowBilingualModifierSynonyms = true,
+        ) > 0
+
     val authorMatchScore =
       when {
+        crossFieldEval != null -> maxOf(if (crossFieldEval.authorTokenHits >= 2) 110 else 96, if (exactAuthorMatch) 115 else 0)
         exactAuthorMatch -> 115
         authorCoverage >= 0.99f -> 98
         authorCoverage >= 0.60f && authorSigHits >= 1 -> (50 + (authorCoverage * 30)).toInt()
@@ -398,9 +626,13 @@ object RelevanceAndDerivativeFilter {
         bestFormMatch.field
       }
 
-    val effectiveTitleScore =
+    var effectiveTitleScore =
       maxOf(bestFormMatch.score, if (seriesCoverage >= 0.99f) 84 else 0)
-    val effectiveTitleCoverage = maxOf(bestFormMatch.coverage, seriesCoverage)
+    var effectiveTitleCoverage = maxOf(bestFormMatch.coverage, seriesCoverage)
+    if (crossFieldEval != null) {
+      effectiveTitleScore = maxOf(effectiveTitleScore, crossFieldEval.boostedTitleScore)
+      effectiveTitleCoverage = maxOf(effectiveTitleCoverage, crossFieldEval.candidateTitleCompleteness)
+    }
 
     // Cobertura mínima rigorosa (sem fallback de Levenshtein de frase inteira que aprova "O Senhor dos Anais"!)
     val hasMinimumMatch =
@@ -409,6 +641,10 @@ object RelevanceAndDerivativeFilter {
           authorCoverage >= 0.99f || exactAuthorMatch
         intent.intentType == QueryIntentType.TITLE_AND_AUTHOR ->
           effectiveTitleCoverage >= 0.99f && authorSigHits >= 1
+        crossFieldEval != null -> true
+        intent.subjectQueryPart != null && intent.detachedModifierTokens.isNotEmpty() ->
+          effectiveTitleCoverage >= 0.99f &&
+            (matchesDetachedGuideModifier || !intent.allowGuidesOrAnalyses || bestFormMatch.exactBase)
         sigTokensTitle.size <= 1 ->
           effectiveTitleCoverage >= 0.99f || authorCoverage >= 0.99f
         sigTokensTitle.size == 2 ->
@@ -448,7 +684,7 @@ object RelevanceAndDerivativeFilter {
       }
     val struct = BibliographicMath.extractTitleStructure(rawFormForSubCheck, candidate.subtitle)
     val hasAcademicSubtitleSignal =
-      academicSubtitleOrTitleRegex.containsMatchIn("$combinedWorkText ${synopsisRaw.take(180)}")
+      academicSubtitleOrTitleRegex.containsMatchIn("$combinedWorkNormPunct ${synopsisNormPunct.take(200)}")
     val hasAcademicCategory =
       academicCategoryTokens.any { it in categoriesNorm } &&
         !Regex("\\b(fiction|ficcao|fantasy|fantasia|romance|juvenile)\\b").containsMatchIn(categoriesNorm)
@@ -457,20 +693,28 @@ object RelevanceAndDerivativeFilter {
         !isEditionOrVolumeSubtitle(struct.subtitleNormalized) &&
         !qTargetTitle.contains(struct.subtitleNormalized)
 
+    val hasCompanionTieInSubtitle =
+      hasExplanatoryNonEditionSubtitle &&
+        hasExplanatoryCompanionOrAcademicCue(struct.subtitleNormalized)
+
     val isAcademicDerivative =
       !intent.allowGuidesOrAnalyses &&
         effectiveTitleCoverage >= 0.5f &&
-        authorMatchScore < 85 &&
         (
           hasAcademicSubtitleSignal ||
-            (hasAcademicCategory && conflictsWithCanonicalAuthor) ||
-            (hasAcademicCategory && hasExplanatoryNonEditionSubtitle) ||
-            (conflictsWithCanonicalAuthor && hasExplanatoryNonEditionSubtitle && !bestFormMatch.exactFull)
-        )
+            hasCompanionTieInSubtitle ||
+            (authorMatchScore < 85 &&
+              ((hasAcademicCategory && conflictsWithCanonicalAuthor) ||
+                (hasAcademicCategory && hasExplanatoryNonEditionSubtitle) ||
+                (conflictsWithCanonicalAuthor && hasExplanatoryNonEditionSubtitle && !bestFormMatch.exactFull)))
+          )
 
     // 4. Atribuição de MatchTier (T1..T7)
     val isCrossRefAcademic = MetadataSource.CROSSREF in candidate.sources && !isAcademicCategorySafe(categoriesNorm)
     val finalIsAcademic = isAcademicDerivative || (isCrossRefAcademic && !intent.allowGuidesOrAnalyses && conflictsWithCanonicalAuthor)
+
+    val effectiveExactBase = bestFormMatch.exactBase || (crossFieldEval?.isExactBaseTitle == true)
+    val effectiveExactFull = bestFormMatch.exactFull || (crossFieldEval?.isExactBaseTitle == true && bestFormMatch.cleanSubtitle)
 
     val matchTier =
       when {
@@ -478,9 +722,9 @@ object RelevanceAndDerivativeFilter {
         struct.bundleKind == com.example.core.model.TitleBundleKind.COLLECTION_OR_BOX ->
           MatchTier.COLLECTION_OR_BOX_SET
         struct.bundleKind == com.example.core.model.TitleBundleKind.SERIES_VOLUME &&
-          !bestFormMatch.exactFull ->
+          !effectiveExactFull ->
           MatchTier.SERIES_VOLUME_MATCH
-        bestFormMatch.exactFull || (bestFormMatch.exactBase && bestFormMatch.cleanSubtitle) ->
+        effectiveExactFull || (effectiveExactBase && bestFormMatch.cleanSubtitle) ->
           if (bestFormMatch.field == MatchedTitleField.EDITION_TITLE || bestFormMatch.field == MatchedTitleField.ORIGINAL_TITLE) {
             MatchTier.TRANSLATION_OR_ALT_TITLE
           } else {
@@ -488,7 +732,7 @@ object RelevanceAndDerivativeFilter {
           }
         bestFormMatch.field == MatchedTitleField.EDITION_TITLE || bestFormMatch.field == MatchedTitleField.ORIGINAL_TITLE ->
           MatchTier.TRANSLATION_OR_ALT_TITLE
-        bestFormMatch.exactBase && hasExplanatoryNonEditionSubtitle && !conflictsWithCanonicalAuthor ->
+        effectiveExactBase && hasExplanatoryNonEditionSubtitle && !conflictsWithCanonicalAuthor ->
           // Subtítulo legítimo da própria série/autor (ex: "O Senhor dos Anéis: A Sociedade do Anel" por Tolkien)
           if (struct.bundleKind == com.example.core.model.TitleBundleKind.OMNIBUS_SINGLE_VOLUME) {
             MatchTier.EXACT_WORK
@@ -504,21 +748,38 @@ object RelevanceAndDerivativeFilter {
         else -> MatchTier.PARTIAL_OR_FUZZY_MATCH
       }
 
-    val identityBucket =
+    var identityBucket =
       when {
         finalIsAcademic -> 10
-        bestFormMatch.exactFull -> 100
-        bestFormMatch.exactBase && bestFormMatch.cleanSubtitle -> 95
+        effectiveExactFull -> 100
+        effectiveExactBase && bestFormMatch.cleanSubtitle -> 95
+        crossFieldEval != null -> 90
         bestFormMatch.orderedContiguous && effectiveTitleCoverage >= 0.99f -> 85
         effectiveTitleCoverage >= 0.99f -> 75
         authorMatchScore >= 95 -> 70
         else -> 40
       }
 
+    // Quando o usuário explicitamente pediu guia/análise destacada (ex: "Jogos Vorazes guia"),
+    // guias reais sobem acima das edições puras do romance para atender a intenção do leitor.
+    val guideIntentBonus =
+      if (intent.allowGuidesOrAnalyses && intent.detachedModifierTokens.isNotEmpty()) {
+        if (matchesDetachedGuideModifier) {
+          identityBucket = maxOf(identityBucket, 98)
+          35
+        } else {
+          identityBucket = minOf(identityBucket, 80)
+          0
+        }
+      } else {
+        0
+      }
+
     val combinedScore =
       maxOf(effectiveTitleScore, authorMatchScore) +
         (if (effectiveTitleScore >= 50 && authorMatchScore >= 40) 25 else 0) +
-        (if (matchesCanonicalAuthor) 12 else 0)
+        (if (matchesCanonicalAuthor) 12 else 0) +
+        guideIntentBonus
 
     return CandidateMatchEvaluation(
       accepted = true,
@@ -528,7 +789,7 @@ object RelevanceAndDerivativeFilter {
       significantTokenCoverage = maxOf(effectiveTitleCoverage, authorCoverage),
       matchTier = matchTier,
       matchedField =
-        if (authorMatchScore > effectiveTitleScore && effectiveTitleScore < 50) {
+        if (crossFieldEval == null && authorMatchScore > effectiveTitleScore && effectiveTitleScore < 50) {
           MatchedTitleField.AUTHOR_ONLY
         } else {
           effectiveTitleField
@@ -537,6 +798,69 @@ object RelevanceAndDerivativeFilter {
       isAcademicOrDerivative = finalIsAcademic,
       hasCanonicalAuthorConsensus = matchesCanonicalAuthor,
       rejectionReason = null,
+    )
+  }
+
+  private data class CrossFieldMatch(
+    val titleTokenHits: Int,
+    val authorTokenHits: Int,
+    val boostedTitleScore: Int,
+    val candidateTitleCompleteness: Float,
+    val isExactBaseTitle: Boolean,
+  )
+
+  private fun evaluateCrossFieldTitleAndAuthor(
+    queryTokens: List<String>,
+    titleForm: TitleFormMatch,
+    authorWords: Set<String>,
+    candidateSurname: String,
+    allowBilingualModifierSynonyms: Boolean,
+  ): CrossFieldMatch? {
+    val inTitle =
+      queryTokens.filter { tok ->
+        countStrictTokenHits(listOf(tok), titleForm.matchedWordSet, allowMorphological = true, allowBilingualModifierSynonyms) > 0
+      }
+    val inAuthor =
+      queryTokens.filter { tok ->
+        countStrictTokenHits(listOf(tok), authorWords, allowMorphological = true) > 0
+      }
+    if (inTitle.isEmpty() || inAuthor.isEmpty()) return null
+    val authorExplainsMissingTitleToken = inAuthor.any { it !in inTitle }
+    if (!authorExplainsMissingTitleToken) return null
+
+    val unionExplained = queryTokens.count { it in inTitle || it in inAuthor }
+    val unionCoverage = unionExplained.toFloat() / queryTokens.size.toFloat()
+    val requiredUnionCoverage = if (queryTokens.size <= 5) 0.99f else 0.85f
+    if (unionCoverage < requiredUnionCoverage) return null
+
+    val baseWords = titleForm.baseNonStopwords
+    if (baseWords.isEmpty()) return null
+    val matchedBaseWords =
+      baseWords.count { bw ->
+        inTitle.any { qTok -> bw == qTok || (qTok.length >= 4 && bw.startsWith(qTok) && bw.length <= qTok.length + 2) }
+      }
+    val candidateTitleCompleteness = matchedBaseWords.toFloat() / baseWords.size.toFloat()
+    if (candidateTitleCompleteness < 0.65f) return null
+
+    // Autor precisa bater sobrenome ou >= 2 tokens para evitar colisões acidentais de prenome
+    val surnameMatched =
+      candidateSurname.isNotEmpty() &&
+        inAuthor.any { qTok -> qTok == candidateSurname || BibliographicMath.tokenSimilarity(qTok, candidateSurname) >= 0.85f }
+    if (!surnameMatched && inAuthor.size < 2) return null
+
+    val isExactBase = matchedBaseWords == baseWords.size
+    val boostedTitleScore =
+      when {
+        isExactBase && titleForm.cleanSubtitle -> 118
+        isExactBase -> 102
+        else -> 88
+      }
+    return CrossFieldMatch(
+      titleTokenHits = inTitle.size,
+      authorTokenHits = inAuthor.size,
+      boostedTitleScore = boostedTitleScore,
+      candidateTitleCompleteness = candidateTitleCompleteness,
+      isExactBaseTitle = isExactBase,
     )
   }
 
@@ -552,6 +876,12 @@ object RelevanceAndDerivativeFilter {
     if (editionOnlySubtitleRegex.matches(subtitleNorm)) return true
     return Regex("^(?:livro|vol|volume|parte|part|tomo)\\s*[0-9ivx]+$").matches(subtitleNorm)
   }
+
+  private val queryStopwords =
+    setOf(
+      "a", "o", "as", "os", "um", "uma", "de", "da", "do", "das", "dos", "em", "no", "na", "e", "ou",
+      "the", "an", "and", "or", "of", "in", "on", "to", "for",
+    )
 
   private data class TitleForm(
     val field: MatchedTitleField,
@@ -569,6 +899,8 @@ object RelevanceAndDerivativeFilter {
     val orderedContiguous: Boolean,
     val cleanSubtitle: Boolean,
     val fuzzyOnly: Boolean,
+    val matchedWordSet: Set<String> = emptySet(),
+    val baseNonStopwords: List<String> = emptyList(),
   )
 
   private fun evaluateTitleForm(
@@ -628,6 +960,12 @@ object RelevanceAndDerivativeFilter {
         else -> (maxOf(coverage, fuzzyCoverage) * 35).toInt()
       }
 
+    val baseWords =
+      normBaseWithArticle
+        .split(' ')
+        .filter { it.isNotBlank() && it !in queryStopwords }
+        .ifEmpty { normBaseWithArticle.split(' ').filter { it.isNotBlank() } }
+
     return TitleFormMatch(
       field = form.field,
       score = score,
@@ -637,6 +975,8 @@ object RelevanceAndDerivativeFilter {
       orderedContiguous = orderedContiguous,
       cleanSubtitle = cleanSub,
       fuzzyOnly = usedFuzzy,
+      matchedWordSet = fullWordSet,
+      baseNonStopwords = baseWords,
     )
   }
 
@@ -657,6 +997,19 @@ object RelevanceAndDerivativeFilter {
             "caderno" -> setOf("notebook", "journal", "diary")
             "notebook" -> setOf("caderno")
             "diario" -> setOf("diary", "journal")
+            "guia" -> setOf("guide", "manual", "handbook", "companion")
+            "guide" -> setOf("guia", "manual", "handbook", "companion")
+            "manual" -> setOf("guia", "guide", "handbook")
+            "handbook" -> setOf("guia", "guide", "manual")
+            "companion" -> setOf("guia", "guide")
+            "oficial" -> setOf("official")
+            "official" -> setOf("oficial")
+            "ilustrado" -> setOf("illustrated")
+            "illustrated" -> setOf("ilustrado")
+            "filme" -> setOf("movie", "film")
+            "movie" -> setOf("filme")
+            "tributos" -> setOf("tribute", "tributes")
+            "tribute" -> setOf("tributos", "tributo")
             else -> emptySet()
           }
         } else {
@@ -691,7 +1044,7 @@ object RelevanceAndDerivativeFilter {
 
   /**
    * Detecta se uma consulta curta/ambígua comportou-se predominantemente como busca por autor
-   * entre os candidatos literários aceitos (ex: "Machado de Assis" vs "Dom Casmurro").
+   * entre os candidatos literários aceitos (ex: "Machado de Assis" vs "Dom Casmurro" vs "Coraline Neil Gaiman").
    */
   fun isPredominantlyAuthorQuery(
     evaluations: List<CandidateMatchEvaluation>,
@@ -700,13 +1053,16 @@ object RelevanceAndDerivativeFilter {
     if (intent == null) return false
     if (intent.intentType == QueryIntentType.EXPLICIT_AUTHOR) return true
     if (intent.intentType != QueryIntentType.AMBIGUOUS_OR_SHORT) return false
+    if (intent.detachedModifierTokens.isNotEmpty() || intent.allowGuidesOrAnalyses || intent.wantsBoxOrCollection) {
+      return false
+    }
     val accepted = evaluations.filter { it.accepted }
     if (accepted.size < 2) return false
     val hasExactLiteralTitleMatch =
       accepted.any {
         (it.matchTier == MatchTier.EXACT_WORK || it.matchTier == MatchTier.TRANSLATION_OR_ALT_TITLE) &&
           it.titleMatchScore >= 115 &&
-          it.authorMatchScore < 40
+          (it.authorMatchScore < 40 || (it.authorMatchScore >= 90 && it.titleMatchScore >= 115))
       }
     if (hasExactLiteralTitleMatch) return false
     val strongAuthorMatches = accepted.count { it.authorMatchScore >= 85 && it.titleMatchScore < 85 }

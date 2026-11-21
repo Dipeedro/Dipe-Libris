@@ -22,6 +22,8 @@ data class ParsedSearchIntent(
   val significantTokens: List<String>,
   val authorQueryPart: String? = null,
   val titleQueryPart: String? = null,
+  val subjectQueryPart: String? = null,
+  val detachedModifierTokens: List<String> = emptyList(),
   val explicitLanguageRequest: String? = null,
   val allowGuidesOrAnalyses: Boolean = false,
   val allowColoringBooks: Boolean = false,
@@ -37,7 +39,12 @@ data class ParsedSearchIntent(
       intentType == QueryIntentType.EXPLICIT_AUTHOR ||
         (intentType == QueryIntentType.AMBIGUOUS_OR_SHORT &&
           authorQueryPart != null &&
-          titleQueryPart == null)
+          titleQueryPart == null &&
+          detachedModifierTokens.isEmpty() &&
+          !allowGuidesOrAnalyses &&
+          !allowColoringBooks &&
+          !allowNotebooks &&
+          !wantsBoxOrCollection)
 }
 
 object QueryIntentParser {
@@ -78,6 +85,82 @@ object QueryIntentParser {
     )
 
   private val leadingTitleArticles = setOf("a", "o", "as", "os", "um", "uma", "the", "an", "le", "la")
+
+  private val trailingSingleDetachedModifiers =
+    setOf(
+      "guia",
+      "guide",
+      "manual",
+      "handbook",
+      "companion",
+      "analise",
+      "analysis",
+      "resumo",
+      "summary",
+      "fichamento",
+      "colorir",
+      "coloring",
+      "colouring",
+      "box",
+      "trilogia",
+      "trilogy",
+      "colecao",
+      "collection",
+      "omnibus",
+    )
+
+  private val trailingMultiDetachedModifiers =
+    listOf(
+      listOf("livro", "de", "colorir"),
+      listOf("caderno", "de", "colorir"),
+      listOf("guia", "do", "filme"),
+      listOf("guia", "de", "estudo"),
+      listOf("guia", "de", "leitura"),
+      listOf("guia", "do", "leitor"),
+      listOf("guia", "nao", "oficial"),
+      listOf("guia", "oficial"),
+      listOf("guia", "ilustrado"),
+      listOf("guia", "completo"),
+      listOf("guia", "definitivo"),
+      listOf("official", "guide"),
+      listOf("tribute", "guide"),
+      listOf("study", "guide"),
+      listOf("coloring", "book"),
+      listOf("colouring", "book"),
+      listOf("para", "colorir"),
+    )
+
+  private val leadingDetachedModifierPrefixes =
+    listOf(
+      listOf("livro", "de", "colorir"),
+      listOf("caderno", "de", "colorir"),
+      listOf("coloring", "book", "of"),
+      listOf("coloring", "book", "for"),
+      listOf("coloring", "book"),
+      listOf("colouring", "book"),
+      listOf("guia", "oficial", "de"),
+      listOf("guia", "oficial", "da"),
+      listOf("guia", "oficial", "do"),
+      listOf("guia", "oficial"),
+      listOf("guia", "sobre"),
+      listOf("official", "guide", "to"),
+      listOf("official", "guide"),
+      listOf("analise", "de"),
+      listOf("analise", "da"),
+      listOf("analise", "do"),
+      listOf("analise", "sobre"),
+      listOf("resumo", "de"),
+      listOf("resumo", "da"),
+      listOf("resumo", "do"),
+      listOf("box", "trilogia"),
+      listOf("box", "colecao"),
+      listOf("box", "completo"),
+      listOf("box", "completa"),
+      listOf("box"),
+    )
+
+  private val prepositionsAndArticles =
+    setOf("de", "da", "do", "das", "dos", "para", "o", "a", "os", "as", "um", "uma", "of", "the", "an", "for", "to")
 
   fun isExplicitDoi(raw: String): Boolean = explicitDoiRegex.matches(raw.trim())
 
@@ -123,12 +206,16 @@ object QueryIntentParser {
           setOf(
             "guia",
             "guide",
+            "manual",
+            "handbook",
+            "companion",
             "analise",
             "analysis",
             "resumo",
             "summary",
             "estudo",
             "study",
+            "fichamento",
             "comentado",
             "dissertacao",
             "tese",
@@ -212,16 +299,33 @@ object QueryIntentParser {
       }
     }
 
-    val startsWithArticle = allTokens.firstOrNull() in leadingTitleArticles && allTokens.size >= 2
+    val (subjectPart, detachedModifiers) = extractDetachedModifiers(workingQuery)
+    val effectiveTokensForTitleSignal =
+      if (subjectPart != null) {
+        BibliographicMath.normalizeText(subjectPart).split(' ').filter { it.isNotBlank() }
+      } else {
+        allTokens
+      }
+
+    val startsWithArticle =
+      effectiveTokensForTitleSignal.firstOrNull() in leadingTitleArticles &&
+        effectiveTokensForTitleSignal.size >= 2
     val hasStrongTitleSignal =
-      strongTitleMarkers.containsMatchIn(workingQuery) || allTokens.size >= 4 || startsWithArticle
+      strongTitleMarkers.containsMatchIn(subjectPart ?: workingQuery) ||
+        effectiveTokensForTitleSignal.size >= 4 ||
+        startsWithArticle
 
     val intentType =
       if (hasStrongTitleSignal) QueryIntentType.TITLE_STRONG else QueryIntentType.AMBIGUOUS_OR_SHORT
 
-    // Sonda autor separadamente APENAS em consultas curtas de 2-3 palavras sem pontuação nem sinais de título
+    // Sonda autor separadamente APENAS em consultas curtas de 2-3 palavras sem pontuação nem sinais de título/modificador
     val possibleAuthorProbe =
       if (intentType == QueryIntentType.AMBIGUOUS_OR_SHORT &&
+        detachedModifiers.isEmpty() &&
+        !allowGuides &&
+        !allowColoring &&
+        !allowNotebooks &&
+        !wantsBox &&
         allTokens.size in 2..3 &&
         allTokens.none { it.all(Char::isDigit) } &&
         !workingQuery.any { it in setOf('?', '!', ':') }
@@ -240,12 +344,68 @@ object QueryIntentParser {
       allTokens = allTokens,
       significantTokens = significantTokens,
       authorQueryPart = possibleAuthorProbe,
-      titleQueryPart = if (intentType == QueryIntentType.TITLE_STRONG) workingQuery else null,
+      titleQueryPart = if (intentType == QueryIntentType.TITLE_STRONG) (subjectPart ?: workingQuery) else null,
+      subjectQueryPart = subjectPart,
+      detachedModifierTokens = detachedModifiers,
       explicitLanguageRequest = explicitLang,
       allowGuidesOrAnalyses = allowGuides,
       allowColoringBooks = allowColoring,
       allowNotebooks = allowNotebooks,
       wantsBoxOrCollection = wantsBox,
     )
+  }
+
+  private fun extractDetachedModifiers(workingQuery: String): Pair<String?, List<String>> {
+    val rawWords = workingQuery.split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (rawWords.size < 2) return null to emptyList()
+    val normWords = rawWords.map { BibliographicMath.normalizeText(it) }
+    var startIdx = 0
+    var endIdx = rawWords.size
+    val collected = mutableListOf<String>()
+
+    // 1. Verificar prefixos destacados (ex.: "livro de colorir harry potter", "Box Harry Potter")
+    for (prefix in leadingDetachedModifierPrefixes) {
+      if (endIdx - startIdx > prefix.size && normWords.subList(startIdx, startIdx + prefix.size) == prefix) {
+        collected.addAll(prefix.filter { it !in stopwords })
+        startIdx += prefix.size
+        break
+      }
+    }
+
+    // 2. Verificar sufixos destacados compostos (ex.: "Jogos Vorazes guia oficial", "Coraline livro de colorir")
+    var matchedTrailingMulti = false
+    for (suffix in trailingMultiDetachedModifiers) {
+      if (endIdx - startIdx > suffix.size && normWords.subList(endIdx - suffix.size, endIdx) == suffix) {
+        collected.addAll(suffix.filter { it !in stopwords })
+        endIdx -= suffix.size
+        matchedTrailingMulti = true
+        break
+      }
+    }
+
+    // 3. Verificar sufixo simples destacado (ex.: "Jogos Vorazes guia"), evitando preposições/artigos antes
+    if (!matchedTrailingMulti && endIdx - startIdx >= 2) {
+      val last = normWords[endIdx - 1]
+      val prev = normWords[endIdx - 2]
+      if (last in trailingSingleDetachedModifiers && prev !in prepositionsAndArticles) {
+        collected.add(last)
+        endIdx -= 1
+      }
+    }
+
+    if (collected.isEmpty() || startIdx >= endIdx) return null to emptyList()
+    val subjectWords = rawWords.subList(startIdx, endIdx)
+    val subjectNormTokens =
+      subjectWords
+        .map { BibliographicMath.normalizeText(it) }
+        .filter { it.isNotBlank() && it !in stopwords }
+    if (subjectNormTokens.isEmpty()) return null to emptyList()
+
+    val subjectRaw =
+      subjectWords
+        .joinToString(" ")
+        .trim(' ', '-', ':', '–', '—')
+        .takeIf { it.isNotBlank() } ?: return null to emptyList()
+    return subjectRaw to collected.distinct()
   }
 }

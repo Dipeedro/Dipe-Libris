@@ -14,11 +14,14 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
@@ -218,8 +221,10 @@ class OpenLibraryAdapter(
           executeSearchUrl(searchUrl, page = 1, limit = 8, explicitRequestedLang = null, startMs = startMs)
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message, durationMs = System.currentTimeMillis() - startMs)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg, durationMs = System.currentTimeMillis() - startMs)
           )
         }
     }
@@ -237,8 +242,10 @@ class OpenLibraryAdapter(
           executeSearchUrl(url, page = 1, limit = 25, explicitRequestedLang = null, startMs = startMs)
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message, durationMs = System.currentTimeMillis() - startMs)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg, durationMs = System.currentTimeMillis() - startMs)
           )
         }
     }
@@ -291,11 +298,15 @@ class OpenLibraryAdapter(
               .flatMap { it.candidates }
               .distinctBy { it.candidateId }
 
+          val shouldRunFallback =
+            plan.fallbackQuery != null &&
+              (combinedInitial.isEmpty() || (intent.significantTokens.size >= 3 && combinedInitial.size < 2))
+
           val allOutcomes =
-            if (combinedInitial.isEmpty() && plan.fallbackQuery != null) {
+            if (shouldRunFallback) {
               val fbOutcome =
                 executeSearchUrl(
-                  url = buildSearchUrl(plan.fallbackQuery),
+                  url = buildSearchUrl(plan.fallbackQuery!!),
                   page = 1,
                   limit = plan.fallbackQuery.limit,
                   explicitRequestedLang = explicitLang,
@@ -312,7 +323,10 @@ class OpenLibraryAdapter(
               .distinctBy { it.candidateId }
 
           if (plan.shouldEnrichMissingPtWorks && combined.isNotEmpty()) {
-            val enrichedExtras = enrichWorksMissingPortugueseEditions(combined, explicitLang)
+            val enrichedExtras =
+              withTimeoutOrNull(1_800L) {
+                enrichWorksMissingPortugueseEditions(combined, explicitLang)
+              }.orEmpty()
             if (enrichedExtras.isNotEmpty()) {
               combined = (combined + enrichedExtras).distinctBy { it.candidateId }
             }
@@ -335,8 +349,10 @@ class OpenLibraryAdapter(
           )
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message, durationMs = System.currentTimeMillis() - startMs)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg, durationMs = System.currentTimeMillis() - startMs)
           )
         }
     }
@@ -362,16 +378,18 @@ class OpenLibraryAdapter(
   private suspend fun enrichWorksMissingPortugueseEditions(
     candidates: List<SearchEditionCandidate>,
     explicitRequestedLang: String?,
-  ): List<SearchEditionCandidate> = coroutineScope {
+  ): List<SearchEditionCandidate> = supervisorScope {
     val byWork = candidates.filter { it.externalWorkKey?.startsWith("/works/") == true }.groupBy { it.externalWorkKey!! }
     val targetWorks =
       byWork.entries
         .mapNotNull { (workKey, workCands) ->
           val rep = workCands.maxByOrNull { it.workEditionCount } ?: return@mapNotNull null
           val claimsPt = "pt" in rep.availableWorkLanguages
-          val hasEmbeddedPt = workCands.any { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
-          if (claimsPt && !hasEmbeddedPt && rep.workEditionCount >= 10) {
-            workKey to rep
+          val embeddedPtCount = workCands.count { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
+          if ((claimsPt && embeddedPtCount < 5 && rep.workEditionCount >= 8) ||
+            (workCands.size < 4 && rep.workEditionCount >= 12)
+          ) {
+            Triple(workKey, rep, workCands.mapNotNull { it.externalIds["openlibrary_edition"] }.toSet())
           } else {
             null
           }
@@ -379,14 +397,14 @@ class OpenLibraryAdapter(
         .sortedByDescending { it.second.workReadingLogCount + (it.second.workEditionCount * 20) }
         .take(2)
 
-    if (targetWorks.isEmpty()) return@coroutineScope emptyList()
+    if (targetWorks.isEmpty()) return@supervisorScope emptyList()
 
     targetWorks
-      .map { (workKey, rep) ->
+      .map { (workKey, rep, existingEdKeys) ->
         async {
-          withTimeoutOrNull(1_600L) {
+          withTimeoutOrNull(1_400L) {
             runCatching {
-                val resp = fetchJson("$baseUrl$workKey/editions.json?limit=40")
+                val resp = fetchJson("$baseUrl$workKey/editions.json?limit=60")
                 val body = resp.body?.takeIf { resp.code == 200 } ?: return@runCatching emptyList()
                 val parsed = json.decodeFromString<OlWorkEditionsResponse>(body)
                 val syntheticWork =
@@ -396,6 +414,8 @@ class OpenLibraryAdapter(
                     subtitle = rep.subtitle,
                   )
                 parsed.entries
+                  .asSequence()
+                  .filter { ed -> ed.key == null || ed.key !in existingEdKeys }
                   .map { ed ->
                     buildCandidateFromEdition(
                       edition = ed,
@@ -409,10 +429,15 @@ class OpenLibraryAdapter(
                       availableWorkLanguages = rep.availableWorkLanguages,
                     )
                   }
-                  .filter { it.languageTierRank <= LanguageTier.PT_UNCERTAIN.rank }
-                  .take(4)
+                  .filter { it.languageTierRank <= LanguageTier.EN.rank }
+                  .sortedWith(editionRichnessComparator())
+                  .take(16)
+                  .toList()
               }
-              .getOrDefault(emptyList())
+              .getOrElse { err ->
+                if (err is CancellationException) throw err
+                emptyList()
+              }
           }.orEmpty()
         }
       }
@@ -435,7 +460,7 @@ class OpenLibraryAdapter(
                   runCatching { json.decodeFromString<OlWorkRecord>(it) }.getOrNull()
                 }
               }
-              val eDef = async { fetchJson("$baseUrl$externalWorkKey/editions.json?limit=50") }
+              val eDef = async { fetchJson("$baseUrl$externalWorkKey/editions.json?limit=80") }
               wDef.await() to eDef.await()
             }
 
@@ -462,7 +487,7 @@ class OpenLibraryAdapter(
             parsed.entries
               .filter { !it.title.isNullOrBlank() || work?.title != null }
               .map { ed -> buildCandidateFromEdition(ed, work, authorNames, explicitRequestedLang = null) }
-              .sortedBy { it.languageTierRank }
+              .sortedWith(editionRichnessComparator())
 
           SourceAdapterResult(
             status =
@@ -477,13 +502,15 @@ class OpenLibraryAdapter(
           )
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message, durationMs = System.currentTimeMillis() - startMs)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg, durationMs = System.currentTimeMillis() - startMs)
           )
         }
     }
 
-  private fun fetchAuthorContributor(aKey: String): CandidateContributor? {
+  private suspend fun fetchAuthorContributor(aKey: String): CandidateContributor? {
     val resp = fetchJson("$baseUrl$aKey.json")
     val name =
       resp.body?.takeIf { resp.code == 200 }?.let { body ->
@@ -493,7 +520,7 @@ class OpenLibraryAdapter(
     return CandidateContributor(name = clean, role = ContributorRole.AUTHOR, externalId = aKey)
   }
 
-  private fun executeSearchUrl(
+  private suspend fun executeSearchUrl(
     url: String,
     page: Int,
     limit: Int,
@@ -618,9 +645,10 @@ class OpenLibraryAdapter(
         }
 
       if (nestedCandidates.isNotEmpty()) {
-        // Keep primary-tier editions + top secondary editions so a single Work does not bloat
-        val prioritized =
-          nestedCandidates.sortedBy { it.languageTierRank }.take(5)
+        val sortedNested = nestedCandidates.sortedWith(editionRichnessComparator())
+        val primaryTiered = sortedNested.filter { it.languageTierRank <= LanguageTier.EN.rank }.take(16)
+        val secondaryTiered = sortedNested.filter { it.languageTierRank > LanguageTier.EN.rank }.take(4)
+        val prioritized = (primaryTiered + secondaryTiered).ifEmpty { sortedNested.take(12) }
         candidates.addAll(prioritized)
       } else {
         // Fallback when nested editions are absent (e.g., author sort query):
@@ -893,13 +921,19 @@ class OpenLibraryAdapter(
     return BibliographicMath.stripHtmlTags(raw)
   }
 
-  private data class HttpResponseSnapshot(val code: Int, val body: String?)
+  private fun editionRichnessComparator(): Comparator<SearchEditionCandidate> =
+    compareBy(
+      { it.languageTierRank },
+      { !BibliographicMath.isBrazilianIsbn(it.bestIsbn) },
+      { !BibliographicMath.isKnownBrazilianPublisher(it.publisher) },
+      { it.coverCandidates.isEmpty() },
+      { it.bestIsbn == null },
+      { it.publisher.isNullOrBlank() },
+    )
 
-  private fun fetchJson(url: String): HttpResponseSnapshot {
+  private suspend fun fetchJson(url: String): HttpTextSnapshot {
     val request = Request.Builder().url(url).get().build()
-    client.newCall(request).execute().use { response ->
-      return HttpResponseSnapshot(response.code, response.body?.string())
-    }
+    return client.executeTextCall(request)
   }
 
   private companion object {

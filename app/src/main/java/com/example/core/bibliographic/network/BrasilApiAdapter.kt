@@ -10,6 +10,8 @@ import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.SynopsisCandidate
+import java.net.SocketTimeoutException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -53,24 +55,24 @@ class BrasilApiAdapter(
       }
       runCatching {
           val request = Request.Builder().url("$baseUrl/$target").get().build()
-          client.newCall(request).execute().use { response ->
-            if (response.code == 429) {
-              return@withContext SourceAdapterResult(
-                SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED)
-              )
-            }
-            if (response.code == 404) {
-              return@withContext SourceAdapterResult(
-                SourceQueryStatus(source, ProviderOutcomeState.EMPTY)
-              )
-            }
-            val body = response.body?.string()
-            if (!response.isSuccessful || body == null) {
-              return@withContext SourceAdapterResult(
-                SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
-              )
-            }
-            val parsed = json.decodeFromString<BrasilApiBookResponse>(body)
+          val response = client.executeTextCall(request)
+          if (response.code == 429) {
+            return@withContext SourceAdapterResult(
+              SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED)
+            )
+          }
+          if (response.code == 404) {
+            return@withContext SourceAdapterResult(
+              SourceQueryStatus(source, ProviderOutcomeState.EMPTY)
+            )
+          }
+          val body = response.body
+          if (!response.isSuccessful || body == null) {
+            return@withContext SourceAdapterResult(
+              SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
+            )
+          }
+          val parsed = json.decodeFromString<BrasilApiBookResponse>(body)
             val title = parsed.title?.trim()?.takeIf { it.isNotEmpty() }
               ?: return@withContext SourceAdapterResult(
                 SourceQueryStatus(source, ProviderOutcomeState.EMPTY)
@@ -150,11 +152,12 @@ class BrasilApiAdapter(
               status = SourceQueryStatus(source, ProviderOutcomeState.SUCCESS, count = 1),
               candidates = listOf(candidate),
             )
-          }
         }
         .getOrElse { err ->
+          if (err is CancellationException) throw err
+          val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
           SourceAdapterResult(
-            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message)
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg)
           )
         }
     }

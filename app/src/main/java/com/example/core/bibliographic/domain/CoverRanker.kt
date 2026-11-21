@@ -24,6 +24,37 @@ object CoverRanker {
     return filtered
   }
 
+  /**
+   * Para miniaturas compactas em listas/cards de pesquisa (<= 120.dp), prioriza variantes leves
+   * (-M.jpg / zoom=1 / 200x300bb) e limita fallbacks para evitar tempestade de conexões HD.
+   * Mantém a ordem HD original para telas de revisão e download offline (maxWidthDp > 120).
+   */
+  fun selectForDisplaySize(orderedUrls: List<String>, maxWidthDp: Int): List<String> {
+    if (orderedUrls.isEmpty()) return emptyList()
+    if (maxWidthDp > 120) return orderedUrls.distinct()
+    return orderedUrls
+      .map { url -> toCompactThumbnailUrl(url) }
+      .distinct()
+      .take(2)
+  }
+
+  private fun toCompactThumbnailUrl(url: String): String {
+    val trimmed = url.trim()
+    val lower = trimmed.lowercase()
+    return when {
+      "books.google" in lower -> {
+        var result = trimmed.replace(Regex("([?&])fife=w\\d+", RegexOption.IGNORE_CASE), "$1zoom=1")
+        result = result.replace(Regex("([?&])zoom=0\\b", RegexOption.IGNORE_CASE), "$1zoom=1")
+        result
+      }
+      "covers.openlibrary.org" in lower ->
+        trimmed.replace(Regex("-L\\.jpg(?=\\?|$)", RegexOption.IGNORE_CASE), "-M.jpg")
+      "mzstatic.com" in lower ->
+        trimmed.replace(Regex("\\d+x\\d+bb(?=\\.[a-zA-Z0-9]+$)", RegexOption.IGNORE_CASE), "200x300bb")
+      else -> trimmed
+    }
+  }
+
   fun buildGoogleBooksCoverCandidates(
     rawUrl: String?,
     matchesIsbn: Boolean,

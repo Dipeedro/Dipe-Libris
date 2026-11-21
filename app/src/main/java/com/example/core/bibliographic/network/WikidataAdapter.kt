@@ -7,7 +7,9 @@ import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SourceQueryStatus
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -273,11 +275,13 @@ class WikidataAdapter(
               )
             }
             .getOrElse { err ->
+              if (err is CancellationException) throw err
+              val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
               SourceAdapterResult(
                 SourceQueryStatus(
                   source = source,
                   state = ProviderOutcomeState.ERROR,
-                  message = err.message,
+                  message = msg,
                   durationMs = System.currentTimeMillis() - startMs,
                 )
               )
@@ -293,12 +297,11 @@ class WikidataAdapter(
       )
     }
 
-  private fun executeGet(url: String): String? {
+  private suspend fun executeGet(url: String): String? {
     val request = Request.Builder().url(url).get().build()
-    client.newCall(request).execute().use { response ->
-      if (!response.isSuccessful) return null
-      return response.body?.string()
-    }
+    val response = client.executeTextCall(request)
+    if (!response.isSuccessful) return null
+    return response.body
   }
 
   private fun extractLangLabel(labelsObj: JsonObject?, lang: String): String? =
@@ -332,7 +335,7 @@ class WikidataAdapter(
     return null
   }
 
-  private fun executeSparql(
+  private suspend fun executeSparql(
     sparql: String,
     fallbackIsbn13: String?,
     fallbackIsbn10: String?,
@@ -345,21 +348,21 @@ class WikidataAdapter(
             .header("Accept", "application/sparql-results+json")
             .get()
             .build()
-        client.newCall(request).execute().use { response ->
-          if (response.code == 429) {
-            return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED))
-          }
-          val body = response.body?.string()
-          if (!response.isSuccessful || body == null) {
-            return SourceAdapterResult(
-              SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
-            )
-          }
-          val parsed = json.decodeFromString<WikidataSparqlResponse>(body)
-          val bindings = parsed.results?.bindings.orEmpty()
-          if (bindings.isEmpty()) {
-            return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
-          }
+        val response = client.executeTextCall(request)
+        if (response.code == 429) {
+          return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.RATE_LIMITED))
+        }
+        val body = response.body
+        if (!response.isSuccessful || body == null) {
+          return SourceAdapterResult(
+            SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = "HTTP ${response.code}")
+          )
+        }
+        val parsed = json.decodeFromString<WikidataSparqlResponse>(body)
+        val bindings = parsed.results?.bindings.orEmpty()
+        if (bindings.isEmpty()) {
+          return SourceAdapterResult(SourceQueryStatus(source, ProviderOutcomeState.EMPTY))
+        }
 
           val groupedByEdition = bindings.groupBy { it["edition"]?.value ?: "unknown" }
           val candidates =
@@ -417,20 +420,21 @@ class WikidataAdapter(
               )
             }
 
-          SourceAdapterResult(
-            status =
-              SourceQueryStatus(
-                source = source,
-                state = if (candidates.isEmpty()) ProviderOutcomeState.EMPTY else ProviderOutcomeState.SUCCESS,
-                count = candidates.size,
-              ),
-            candidates = candidates,
-          )
-        }
+        SourceAdapterResult(
+          status =
+            SourceQueryStatus(
+              source = source,
+              state = if (candidates.isEmpty()) ProviderOutcomeState.EMPTY else ProviderOutcomeState.SUCCESS,
+              count = candidates.size,
+            ),
+          candidates = candidates,
+        )
       }
       .getOrElse { err ->
+        if (err is CancellationException) throw err
+        val msg = if (err is SocketTimeoutException) "Timeout: ${err.message ?: "socket read"}" else err.message
         SourceAdapterResult(
-          SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = err.message)
+          SourceQueryStatus(source, ProviderOutcomeState.ERROR, message = msg)
         )
       }
   }

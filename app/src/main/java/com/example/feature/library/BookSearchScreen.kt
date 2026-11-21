@@ -309,8 +309,16 @@ fun BookSearchScreen(
                     ProviderOutcomeState.RATE_LIMITED ->
                       stringResource(R.string.search_source_rate_limit, srcLabel)
                     ProviderOutcomeState.EMPTY -> "$srcLabel (${st.count})"
-                    ProviderOutcomeState.ERROR ->
-                      stringResource(R.string.search_source_error, srcLabel)
+                    ProviderOutcomeState.ERROR -> {
+                      val isTimeout =
+                        st.message?.contains("timeout", ignoreCase = true) == true ||
+                          st.message?.contains("deadline", ignoreCase = true) == true
+                      if (isTimeout) {
+                        stringResource(R.string.search_source_timeout, srcLabel)
+                      } else {
+                        stringResource(R.string.search_source_error, srcLabel)
+                      }
+                    }
                   }
                 Surface(
                   shape = CircleShape,

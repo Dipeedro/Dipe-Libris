@@ -28,6 +28,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -36,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.components.BookCoverArtwork
@@ -128,6 +134,15 @@ internal fun SearchWorkGroupCard(
       else -> null
     }
   val previewCoverSource = group.editions.firstNotNullOfOrNull { it.bestCover }?.source
+  val compactGroupCovers =
+    remember(group.groupId, group.editions) {
+      val ordered =
+        buildList {
+          group.previewCoverUrl?.let { add(it) }
+          addAll(group.previewFallbackCoverUrls)
+        }.distinct()
+      CoverRanker.selectForDisplaySize(ordered, maxWidthDp = 56)
+    }
 
   EditorialSurfaceCard(
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -144,8 +159,8 @@ internal fun SearchWorkGroupCard(
           title = group.canonicalTitle,
           author = group.displayAuthors,
           isFavorite = false,
-          coverUri = group.previewCoverUrl,
-          fallbackCoverUris = group.previewFallbackCoverUrls,
+          coverUri = compactGroupCovers.firstOrNull(),
+          fallbackCoverUris = compactGroupCovers.drop(1),
           compact = true,
           elevated = true,
           modifier = Modifier.width(56.dp),
@@ -236,12 +251,23 @@ internal fun SearchWorkGroupCard(
       }
 
       AnimatedVisibility(visible = isExpanded) {
+        var editionWindowLimit by remember(group.groupId, isExpanded) { mutableIntStateOf(6) }
+        var prevVisibleEditionCount by remember(group.groupId, isExpanded) { mutableIntStateOf(visibleEditions.size) }
+        LaunchedEffect(visibleEditions.size, isExpanded) {
+          if (isExpanded && visibleEditions.size > prevVisibleEditionCount) {
+            editionWindowLimit = maxOf(editionWindowLimit, visibleEditions.size)
+          }
+          prevVisibleEditionCount = visibleEditions.size
+        }
+        val displayedEditions = visibleEditions.take(editionWindowLimit)
+        val remainingEditions = (visibleEditions.size - displayedEditions.size).coerceAtLeast(0)
+
         Column(
           modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xs),
           verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
         ) {
           HairlineDivider()
-          visibleEditions.forEachIndexed { editionIdx, edition ->
+          displayedEditions.forEachIndexed { editionIdx, edition ->
             val langBadge = edition.canonicalLanguageTag ?: edition.language
             val metaLine =
               listOfNotNull(
@@ -254,6 +280,10 @@ internal fun SearchWorkGroupCard(
                 .joinToString(" · ")
             val isbnLine = edition.bestIsbn?.let { "ISBN $it" }
             val sourcesLine = edition.sources.joinToString(", ") { it.displayName }
+            val compactEditionCovers =
+              remember(edition.candidateId, edition.orderedCoverUrls) {
+                CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 42)
+              }
 
             EditorialSurfaceCard(
               containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -269,8 +299,8 @@ internal fun SearchWorkGroupCard(
                   title = edition.workTitle,
                   author = edition.primaryAuthorsText,
                   isFavorite = false,
-                  coverUri = edition.bestCover?.imageUrl,
-                  fallbackCoverUris = edition.orderedCoverUrls.drop(1),
+                  coverUri = compactEditionCovers.firstOrNull(),
+                  fallbackCoverUris = compactEditionCovers.drop(1),
                   compact = true,
                   modifier = Modifier.width(42.dp),
                 )
@@ -327,6 +357,17 @@ internal fun SearchWorkGroupCard(
                   )
                 }
               }
+            }
+          }
+
+          if (remainingEditions > 0) {
+            TextButton(
+              onClick = { editionWindowLimit += 8 },
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .testTag("search_edition_show_more_$groupIndex"),
+            ) {
+              Text(stringResource(R.string.search_edition_show_more_local, remainingEditions))
             }
           }
 

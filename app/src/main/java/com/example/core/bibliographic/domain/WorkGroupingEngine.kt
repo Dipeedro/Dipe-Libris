@@ -403,11 +403,20 @@ object WorkGroupingEngine {
           )
 
         val bundleOrder =
-          when (bestBundleKind) {
-            TitleBundleKind.SINGLE -> 0
-            TitleBundleKind.OMNIBUS_SINGLE_VOLUME -> 1
-            TitleBundleKind.SERIES_VOLUME -> 2
-            TitleBundleKind.COLLECTION_OR_BOX -> 3
+          if (parsedIntent?.wantsBoxOrCollection == true) {
+            when (bestBundleKind) {
+              TitleBundleKind.COLLECTION_OR_BOX -> 0
+              TitleBundleKind.OMNIBUS_SINGLE_VOLUME -> 1
+              TitleBundleKind.SINGLE -> 2
+              TitleBundleKind.SERIES_VOLUME -> 3
+            }
+          } else {
+            when (bestBundleKind) {
+              TitleBundleKind.SINGLE -> 0
+              TitleBundleKind.OMNIBUS_SINGLE_VOLUME -> 1
+              TitleBundleKind.SERIES_VOLUME -> 2
+              TitleBundleKind.COLLECTION_OR_BOX -> 3
+            }
           }
         val popBucket = computePopularityBucket(workPopScore)
         val bestEditionQuality = sortedItems.maxOfOrNull { editionSelectionScore(it.candidate, it.evaluation) } ?: 0
@@ -614,15 +623,6 @@ object WorkGroupingEngine {
     if ((structB.volumeNumber ?: 1) > 1 && structA.volumeNumber == null && structA.coreNormalized != structB.coreNormalized) {
       return false
     }
-    if (structA.subtitleNormalized.isNotEmpty() && structB.subtitleNormalized.isNotEmpty()) {
-      val edA = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(structA.subtitleNormalized)
-      val edB = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(structB.subtitleNormalized)
-      if (!edA && !edB) {
-        val subSim = BibliographicMath.tokenSimilarity(structA.subtitleNormalized, structB.subtitleNormalized)
-        if (subSim < 0.70f) return false
-      }
-    }
-
     val a = itemA.candidate
     val b = itemB.candidate
 
@@ -637,13 +637,29 @@ object WorkGroupingEngine {
       }
     if (!authorCompat) return false
 
-    // Evidência forte por chave de obra / Wikidata (após passar nas 4 barreiras!)
-    if (a.externalWorkKey != null && b.externalWorkKey != null && a.externalWorkKey == b.externalWorkKey) {
-      return true
+    val sharesSameWorkKey =
+      (a.externalWorkKey != null && b.externalWorkKey != null && a.externalWorkKey == b.externalWorkKey) ||
+        (a.externalIds["wikidata_work"] != null && a.externalIds["wikidata_work"] == b.externalIds["wikidata_work"])
+
+    val subA = structA.subtitleNormalized
+    val subB = structB.subtitleNormalized
+    val edA = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subA)
+    val edB = RelevanceAndDerivativeFilter.isEditionOrVolumeSubtitle(subB)
+    if (subA.isNotEmpty() && subB.isNotEmpty()) {
+      if (!edA && !edB) {
+        val subSim = BibliographicMath.tokenSimilarity(subA, subB)
+        if (subSim < 0.70f) return false
+      }
+    } else if ((subA.isNotEmpty() && !edA) || (subB.isNotEmpty() && !edB)) {
+      // Barreira #3b: Um candidato possui subtítulo explicativo não-editorial e o outro não tem subtítulo
+      val nonEmptySub = if (subA.isNotEmpty()) subA else subB
+      if (surnameA.isEmpty() || surnameB.isEmpty()) return false
+      if (RelevanceAndDerivativeFilter.hasExplanatoryCompanionOrAcademicCue(nonEmptySub)) return false
+      if (!sharesSameWorkKey) return false
     }
-    val wdA = a.externalIds["wikidata_work"]
-    val wdB = b.externalIds["wikidata_work"]
-    if (wdA != null && wdB != null && wdA == wdB) {
+
+    // Evidência forte por chave de obra / Wikidata (após passar nas 4 barreiras!)
+    if (sharesSameWorkKey) {
       return true
     }
 
