@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
@@ -907,7 +908,7 @@ class BibliographicDomainAndUiTest {
     }
 
     composeTestRule.onNodeWithTag("search_query_input").performTextInput("Vou te receitar um gato")
-    composeTestRule.onNodeWithTag("search_submit_button").performClick()
+    composeTestRule.onNodeWithTag("search_query_input").performImeAction()
 
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
       composeTestRule.onAllNodes(hasTestTag("search_work_card_0")).fetchSemanticsNodes().isNotEmpty()

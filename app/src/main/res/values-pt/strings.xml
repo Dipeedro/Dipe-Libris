@@ -477,4 +477,19 @@
     <string name="suggestion_reason_synopsis">Sinopse mais completa disponível</string>
     <string name="suggestion_reason_cover">Capa encontrada para esta edição</string>
     <string name="suggestion_reason_series">Série ou coleção identificada</string>
+
+    <!-- Redesign Library & BookSearch -->
+    <string name="library_filters_sheet_title">Filtros e acervo</string>
+    <string name="library_filters_genre_section">Gênero</string>
+    <string name="library_filters_sort_section">Ordenar por</string>
+    <string name="library_filters_tools_section">Manutenção do acervo</string>
+    <string name="library_filters_clear">Limpar filtros</string>
+    <string name="library_filters_all_genres">Todos os gêneros</string>
+    <string name="library_view_mode_cd">Alterar visualização</string>
+    <string name="library_filters_cd">Filtros e ordenação</string>
+    <string name="search_manual_footer_hint">Não encontrou a edição exata?</string>
+    <string name="search_cache_short">Cache local</string>
+    <string name="search_offline_short">Offline · biblioteca e cache</string>
+    <string name="cd_language_badge">Idioma: %1$s</string>
+    <string name="search_clear_query">Limpar busca</string>
 </resources>

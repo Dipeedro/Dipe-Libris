@@ -125,4 +125,33 @@ object DipeIcons {
       }
       .build()
   }
+
+  val Barcode: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Barcode",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+      )
+      .apply {
+        path(
+          stroke = SolidColor(Color.Black),
+          strokeLineWidth = 1.9f,
+          strokeLineCap = StrokeCap.Round,
+        ) {
+          moveTo(3.5f, 6.0f)
+          lineTo(3.5f, 18.0f)
+          moveTo(7.5f, 6.0f)
+          lineTo(7.5f, 15.5f)
+          moveTo(11.5f, 6.0f)
+          lineTo(11.5f, 18.0f)
+          moveTo(15.5f, 6.0f)
+          lineTo(15.5f, 15.5f)
+          moveTo(20.0f, 6.0f)
+          lineTo(20.0f, 18.0f)
+        }
+      }
+      .build()
+  }
 }

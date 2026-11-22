@@ -2,6 +2,7 @@ package com.example.feature.library
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,15 +14,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,18 +41,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.components.BookCoverArtwork
+import com.example.core.designsystem.components.DipeIcons
 import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.HairlineDivider
+import com.example.core.designsystem.components.MicroMetadataItem
+import com.example.core.designsystem.components.MinimalLanguageBadge
 import com.example.core.designsystem.components.editionFormatLabel
 import com.example.core.model.CatalogBook
 import com.example.core.model.DuplicateAssessment
@@ -64,12 +75,13 @@ internal fun SearchLocalMatchCard(
   EditorialSurfaceCard(
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+    contentPadding = PaddingValues(horizontal = DipeSpacing.compact, vertical = DipeSpacing.compact),
     onClick = onClick,
     modifier = Modifier.testTag(testTag),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       BookCoverArtwork(
@@ -78,9 +90,9 @@ internal fun SearchLocalMatchCard(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         compact = true,
-        modifier = Modifier.width(46.dp),
+        modifier = Modifier.width(44.dp),
       )
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
           text = book.title,
           style = MaterialTheme.typography.titleMedium,
@@ -96,11 +108,24 @@ internal fun SearchLocalMatchCard(
           overflow = TextOverflow.Ellipsis,
         )
       }
-      Text(
-        text = stringResource(R.string.search_work_in_library_badge),
-        style = LocalDipeTypography.current.monoMetadata,
-        color = MaterialTheme.colorScheme.secondary,
-      )
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        MinimalLanguageBadge(languageTag = book.primaryEdition?.language)
+        MicroMetadataItem(
+          icon = Icons.Outlined.CheckCircle,
+          text = stringResource(R.string.search_work_in_library_badge),
+          tint = MaterialTheme.colorScheme.secondary,
+          textColor = MaterialTheme.colorScheme.secondary,
+        )
+        Icon(
+          imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(18.dp),
+        )
+      }
     }
   }
 }
@@ -142,18 +167,21 @@ internal fun SearchWorkGroupCard(
           group.previewCoverUrl?.let { add(it) }
           addAll(group.previewFallbackCoverUrls)
         }.distinct()
-      CoverRanker.selectForDisplaySize(ordered, maxWidthDp = 56)
+      CoverRanker.selectForDisplaySize(ordered, maxWidthDp = 52)
     }
 
   EditorialSurfaceCard(
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-    contentPadding = PaddingValues(DipeSpacing.md),
+    contentPadding = PaddingValues(DipeSpacing.compact),
     modifier = Modifier.testTag("search_work_card_$groupIndex"),
   ) {
     Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
       Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+        modifier =
+          Modifier.fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onToggleExpand),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         BookCoverArtwork(
@@ -164,9 +192,9 @@ internal fun SearchWorkGroupCard(
           fallbackCoverUris = compactGroupCovers.drop(1),
           compact = true,
           elevated = true,
-          modifier = Modifier.width(56.dp),
+          modifier = Modifier.width(52.dp),
         )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Text(
             text = group.canonicalTitle,
             style = MaterialTheme.typography.titleMedium,
@@ -193,50 +221,54 @@ internal fun SearchWorkGroupCard(
             )
           }
           FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
-            Text(
+            MicroMetadataItem(
+              icon = Icons.Outlined.Layers,
               text =
                 pluralStringResource(
                   R.plurals.search_work_editions_count,
                   if (editionCount == 1) 1 else 2,
                   editionCount,
                 ),
-              style = LocalDipeTypography.current.monoMetadata,
-              color = MaterialTheme.colorScheme.secondary,
+              tint = MaterialTheme.colorScheme.secondary,
+              textColor = MaterialTheme.colorScheme.secondary,
             )
             if (bundleBadgeLabel != null) {
               Text(
-                text = "· $bundleBadgeLabel",
-                style = LocalDipeTypography.current.monoMetadata,
+                text = bundleBadgeLabel,
+                style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
                 color = MaterialTheme.colorScheme.tertiary,
               )
             }
             if (genreLabel != null) {
               Text(
-                text = "· $genreLabel",
-                style = LocalDipeTypography.current.monoMetadata,
+                text = genreLabel,
+                style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
               )
             }
             if (group.localMatchedWorkId != null) {
-              Text(
-                text = "· ${stringResource(R.string.search_work_in_library_badge)}",
-                style = LocalDipeTypography.current.monoMetadata,
-                color = MaterialTheme.colorScheme.secondary,
+              MicroMetadataItem(
+                icon = Icons.Outlined.CheckCircle,
+                text = stringResource(R.string.search_work_in_library_badge),
+                tint = MaterialTheme.colorScheme.secondary,
+                textColor = MaterialTheme.colorScheme.secondary,
               )
             }
             if (previewCoverSource == MetadataSource.APPLE_BOOKS) {
               Text(
-                text = "· ${stringResource(R.string.search_source_attribution_apple)}",
-                style = LocalDipeTypography.current.monoMetadata,
+                text = stringResource(R.string.search_source_attribution_apple),
+                style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
           }
         }
-        TextButton(
+        IconButton(
           onClick = onToggleExpand,
           modifier =
             Modifier.minimumInteractiveComponentSize().testTag("search_work_expand_$groupIndex"),
@@ -247,6 +279,7 @@ internal fun SearchWorkGroupCard(
               stringResource(
                 if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section
               ),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
       }
@@ -264,101 +297,20 @@ internal fun SearchWorkGroupCard(
         val remainingEditions = (visibleEditions.size - displayedEditions.size).coerceAtLeast(0)
 
         Column(
-          modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xs),
-          verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-          HairlineDivider()
           displayedEditions.forEachIndexed { editionIdx, edition ->
-            val langBadge = edition.canonicalLanguageTag ?: edition.language
-            val metaLine =
-              listOfNotNull(
-                  edition.publisher,
-                  edition.publicationYear?.toString(),
-                  edition.totalPages?.let { "$it p." },
-                  langBadge,
-                  edition.format?.let { editionFormatLabel(it) },
-                )
-                .joinToString(" · ")
-            val isbnLine = edition.bestIsbn?.let { "ISBN $it" }
-            val sourcesLine = edition.sources.joinToString(", ") { it.displayName }
-            val compactEditionCovers =
-              remember(edition.candidateId, edition.orderedCoverUrls) {
-                CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 42)
-              }
+            HairlineDivider()
+            SearchEditionRow(
+              edition = edition,
+              testTag = "search_edition_select_${groupIndex}_$editionIdx",
+              onClick = { onSelectEdition(edition) },
+            )
+          }
 
-            EditorialSurfaceCard(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-              shape = MaterialTheme.shapes.medium,
-              contentPadding = PaddingValues(DipeSpacing.md),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                BookCoverArtwork(
-                  title = edition.workTitle,
-                  author = edition.primaryAuthorsText,
-                  isFavorite = false,
-                  coverUri = compactEditionCovers.firstOrNull(),
-                  fallbackCoverUris = compactEditionCovers.drop(1),
-                  compact = true,
-                  modifier = Modifier.width(42.dp),
-                )
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                  Text(
-                    text =
-                      edition.editionLabel?.takeIf { it.isNotBlank() }
-                        ?: edition.publisher
-                        ?: edition.editionTitle?.takeIf { it.isNotBlank() }
-                        ?: edition.workTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                  if (metaLine.isNotEmpty()) {
-                    Text(
-                      text = metaLine,
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 2,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  }
-                  if (isbnLine != null || sourcesLine.isNotEmpty()) {
-                    Text(
-                      text = listOfNotNull(isbnLine, sourcesLine.takeIf { it.isNotEmpty() }).joinToString(" · "),
-                      style = LocalDipeTypography.current.monoMetadata,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  }
-                }
-                Button(
-                  onClick = { onSelectEdition(edition) },
-                  shape = CircleShape,
-                  colors =
-                    ButtonDefaults.buttonColors(
-                      containerColor = MaterialTheme.colorScheme.secondary,
-                      contentColor = MaterialTheme.colorScheme.onSecondary,
-                    ),
-                  contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.xs),
-                  modifier =
-                    Modifier.minimumInteractiveComponentSize()
-                      .testTag("search_edition_select_${groupIndex}_$editionIdx"),
-                ) {
-                  Text(
-                    text = stringResource(R.string.search_edition_select_action),
-                    style = MaterialTheme.typography.labelMedium,
-                  )
-                }
-              }
-            }
+          if (remainingEditions > 0 || group.secondaryTierEditions.isNotEmpty() || ((group.externalWorkKey != null || group.displayAuthors.isNotBlank()) && !isExpansionExhausted)) {
+            HairlineDivider()
           }
 
           if (remainingEditions > 0) {
@@ -411,6 +363,140 @@ internal fun SearchWorkGroupCard(
         }
       }
     }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchEditionRow(
+  edition: SearchEditionCandidate,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  val langBadge = edition.canonicalLanguageTag ?: edition.language
+  val compactEditionCovers =
+    remember(edition.candidateId, edition.orderedCoverUrls) {
+      CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 44)
+    }
+
+  val primaryHeading =
+    remember(edition.publisher, edition.editionLabel, edition.editionTitle, edition.workTitle) {
+      val publisherClean = edition.publisher?.trim()?.takeIf { it.isNotEmpty() }
+      val labelClean =
+        edition.editionLabel?.trim()?.takeIf {
+          it.isNotEmpty() && !it.equals(publisherClean, ignoreCase = true)
+        }
+      listOfNotNull(publisherClean, labelClean)
+        .joinToString(" · ")
+        .ifBlank {
+          edition.editionTitle?.takeIf { it.isNotBlank() } ?: edition.workTitle
+        }
+    }
+
+  val sourcesLine =
+    remember(edition.sources) {
+      edition.sources.joinToString(", ") { it.displayName }
+    }
+
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(MaterialTheme.shapes.small)
+        .clickable(onClick = onClick)
+        .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.compact)
+        .testTag(testTag),
+    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    BookCoverArtwork(
+      title = edition.workTitle,
+      author = edition.primaryAuthorsText,
+      isFavorite = false,
+      coverUri = compactEditionCovers.firstOrNull(),
+      fallbackCoverUris = compactEditionCovers.drop(1),
+      compact = true,
+      modifier = Modifier.width(44.dp),
+    )
+
+    Column(
+      modifier = Modifier.weight(1f),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      // Line 1: Publisher / Edition name + Minimalist Language Seal
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = primaryHeading,
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
+        )
+        MinimalLanguageBadge(languageTag = langBadge)
+      }
+
+      // Line 2: Pages · Year · Format via minimalist icons
+      if (edition.totalPages != null || edition.publicationYear != null || edition.format != null) {
+        FlowRow(
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          edition.totalPages?.let { pages ->
+            MicroMetadataItem(
+              icon = Icons.AutoMirrored.Outlined.MenuBook,
+              text = "$pages p.",
+            )
+          }
+          edition.publicationYear?.let { year ->
+            MicroMetadataItem(
+              icon = Icons.Outlined.CalendarToday,
+              text = year.toString(),
+            )
+          }
+          edition.format?.let { format ->
+            MicroMetadataItem(
+              icon = Icons.Outlined.Style,
+              text = editionFormatLabel(format),
+            )
+          }
+        }
+      }
+
+      // Line 3: Full ISBN (untruncated) + Provenance source
+      if (edition.bestIsbn != null || sourcesLine.isNotEmpty()) {
+        FlowRow(
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          edition.bestIsbn?.let { isbn ->
+            MicroMetadataItem(
+              icon = DipeIcons.Barcode,
+              text = isbn,
+            )
+          }
+          if (sourcesLine.isNotEmpty()) {
+            Text(
+              text = sourcesLine,
+              style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.sp, lineHeight = 14.sp),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+    }
+
+    Icon(
+      imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+      contentDescription = stringResource(R.string.search_edition_select_action),
+      tint = MaterialTheme.colorScheme.secondary,
+      modifier = Modifier.size(20.dp),
+    )
   }
 }
 

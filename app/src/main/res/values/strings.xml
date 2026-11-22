@@ -477,4 +477,19 @@
     <string name="suggestion_reason_synopsis">Richer description available</string>
     <string name="suggestion_reason_cover">Cover image found for this edition</string>
     <string name="suggestion_reason_series">Series / collection identified</string>
+
+    <!-- Redesign Library & BookSearch -->
+    <string name="library_filters_sheet_title">Filters &amp; collection</string>
+    <string name="library_filters_genre_section">Genre</string>
+    <string name="library_filters_sort_section">Sort by</string>
+    <string name="library_filters_tools_section">Collection maintenance</string>
+    <string name="library_filters_clear">Clear filters</string>
+    <string name="library_filters_all_genres">All genres</string>
+    <string name="library_view_mode_cd">Change view mode</string>
+    <string name="library_filters_cd">Filters and sorting</string>
+    <string name="search_manual_footer_hint">Didn\'t find the right edition?</string>
+    <string name="search_cache_short">Local cache</string>
+    <string name="search_offline_short">Offline · local library &amp; cache</string>
+    <string name="cd_language_badge">Language: %1$s</string>
+    <string name="search_clear_query">Clear search</string>
 </resources>
