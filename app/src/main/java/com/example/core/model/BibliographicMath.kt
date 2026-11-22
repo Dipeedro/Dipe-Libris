@@ -298,69 +298,87 @@ object BibliographicMath {
   private val brazilianPublisherTokens =
     setOf(
       "rocco",
+      "rocco digital",
+      "rocco jovens leitores",
       "intrinseca",
+      "editora intrinseca",
       "companhia das letras",
       "companhiadasletras",
       "cia das letras",
       "companhia de bolso",
+      "companhia das letrinhas",
+      "penguin companhia",
       "seguinte",
+      "editora seguinte",
       "paralela",
+      "editora paralela",
       "principis",
       "ciranda cultural",
       "harpercollins brasil",
       "harper collins brasil",
       "martins fontes",
       "wmf martins fontes",
-      "record",
+      "editora record",
+      "grupo editorial record",
       "bertrand brasil",
-      "galera",
+      "galera record",
       "arqueiro",
+      "editora arqueiro",
       "sextante",
+      "editora sextante",
       "globo livros",
-      "globo",
-      "aleph",
+      "editora globo",
+      "editora aleph",
       "darkside",
+      "darkside books",
       "l pm",
+      "l pm editores",
       "lpm",
       "zahar",
+      "jorge zahar",
       "todavia",
       "antofagica",
-      "atila",
-      "atica",
+      "editora atica",
       "scipione",
       "martin claret",
       "nova fronteira",
       "saraiva",
-      "moderna",
+      "editora moderna",
       "novo seculo",
       "faro editorial",
       "gutenberg",
-      "nemo",
-      "suma",
-      "suma de letras",
-      "objetiva",
+      "editora nemo",
+      "suma brasil",
+      "editora suma",
+      "editora objetiva",
       "fontanar",
       "alfaguara brasil",
-      "penguin companhia",
       "planeta do brasil",
-      "editora planeta",
+      "editora planeta do brasil",
       "planeta brasil",
+      "global editora",
+      "editora global",
       "editora 34",
       "paulus",
       "vozes",
+      "editora vozes",
       "loyola",
+      "edicoes loyola",
       "clube de autores",
-      "agir",
+      "editora agir",
       "melhoramentos",
       "autentica",
-      "abril",
+      "autentica editora",
+      "editora abril",
+      "abril cultural",
       "ediouro",
       "ftd",
-      "global",
+      "ftd educacao",
       "carambaia",
       "benvira",
       "casa da palavra",
       "verus",
+      "verus editora",
       "plataforma21",
       "universo dos livros",
       "pedra azul",
@@ -372,17 +390,45 @@ object BibliographicMath {
       "best seller",
       "bestseller",
       "valentina",
+      "editora valentina",
       "jangada",
       "morro branco",
       "excelsior",
       "circulo do livro",
-      "rocco digital",
-      "rocco jovens leitores",
-      "salamandra",
       "lafonte",
       "pandorga",
       "camelot",
-      "ftd educacao",
+      "grupo autentica",
+      "fabrica231",
+    )
+
+  /**
+   * Editoras brasileiras reais cujos nomes curtos também aparecem em selos internacionais
+   * (ex: "Record Books", "La Galera", "Editorial Planeta", "Suma de Letras" Espanha).
+   * Só contam como evidência brasileira quando aparecem de forma exata/qualificada
+   * e corroboradas por ISBN brasileiro ou título claramente em português.
+   */
+  private val ambiguousBrazilianPublisherTokens =
+    setOf(
+      "record",
+      "galera",
+      "suma",
+      "globo",
+      "atica",
+      "planeta",
+      "global",
+      "abril",
+      "moderna",
+      "objetiva",
+      "nemo",
+      "agir",
+      "aleph",
+    )
+
+  private val nonBrazilianPublisherMarkersRegex =
+    Regex(
+      "\\b(ediciones|editions|publishing|publishers|press|verlag|librairie|casa editrice|grupo planeta|la galera|mexico|argentina|colombia|espana|madrid|barcelona|london|new york|oxford|cambridge|bloomsbury|scholastic|penguin random house grupo editorial)\\b",
+      RegexOption.IGNORE_CASE,
     )
 
   private val portugalPublisherTokens =
@@ -398,7 +444,7 @@ object BibliographicMath {
       "dom quixote",
       "publicacoes dom quixote",
       "relogio d agua",
-      "asa",
+      "edicoes asa",
       "asa editores",
       "civilizacao",
       "gradiva",
@@ -411,25 +457,57 @@ object BibliographicMath {
       "clube do autor",
     )
 
+  private fun containsWholeTokenOrPhrase(paddedNorm: String, token: String): Boolean =
+    " $token " in paddedNorm
+
   fun isKnownBrazilianPublisher(publisher: String?): Boolean {
     val norm = normalizeText(publisher)
     if (norm.isEmpty()) return false
-    return brazilianPublisherTokens.any { it in norm }
+    if (nonBrazilianPublisherMarkersRegex.containsMatchIn(norm)) {
+      val explicitBrazil =
+        containsWholeTokenOrPhrase(" $norm ", "brasil") ||
+          containsWholeTokenOrPhrase(" $norm ", "brazil")
+      if (!explicitBrazil) return false
+    }
+    val padded = " $norm "
+    return brazilianPublisherTokens.any { containsWholeTokenOrPhrase(padded, it) }
+  }
+
+  private fun isExactOrCorroboratedAmbiguousBrazilianPublisher(
+    publisher: String?,
+    hasBrazilianIsbn: Boolean,
+    hasPortugueseTitle: Boolean,
+  ): Boolean {
+    if (!hasBrazilianIsbn && !hasPortugueseTitle) return false
+    val norm = normalizeText(publisher)
+    if (norm.isEmpty()) return false
+    if (nonBrazilianPublisherMarkersRegex.containsMatchIn(norm)) return false
+    val padded = " $norm "
+    if (" editorial " in padded && " grupo editorial record " !in padded) return false
+    return ambiguousBrazilianPublisherTokens.any { token ->
+      norm == token || norm == "editora $token" || containsWholeTokenOrPhrase(padded, "editora $token")
+    }
   }
 
   fun isKnownPortugalPublisher(publisher: String?): Boolean {
     val norm = normalizeText(publisher)
     if (norm.isEmpty()) return false
-    return portugalPublisherTokens.any { it in norm }
+    val padded = " $norm "
+    return norm == "asa" || portugalPublisherTokens.any { containsWholeTokenOrPhrase(padded, it) }
   }
 
   private val nonLatinScriptRegex = Regex("[\\u0400-\\u04FF\\u3040-\\u30FF\\u4E00-\\u9FFF\\u0600-\\u06FF]")
   private val ptPtTitleClueRegex = Regex("\\b(receitar-lhe|diz-me|fe-lo|ha-de)\\b", RegexOption.IGNORE_CASE)
 
+  fun hasNonLatinScript(rawText: String?): Boolean =
+    rawText != null && nonLatinScriptRegex.containsMatchIn(rawText)
+
   /**
-   * Classifica o idioma da edição priorizando o metadado explícito da edição e tratando
-   * prefixo ISBN, editora e pistas do título apenas como evidências auxiliares para confirmar,
-   * resolver códigos genéricos ("pt"/"por") ou sinalizar conflito sem sobrescritas cegas.
+   * Classifica o idioma da edição mantendo hierarquia estrita de evidências:
+   * 1. Metadado explícito confiável da edição (não é sobrescrito cegamente por ISBN/editora BR);
+   * 2. Resolução de código genérico ("pt"/"por") via sinais auxiliares convergentes;
+   * 3. Inferência conservadora quando o idioma explícito está ausente, separando português inequívoco
+   *    de acentos/vocabulário compartilhados e evitando promoção indevida de títulos estrangeiros.
    */
   fun assessLanguage(
     explicitLanguageRaw: String?,
@@ -443,10 +521,20 @@ object BibliographicMath {
     val normExplicit = normalizeLanguageCode(cleanExplicit)
     val isBrIsbn = isBrazilianIsbn(isbn13Or10)
     val isPtIsbn = isPortuguesePortugalIsbn(isbn13Or10)
-    val isBrPub = isKnownBrazilianPublisher(publisher)
-    val isPtPub = isKnownPortugalPublisher(publisher)
-    val hasNonLatinTitle = editionTitle != null && nonLatinScriptRegex.containsMatchIn(editionTitle)
+    val hasNonLatinTitle = hasNonLatinScript(editionTitle)
     val hasPtPtOrthography = editionTitle != null && ptPtTitleClueRegex.containsMatchIn(editionTitle)
+    val titleIsPortuguese = !hasNonLatinTitle && !hasPtPtOrthography && looksPortugueseEditionTitle(editionTitle)
+    val foreignTitleLang = if (!hasNonLatinTitle) detectClearForeignLatinLanguage(editionTitle) else null
+
+    val isStrongBrPub = isKnownBrazilianPublisher(publisher)
+    val isBrPub =
+      isStrongBrPub ||
+        isExactOrCorroboratedAmbiguousBrazilianPublisher(
+          publisher = publisher,
+          hasBrazilianIsbn = isBrIsbn,
+          hasPortugueseTitle = titleIsPortuguese,
+        )
+    val isPtPub = isKnownPortugalPublisher(publisher)
 
     val (canonicalTag, confidence, hasConflict) =
       when {
@@ -472,7 +560,7 @@ object BibliographicMath {
             isPtIsbn && brSignalCount == 0 ->
               Triple("pt-pt", LanguageConfidence.UNCERTAIN, true)
             else ->
-              Triple("pt-br", LanguageConfidence.CONFIRMED, isPtIsbn || isPtPub)
+              Triple("pt-br", LanguageConfidence.CONFIRMED, isPtIsbn || isPtPub || hasNonLatinTitle)
           }
         }
 
@@ -481,34 +569,70 @@ object BibliographicMath {
           val brScore = (if (isBrIsbn) 2 else 0) + (if (isBrPub) 2 else 0)
           val ptScore = (if (isPtIsbn) 2 else 0) + (if (isPtPub) 2 else 0) + (if (hasPtPtOrthography) 1 else 0)
           when {
-            brScore > 0 && ptScore == 0 -> Triple("pt-br", LanguageConfidence.CONFIRMED, false)
-            ptScore > 0 && brScore == 0 -> Triple("pt-pt", LanguageConfidence.CONFIRMED, false)
-            brScore > ptScore -> Triple("pt-br", LanguageConfidence.INFERRED_WITH_CONFLICT, true)
-            ptScore > brScore -> Triple("pt-pt", LanguageConfidence.INFERRED_WITH_CONFLICT, true)
-            else -> Triple("pt", LanguageConfidence.UNCERTAIN, false)
+            brScore > 0 && ptScore == 0 ->
+              Triple("pt-br", LanguageConfidence.CONFIRMED, hasNonLatinTitle)
+            ptScore > 0 && brScore == 0 ->
+              Triple("pt-pt", LanguageConfidence.CONFIRMED, hasNonLatinTitle)
+            brScore > ptScore ->
+              Triple("pt-br", LanguageConfidence.INFERRED_WITH_CONFLICT, true)
+            ptScore > brScore ->
+              Triple("pt-pt", LanguageConfidence.INFERRED_WITH_CONFLICT, true)
+            else -> Triple("pt", LanguageConfidence.UNCERTAIN, hasNonLatinTitle || foreignTitleLang != null)
           }
         }
 
-        // Explicit English: flag conflict if edition title clearly uses non-Latin script without bilingual slash or has BR ISBN
+        // Explicit English: preserve "en"; flag contextual conflict instead of overwriting to pt-br
         normExplicit == "en" -> {
-          val conflictWithBr = isBrIsbn && isBrPub
           val scriptConflict = hasNonLatinTitle && !editionTitle.orEmpty().contains("/")
+          val contextualConflict = isBrIsbn || isPtIsbn || isStrongBrPub || isPtPub || titleIsPortuguese
           when {
-            conflictWithBr -> Triple("pt-br", LanguageConfidence.INFERRED_WITH_CONFLICT, true)
             scriptConflict -> Triple("en", LanguageConfidence.UNCERTAIN, true)
-            else -> Triple("en", LanguageConfidence.CONFIRMED, isBrIsbn || isPtIsbn)
+            else -> Triple("en", LanguageConfidence.CONFIRMED, contextualConflict)
           }
         }
 
-        normExplicit != null -> Triple(normExplicit, LanguageConfidence.CONFIRMED, false)
+        // Any other explicit non-Portuguese language (es, fr, de, it, cat, ja...): preserve with conflict flag if contextual signals diverge
+        normExplicit != null -> {
+          val contextualConflict = isBrIsbn || isPtIsbn || isStrongBrPub || isPtPub || titleIsPortuguese
+          Triple(normExplicit, LanguageConfidence.CONFIRMED, contextualConflict)
+        }
 
-        // Missing explicit metadata: use conservative auxiliary evidence, marking uncertain if single weak cue
-        isBrIsbn && isBrPub -> Triple("pt-br", LanguageConfidence.INFERRED_WITH_CONFLICT, false)
-        isPtIsbn && isPtPub -> Triple("pt-pt", LanguageConfidence.INFERRED_WITH_CONFLICT, false)
-        isBrIsbn || isBrPub -> Triple("pt-br", LanguageConfidence.UNCERTAIN, false)
-        isPtIsbn || isPtPub -> Triple("pt-pt", LanguageConfidence.UNCERTAIN, false)
-        !hasNonLatinTitle && !hasPtPtOrthography && looksPortugueseEditionTitle(editionTitle) ->
+        // Missing explicit metadata: reject non-Latin titles and apply strict evidence hierarchy
+        hasNonLatinTitle -> Triple(null, LanguageConfidence.UNCERTAIN, isBrIsbn || isPtIsbn || isBrPub || isPtPub)
+
+        // Portuguese-Portugal clues without explicit metadata
+        hasPtPtOrthography && foreignTitleLang == null ->
+          Triple("pt-pt", LanguageConfidence.UNCERTAIN, isBrIsbn || isBrPub)
+
+        isPtIsbn && isPtPub && foreignTitleLang == null ->
+          Triple("pt-pt", LanguageConfidence.UNCERTAIN, false)
+
+        // Foreign edition title without explicit metadata: only allow PT_UNCERTAIN when BOTH BR ISBN and BR Publisher converge
+        foreignTitleLang != null -> {
+          when {
+            isBrIsbn && isBrPub ->
+              Triple("pt", LanguageConfidence.UNCERTAIN, true)
+            isPtIsbn && isPtPub ->
+              Triple("pt-pt", LanguageConfidence.UNCERTAIN, true)
+            else ->
+              Triple(null, LanguageConfidence.UNCERTAIN, isBrIsbn || isBrPub || isPtIsbn || isPtPub)
+          }
+        }
+
+        // Convergent Brazilian signals without explicit language and non-foreign title -> inferred pt-br (never CONFIRMED without API lang)
+        isBrIsbn && isBrPub ->
+          Triple("pt-br", LanguageConfidence.UNCERTAIN, false)
+
+        // Single weak contextual signal (ISBN BR OR Editora BR) without foreign title contradiction -> PT_UNCERTAIN
+        isBrIsbn || isBrPub ->
           Triple("pt", LanguageConfidence.UNCERTAIN, false)
+
+        isPtIsbn || isPtPub ->
+          Triple("pt-pt", LanguageConfidence.UNCERTAIN, false)
+
+        titleIsPortuguese ->
+          Triple("pt", LanguageConfidence.UNCERTAIN, false)
+
         else -> Triple(null, LanguageConfidence.UNCERTAIN, false)
       }
 
@@ -551,8 +675,7 @@ object BibliographicMath {
       if (matchesExplicit) return LanguageTier.EXPLICIT_MATCH
     }
     return when (canonicalTag) {
-      "pt-br" -> LanguageTier.PT_BR
-      "pt" -> if (confidence == LanguageConfidence.CONFIRMED) LanguageTier.PT_BR else LanguageTier.PT_UNCERTAIN
+      "pt-br", "pt" -> if (confidence == LanguageConfidence.CONFIRMED) LanguageTier.PT_BR else LanguageTier.PT_UNCERTAIN
       "en" -> LanguageTier.EN
       "pt-pt" -> LanguageTier.PT_PT_OR_OTHER
       null -> LanguageTier.UNKNOWN
@@ -578,26 +701,80 @@ object BibliographicMath {
       .takeIf { it.isNotEmpty() }
   }
 
-  private val ptUniqueDiacriticsRegex = Regex("[ãõçáéíóúâêôà]", RegexOption.IGNORE_CASE)
-  private val ptFunctionOrBookWordsRegex =
+  // Apenas diacríticos distintivos do português (exclui á/é/í/ó/ú isolados que são compartilhados com espanhol)
+  private val ptDistinctiveDiacriticsRegex = Regex("[ãõçâêô]", RegexOption.IGNORE_CASE)
+  private val nonPtDistinctiveDiacriticsRegex = Regex("[ñ¿¡ßäöüèìùïîûœæ]", RegexOption.IGNORE_CASE)
+  private val spanishAccentedCueRegex =
+    Regex("(?:\\b[\\p{L}]+(?:c|s)ión(?:es)?\\b|\\bcámara\\b|(?<![\\p{L}-])la\\b)", RegexOption.IGNORE_CASE)
+
+  private val ptDistinctiveWordsRegex =
     Regex(
-      "\\b(e o|e a|dos|das|uma|para|com|sem|sobre|edicao|livro|prisioneiro|pedra|camara|calice|fenix|enigma|reliquias|memorias|senhor|aneis|principe|vorazes|sociedade|retorno|duas)\\b",
+      "\\b(e o|e a|e os|e as|e um|e uma|um livro|uma historia|edicao|edicoes|colecao|colecoes|traducao|versao|portugues|portuguesa|brasileiro|brasileira|livro|livros|prisioneiro|calice|fenix|senhor|senhora|aneis|anel|sociedade|vorazes|pequeno|pequena|nao|voce|voces|tambem|quem|tudo|agora|ainda|depois|hoje|ontem|amanha|mulher|mulheres|homem|homens|crianca|criancas|coracao|coracoes|solidao|prisao|cidade|cidades|verdade|liberdade|estrelas|noite|noites|olhos|garota|garoto|menino|menina|primeiro|primeira|terceiro|terceira|feiticeiro|alienista|casmurro|receitar|duas)\\b",
       RegexOption.IGNORE_CASE,
     )
-  private val nonPtLatinExclusionRegex =
+
+  private val clearSpanishWordsRegex =
     Regex(
-      "\\b(el|los|las|del|y|por|una|prisionero|piedra|camara|caliz|reliquias de la|le|les|du|des|et|prisonnier|chambre|coupe|der|die|das|und|gefangene|stein|kammer|the|and|of|with|prisoner|philosopher|sorcerer|chamber|goblet|phoenix|deathly|hallows|il|lo|gli|della|prigioniero|pietra)\\b",
+      "\\b(el|los|las|del|y|una|unos|unas|con|sin|libro|libros|edicion|ediciones|coleccion|colecciones|traduccion|ilustracion|prisionero|piedra|caliz|hechicero|hechicera|jovenes|lectores|espanol|espanola|castellano|reliquias de la|misterio del|orden del)\\b",
       RegexOption.IGNORE_CASE,
     )
+  private val clearFrenchWordsRegex =
+    Regex(
+      "\\b(le|les|du|des|et|une|avec|pour|dans|sur|chez|aux|prisonnier|chambre|coupe|ecole|sorciers|tome|francaise)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+  private val clearGermanWordsRegex =
+    Regex(
+      "\\b(der|die|und|mit|von|ein|eine|gefangene|stein|kammer|feuerkelch|ausgabe|buch)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+  private val clearItalianWordsRegex =
+    Regex(
+      "\\b(il|lo|gli|della|dello|delle|prigioniero|pietra)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+  private val clearEnglishWordsRegex =
+    Regex(
+      "\\b(the|and|of|with|for|from|into|prisoner|philosopher|sorcerer|chamber|goblet|phoenix|deathly|hallows|edition|illustrated|complete|novel|story|stories|books|handbook)\\b",
+      RegexOption.IGNORE_CASE,
+    )
+
+  fun detectClearForeignLatinLanguage(rawText: String?): String? {
+    val clean = sanitizeDisplayText(rawText) ?: return null
+    if (nonLatinScriptRegex.containsMatchIn(clean)) return null
+    val norm = normalizeText(clean)
+    if (norm.isBlank()) return null
+
+    if (Regex("[ñ¿¡]").containsMatchIn(clean) || spanishAccentedCueRegex.containsMatchIn(clean) || clearSpanishWordsRegex.containsMatchIn(norm)) {
+      return "es"
+    }
+    if (Regex("[äöß]").containsMatchIn(clean) || clearGermanWordsRegex.containsMatchIn(norm)) {
+      return "de"
+    }
+    if (Regex("[èùïîûœæ]").containsMatchIn(clean) || clearFrenchWordsRegex.containsMatchIn(norm)) {
+      return "fr"
+    }
+    if (clearItalianWordsRegex.containsMatchIn(norm)) {
+      return "it"
+    }
+    if (clearEnglishWordsRegex.containsMatchIn(norm)) {
+      return "en"
+    }
+    if (Regex("^das\\b").containsMatchIn(norm) && !ptDistinctiveDiacriticsRegex.containsMatchIn(clean) && !ptDistinctiveWordsRegex.containsMatchIn(norm)) {
+      return "de"
+    }
+    return null
+  }
 
   fun looksPortugueseEditionTitle(rawTitle: String?): Boolean {
     val clean = sanitizeDisplayText(rawTitle) ?: return false
     if (nonLatinScriptRegex.containsMatchIn(clean)) return false
+    if (nonPtDistinctiveDiacriticsRegex.containsMatchIn(clean)) return false
     val norm = normalizeText(clean)
     if (norm.isBlank()) return false
-    if (nonPtLatinExclusionRegex.containsMatchIn(norm)) return false
-    val hasPtDiacritics = ptUniqueDiacriticsRegex.containsMatchIn(clean) && !Regex("[ñ¿¡üößèìù]").containsMatchIn(clean.lowercase(Locale.ROOT))
-    val hasPtWords = ptFunctionOrBookWordsRegex.containsMatchIn(norm)
+    if (detectClearForeignLatinLanguage(clean) != null) return false
+    val hasPtDiacritics = ptDistinctiveDiacriticsRegex.containsMatchIn(clean)
+    val hasPtWords = ptDistinctiveWordsRegex.containsMatchIn(norm)
     return hasPtDiacritics || hasPtWords
   }
 

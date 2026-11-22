@@ -6,6 +6,8 @@ import com.example.core.bibliographic.domain.QueryPlanner
 import com.example.core.model.BibliographicMath
 import com.example.core.model.CandidateContributor
 import com.example.core.model.ContributorRole
+import com.example.core.model.LanguageAssessment
+import com.example.core.model.LanguageConfidence
 import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
@@ -192,22 +194,16 @@ class AppleBooksAdapter(
     val rawTitle = BibliographicMath.sanitizeDisplayText(item.trackName ?: item.trackCensoredName)
       ?: return null
     val cleanTitle = cleanAppleTitle(rawTitle)
+    val hasExplicitPtSuffix = cleanTitle != rawTitle
     val contributors = parseArtists(item.artistName)
     val year = extractYear(item.releaseDate)
     val synopsis = BibliographicMath.stripHtmlTags(item.description)
-    val rawLang =
-      when {
-        looksPortugueseText("$cleanTitle ${synopsis?.take(140).orEmpty()}") -> "pt-br"
-        looksEnglishText("$cleanTitle ${synopsis?.take(140).orEmpty()}") -> "en"
-        else -> null
-      }
     val langAssessment =
-      BibliographicMath.assessLanguage(
-        explicitLanguageRaw = rawLang,
-        isbn13Or10 = null,
-        publisher = null,
-        editionTitle = cleanTitle,
-        explicitRequestedLanguage = explicitRequestedLang,
+      assessAppleBooksLanguage(
+        cleanTitle = cleanTitle,
+        hasExplicitPtSuffix = hasExplicitPtSuffix,
+        synopsis = synopsis,
+        explicitRequestedLang = explicitRequestedLang,
       )
     val normLang = langAssessment.normalizedCode
 
@@ -277,16 +273,91 @@ class AppleBooksAdapter(
       .trim()
       .ifBlank { raw }
 
-  private fun looksPortugueseText(text: String): Boolean {
-    val lower = text.lowercase()
-    return Regex("[ãõçáéíóúâêôà]").containsMatchIn(lower) ||
-      Regex("\\b(dos|das|uma|um|para|com|sem|voce|livros|historia|edicao)\\b")
-        .containsMatchIn(BibliographicMath.normalizeText(lower))
-  }
+  private fun assessAppleBooksLanguage(
+    cleanTitle: String,
+    hasExplicitPtSuffix: Boolean,
+    synopsis: String?,
+    explicitRequestedLang: String?,
+  ): LanguageAssessment {
+    val base =
+      BibliographicMath.assessLanguage(
+        explicitLanguageRaw = null,
+        isbn13Or10 = null,
+        publisher = null,
+        editionTitle = cleanTitle,
+        explicitRequestedLanguage = explicitRequestedLang,
+      )
+    if (base.canonicalTag != null || BibliographicMath.hasNonLatinScript(cleanTitle)) {
+      return base
+    }
 
-  private fun looksEnglishText(text: String): Boolean =
-    Regex("\\b(the|and|of|with|story|novel|book|edition|series)\\b")
-      .containsMatchIn(BibliographicMath.normalizeText(text))
+    val titleForeignLang = BibliographicMath.detectClearForeignLatinLanguage(cleanTitle)
+    if (titleForeignLang != null) {
+      val norm = BibliographicMath.normalizeLanguageCode(titleForeignLang) ?: titleForeignLang
+      return LanguageAssessment(
+        normalizedCode = norm,
+        canonicalTag = norm,
+        tier =
+          BibliographicMath.computeTierForCanonical(
+            canonicalTag = norm,
+            confidence = LanguageConfidence.UNCERTAIN,
+            explicitRequestedLanguage = explicitRequestedLang,
+          ),
+        confidence = LanguageConfidence.UNCERTAIN,
+        hasConflict = false,
+      )
+    }
+
+    val synopsisSample = synopsis?.take(260)
+    val synopsisForeignLang = BibliographicMath.detectClearForeignLatinLanguage(synopsisSample)
+    if (hasExplicitPtSuffix && synopsisForeignLang == null) {
+      return LanguageAssessment(
+        normalizedCode = "pt",
+        canonicalTag = "pt",
+        tier =
+          BibliographicMath.computeTierForCanonical(
+            canonicalTag = "pt",
+            confidence = LanguageConfidence.UNCERTAIN,
+            explicitRequestedLanguage = explicitRequestedLang,
+          ),
+        confidence = LanguageConfidence.UNCERTAIN,
+        hasConflict = false,
+      )
+    }
+
+    if (BibliographicMath.looksPortugueseEditionTitle(synopsisSample)) {
+      return LanguageAssessment(
+        normalizedCode = "pt",
+        canonicalTag = "pt",
+        tier =
+          BibliographicMath.computeTierForCanonical(
+            canonicalTag = "pt",
+            confidence = LanguageConfidence.UNCERTAIN,
+            explicitRequestedLanguage = explicitRequestedLang,
+          ),
+        confidence = LanguageConfidence.UNCERTAIN,
+        hasConflict = false,
+      )
+    }
+
+    if (synopsisForeignLang != null) {
+      val norm = BibliographicMath.normalizeLanguageCode(synopsisForeignLang) ?: synopsisForeignLang
+      return LanguageAssessment(
+        normalizedCode = norm,
+        canonicalTag = norm,
+        tier =
+          BibliographicMath.computeTierForCanonical(
+            canonicalTag = norm,
+            confidence = LanguageConfidence.UNCERTAIN,
+            explicitRequestedLanguage = explicitRequestedLang,
+          ),
+        confidence = LanguageConfidence.UNCERTAIN,
+        hasConflict = hasExplicitPtSuffix,
+      )
+    }
+
+    return base
+  }
 
   private companion object {
     const val COOLDOWN_DURATION_MS = 60_000L

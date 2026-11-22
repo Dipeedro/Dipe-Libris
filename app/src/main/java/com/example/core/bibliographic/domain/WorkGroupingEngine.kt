@@ -559,11 +559,8 @@ object WorkGroupingEngine {
         "${BibliographicMath.normalizeText(it.name)}_${it.role}"
       }
     val mergedCovers = CoverRanker.rankAndDeduplicate(primary.coverCandidates + secondary.coverCandidates)
-    val primaryHasReliableLang =
-      primary.languageConfidenceName == LanguageConfidence.CONFIRMED.name && !primary.hasLanguageConflict
-    val langDonor =
-      if (primaryHasReliableLang || primary.language != null) primary else secondary
-    val mergedLanguage = langDonor.language ?: secondary.language
+    val langDecision = resolveMergedLanguage(primary, secondary, preferredLanguage)
+    val mergedLanguage = langDecision.language
     val mergedSynopses =
       SynopsisSelector.rankAndDeduplicate(
         primary.synopsisCandidates + secondary.synopsisCandidates,
@@ -587,12 +584,10 @@ object WorkGroupingEngine {
         isbn10 = primary.isbn10 ?: secondary.isbn10,
         isbn13 = primary.isbn13 ?: secondary.isbn13,
         language = mergedLanguage,
-        canonicalLanguageTag = langDonor.canonicalLanguageTag ?: secondary.canonicalLanguageTag,
-        languageTierRank = minOf(primary.languageTierRank, secondary.languageTierRank).let {
-          if (primaryHasReliableLang) primary.languageTierRank else langDonor.languageTierRank
-        },
-        languageConfidenceName = langDonor.languageConfidenceName ?: secondary.languageConfidenceName,
-        hasLanguageConflict = if (primaryHasReliableLang) primary.hasLanguageConflict else langDonor.hasLanguageConflict,
+        canonicalLanguageTag = langDecision.canonicalTag,
+        languageTierRank = langDecision.tierRank,
+        languageConfidenceName = langDecision.confidenceName,
+        hasLanguageConflict = langDecision.hasConflict,
         format = primary.format ?: secondary.format,
         editionLabel = primary.editionLabel ?: secondary.editionLabel,
         seriesName = primary.seriesName ?: secondary.seriesName,
@@ -610,6 +605,77 @@ object WorkGroupingEngine {
         availableWorkLanguages = mergedWorkLangs,
       )
     return merged.copy(reliabilityScore = computeEditionReliability(merged, preferredLanguage))
+  }
+
+  private data class MergedLanguageDecision(
+    val language: String?,
+    val canonicalTag: String?,
+    val tierRank: Int,
+    val confidenceName: String,
+    val hasConflict: Boolean,
+  )
+
+  private fun languageTrustRank(cand: SearchEditionCandidate): Int {
+    val hasLang = !cand.canonicalLanguageTag.isNullOrBlank() || !cand.language.isNullOrBlank()
+    if (!hasLang) return 0
+    return when (cand.languageConfidenceName) {
+      LanguageConfidence.CONFIRMED.name -> if (!cand.hasLanguageConflict) 4 else 3
+      LanguageConfidence.INFERRED_WITH_CONFLICT.name -> 2
+      else -> 1
+    }
+  }
+
+  private fun areCompatiblePortugueseVariants(tagA: String, tagB: String): Boolean {
+    if (tagA == tagB) return true
+    return (tagA == "pt" && (tagB == "pt-br" || tagB == "pt-pt")) ||
+      (tagB == "pt" && (tagA == "pt-br" || tagA == "pt-pt"))
+  }
+
+  private fun resolveMergedLanguage(
+    primary: SearchEditionCandidate,
+    secondary: SearchEditionCandidate,
+    preferredLanguage: String?,
+  ): MergedLanguageDecision {
+    val tagA = (primary.canonicalLanguageTag ?: BibliographicMath.normalizeLanguageCode(primary.language))?.lowercase(Locale.ROOT)
+    val tagB = (secondary.canonicalLanguageTag ?: BibliographicMath.normalizeLanguageCode(secondary.language))?.lowercase(Locale.ROOT)
+
+    val languagesConflict =
+      tagA != null &&
+        tagB != null &&
+        tagA != tagB &&
+        !areCompatiblePortugueseVariants(tagA, tagB)
+
+    val trustA = languageTrustRank(primary)
+    val trustB = languageTrustRank(secondary)
+
+    val donor =
+      when {
+        trustA > trustB -> primary
+        trustB > trustA -> secondary
+        tagA != null && tagB != null && areCompatiblePortugueseVariants(tagA, tagB) && tagA != tagB ->
+          if (tagA == "pt-br" || tagA == "pt-pt") primary else secondary
+        else -> {
+          val normPref = BibliographicMath.normalizeLanguageCode(preferredLanguage)
+          when {
+            normPref != null && primary.language == normPref && secondary.language != normPref && trustA >= 3 -> primary
+            normPref != null && secondary.language == normPref && primary.language != normPref && trustB >= 3 -> secondary
+            else -> primary
+          }
+        }
+      }
+    val other = if (donor === primary) secondary else primary
+    val donorCanonical = donor.canonicalLanguageTag ?: donor.language
+    val donorNorm =
+      BibliographicMath.normalizeLanguageCode(donor.language ?: donorCanonical)
+        ?: other.language
+
+    return MergedLanguageDecision(
+      language = donorNorm,
+      canonicalTag = donorCanonical ?: other.canonicalLanguageTag,
+      tierRank = donor.languageTierRank,
+      confidenceName = donor.languageConfidenceName ?: LanguageConfidence.UNCERTAIN.name,
+      hasConflict = donor.hasLanguageConflict || other.hasLanguageConflict || languagesConflict,
+    )
   }
 
   private fun hasExplicitVolumeConflict(
@@ -1014,12 +1080,10 @@ object WorkGroupingEngine {
     return score
   }
 
-  private fun looksPortugueseLike(title: String): Boolean {
-    val lower = title.lowercase(Locale.ROOT)
-    return Regex("[ãõçáéíóúâêôà]").containsMatchIn(lower) ||
-      Regex("\\b(dos|das|uma|um|jogos|vorazes|senhor|aneis|principe|pequeno|gato|memorias|casmurro)\\b")
-        .containsMatchIn(BibliographicMath.normalizeText(lower))
-  }
+  private fun looksPortugueseLike(title: String): Boolean =
+    BibliographicMath.looksPortugueseEditionTitle(title) ||
+      Regex("\\b(jogos|vorazes|senhor|aneis|principe|pequeno|memorias|casmurro)\\b", RegexOption.IGNORE_CASE)
+        .containsMatchIn(BibliographicMath.normalizeText(title))
 
   private fun editionSelectionScore(
     cand: SearchEditionCandidate,
@@ -1080,8 +1144,8 @@ object WorkGroupingEngine {
     if (candidate.format != null && candidate.format != EditionFormat.OTHER) score += 4
 
     val normPref = BibliographicMath.normalizeLanguageCode(preferredLanguage)
-    if (normPref != null && candidate.language == normPref) {
-      score += 18
+    if (normPref != null && candidate.language == normPref && !candidate.hasLanguageConflict) {
+      score += if (candidate.languageConfidenceName == LanguageConfidence.CONFIRMED.name) 18 else 4
     }
 
     score += (candidate.sources.size - 1).coerceAtLeast(0) * 14

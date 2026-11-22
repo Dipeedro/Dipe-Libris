@@ -904,9 +904,9 @@ class HybridSearchOrchestrator(
     val langPart = BibliographicMath.normalizeLanguageCode(preferredLanguage).orEmpty()
     val isbn = intent.parsedIsbn
     return if (isbn != null) {
-      "v5:isbn:${isbn.isbn13 ?: isbn.cleaned}:lang=$langPart"
+      "v6:isbn:${isbn.isbn13 ?: isbn.cleaned}:lang=$langPart"
     } else {
-      "v5:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
+      "v6:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
     }
   }
 
