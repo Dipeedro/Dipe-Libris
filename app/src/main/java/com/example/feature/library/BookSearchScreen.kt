@@ -1,5 +1,12 @@
 package com.example.feature.library
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +39,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -52,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.CompactEditorialSearchPill
@@ -95,6 +102,36 @@ fun BookSearchScreen(
 ) {
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
   val language = LocalAppLanguage.current
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val (sweepProvider, pulseProvider) =
+    if (uiState.isSearching && !reduceMotion) {
+      val transition = rememberInfiniteTransition(label = "search_loading_transition")
+      val sweepState =
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = 1f,
+          animationSpec =
+            infiniteRepeatable(
+              animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+              repeatMode = RepeatMode.Restart,
+            ),
+          label = "search_hairline_sweep",
+        )
+      val pulseState =
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = 1f,
+          animationSpec =
+            infiniteRepeatable(
+              animation = tween(durationMillis = 1350, easing = LinearEasing),
+              repeatMode = RepeatMode.Restart,
+            ),
+          label = "search_pulse_wave",
+        )
+      Pair({ sweepState.value }, { pulseState.value })
+    } else {
+      Pair({ 0.5f }, { 0.5f })
+    }
   val response = uiState.response
   val hasAnyResponseWorks =
     response != null && (
@@ -206,10 +243,10 @@ fun BookSearchScreen(
           }
 
           if (uiState.isSearching) {
-            LinearProgressIndicator(
+            SearchTopProgressHairline(
+              progressProvider = sweepProvider,
+              reduceMotion = reduceMotion,
               modifier = Modifier.fillMaxWidth().height(2.dp).testTag("search_progressive_bar"),
-              color = MaterialTheme.colorScheme.secondary,
-              trackColor = MaterialTheme.colorScheme.surfaceContainerLow,
             )
           } else {
             HairlineDivider()
@@ -255,18 +292,10 @@ fun BookSearchScreen(
 
         if (uiState.isSearching && !hasAnyResponseWorks) {
           item(key = "search_loading_indicator", contentType = "loading_indicator") {
-            Row(
-              modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact, bottom = DipeSpacing.md),
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm, Alignment.CenterHorizontally),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-              Text(
-                text = stringResource(R.string.search_loading_progress),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
+            SearchEditorialLoadingState(
+              pulseProvider = pulseProvider,
+              reduceMotion = reduceMotion,
+            )
           }
         }
 
@@ -372,13 +401,24 @@ fun BookSearchScreen(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                   ) {
-                    Text(
-                      text = label,
-                      style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.sp),
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 1,
+                    Row(
                       modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    )
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                      if (st.state == ProviderOutcomeState.LOADING && uiState.isSearching) {
+                        SearchSourceLoadingDot(
+                          pulseProvider = pulseProvider,
+                          reduceMotion = reduceMotion,
+                        )
+                      }
+                      Text(
+                        text = label,
+                        style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                      )
+                    }
                   }
                 }
               }

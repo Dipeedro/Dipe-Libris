@@ -1,8 +1,10 @@
 package com.example.feature.library
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,10 +43,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -690,3 +700,199 @@ internal fun DuplicateResolutionDialog(
     DuplicateAssessment.NoMatch -> Unit
   }
 }
+
+@Composable
+internal fun SearchTopProgressHairline(
+  progressProvider: () -> Float,
+  reduceMotion: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val trackColor = MaterialTheme.colorScheme.surfaceContainerLow
+  val indicatorColor = MaterialTheme.colorScheme.secondary
+  Box(
+    modifier =
+      modifier.drawBehind {
+        drawRect(color = trackColor)
+        if (reduceMotion) {
+          drawRect(color = indicatorColor.copy(alpha = 0.72f))
+        } else {
+          val t = progressProvider().coerceIn(0f, 1f)
+          val barWidth = size.width * 0.34f
+          val travel = size.width + barWidth
+          val left = -barWidth + (travel * t)
+          val clampedLeft = left.coerceIn(0f, size.width)
+          val clampedRight = (left + barWidth).coerceIn(0f, size.width)
+          val visibleWidth = clampedRight - clampedLeft
+          if (visibleWidth > 0f) {
+            drawRect(
+              color = indicatorColor,
+              topLeft = Offset(clampedLeft, 0f),
+              size = Size(visibleWidth, size.height),
+            )
+          }
+        }
+      }
+  )
+}
+
+@Composable
+internal fun SearchSourceLoadingDot(
+  pulseProvider: () -> Float,
+  reduceMotion: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val dotColor = MaterialTheme.colorScheme.secondary
+  Canvas(modifier = modifier.size(6.dp)) {
+    val alpha = if (reduceMotion) 0.85f else 0.35f + (0.65f * pulseProvider().coerceIn(0f, 1f))
+    drawCircle(color = dotColor.copy(alpha = alpha))
+  }
+}
+
+@Composable
+internal fun SearchEditorialLoadingState(
+  pulseProvider: () -> Float,
+  reduceMotion: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val loadingMessage = stringResource(R.string.search_loading_progress)
+  val accentColor = MaterialTheme.colorScheme.secondary
+  val placeholderBaseColor = MaterialTheme.colorScheme.surfaceContainerHigh
+  val placeholderCoverColor = MaterialTheme.colorScheme.surfaceContainer
+  val spineCreaseColor = MaterialTheme.colorScheme.outlineVariant
+
+  Column(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .padding(top = DipeSpacing.compact, bottom = DipeSpacing.md)
+        .semantics(mergeDescendants = true) {
+          liveRegion = LiveRegionMode.Polite
+        }
+        .testTag("search_loading_indicator"),
+    verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(vertical = DipeSpacing.xs),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm, Alignment.CenterHorizontally),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Canvas(modifier = Modifier.size(width = 18.dp, height = 14.dp)) {
+        val barWidth = 2.5.dp.toPx()
+        val gap = 3.dp.toPx()
+        val totalBarsWidth = (barWidth * 3f) + (gap * 2f)
+        val startX = (size.width - totalBarsWidth) * 0.5f
+        val p = if (reduceMotion) 0.5f else pulseProvider().coerceIn(0f, 1f)
+        val corner = CornerRadius(barWidth * 0.5f, barWidth * 0.5f)
+        for (i in 0 until 3) {
+          val phase = ((p + i * 0.33f) % 1f)
+          val wave = 1f - kotlin.math.abs(phase * 2f - 1f)
+          val factor = if (reduceMotion) 0.72f else 0.42f + (0.58f * wave)
+          val barHeight = size.height * factor
+          val top = (size.height - barHeight) * 0.5f
+          val x = startX + i * (barWidth + gap)
+          drawRoundRect(
+            color = accentColor.copy(alpha = if (reduceMotion) 0.8f else 0.45f + (0.55f * wave)),
+            topLeft = Offset(x, top),
+            size = Size(barWidth, barHeight),
+            cornerRadius = corner,
+          )
+        }
+      }
+      Text(
+        text = loadingMessage,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+
+    repeat(2) { cardIdx ->
+      Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(DipeSpacing.compact),
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          // Miniature editorial book cover silhouette drawn purely in draw phase
+          Box(
+            modifier =
+              Modifier
+                .width(52.dp)
+                .height(74.dp)
+                .drawBehind {
+                  val p = if (reduceMotion) 0.5f else pulseProvider().coerceIn(0f, 1f)
+                  val shifted = ((p + cardIdx * 0.25f) % 1f)
+                  val wave = 1f - kotlin.math.abs(shifted * 2f - 1f)
+                  val alpha = if (reduceMotion) 0.65f else 0.48f + (0.36f * wave)
+                  drawRoundRect(
+                    color = placeholderCoverColor.copy(alpha = alpha),
+                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                  )
+                  drawLine(
+                    color = spineCreaseColor.copy(alpha = alpha * 0.7f),
+                    start = Offset(6.dp.toPx(), 4.dp.toPx()),
+                    end = Offset(6.dp.toPx(), size.height - 4.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                  )
+                }
+          )
+
+          Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Box(
+              modifier =
+                Modifier
+                  .fillMaxWidth(if (cardIdx == 0) 0.82f else 0.68f)
+                  .height(14.dp)
+                  .drawBehind {
+                    val p = if (reduceMotion) 0.5f else pulseProvider().coerceIn(0f, 1f)
+                    val wave = 1f - kotlin.math.abs(((p + cardIdx * 0.25f) % 1f) * 2f - 1f)
+                    val alpha = if (reduceMotion) 0.65f else 0.45f + (0.4f * wave)
+                    drawRoundRect(
+                      color = placeholderBaseColor.copy(alpha = alpha),
+                      cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                    )
+                  }
+            )
+            Box(
+              modifier =
+                Modifier
+                  .fillMaxWidth(if (cardIdx == 0) 0.52f else 0.44f)
+                  .height(11.dp)
+                  .drawBehind {
+                    val p = if (reduceMotion) 0.5f else pulseProvider().coerceIn(0f, 1f)
+                    val wave = 1f - kotlin.math.abs(((p + 0.15f + cardIdx * 0.25f) % 1f) * 2f - 1f)
+                    val alpha = if (reduceMotion) 0.55f else 0.35f + (0.38f * wave)
+                    drawRoundRect(
+                      color = placeholderBaseColor.copy(alpha = alpha),
+                      cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                    )
+                  }
+            )
+            Box(
+              modifier =
+                Modifier
+                  .width(78.dp)
+                  .height(10.dp)
+                  .drawBehind {
+                    val p = if (reduceMotion) 0.5f else pulseProvider().coerceIn(0f, 1f)
+                    val wave = 1f - kotlin.math.abs(((p + 0.3f + cardIdx * 0.25f) % 1f) * 2f - 1f)
+                    val alpha = if (reduceMotion) 0.5f else 0.32f + (0.35f * wave)
+                    drawRoundRect(
+                      color = accentColor.copy(alpha = alpha * 0.38f),
+                      cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx()),
+                    )
+                  }
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
