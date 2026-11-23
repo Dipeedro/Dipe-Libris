@@ -39,13 +39,30 @@
 
     <!-- Home -->
     <string name="home_masthead_title">Leitura</string>
-    <string name="home_masthead_empty_subtitle">Sua mesa de leitura</string>
+    <string name="home_masthead_empty_subtitle">Nada na mesa por enquanto</string>
+    <plurals name="home_empty_subtitle_cataloged">
+        <item quantity="one">Nada na mesa · %1$d na estante</item>
+        <item quantity="other">Nada na mesa · %1$d na estante</item>
+    </plurals>
+    <plurals name="home_empty_subtitle_paused">
+        <item quantity="one">Nada aberto · %1$d em pausa</item>
+        <item quantity="other">Nada aberto · %1$d em pausa</item>
+    </plurals>
     <string name="home_section_currently_reading">Em andamento</string>
     <string name="home_section_also_reading">Também em leitura</string>
     <string name="home_section_recent_activity">Atividade recente</string>
     <string name="cd_brand_seal" translatable="false">Dipe Libris</string>
-    <string name="home_empty_reading_title">Nenhuma leitura em andamento</string>
-    <string name="home_empty_reading_body">Marque uma obra como em leitura ou cadastre um novo livro.</string>
+    <string name="home_empty_reading_title">Sua mesa está vazia</string>
+    <string name="home_empty_reading_body">Escolha o próximo livro na biblioteca ou catalogue uma nova leitura.</string>
+    <string name="home_empty_variant_1_title">Sua mesa está vazia</string>
+    <string name="home_empty_variant_1_body">Escolha o próximo livro na biblioteca ou catalogue uma nova leitura.</string>
+    <string name="home_empty_variant_2_title">Pronto para o próximo capítulo?</string>
+    <string name="home_empty_variant_2_body">Escolha um livro da sua estante ou traga uma nova obra para a mesa.</string>
+    <string name="home_empty_variant_3_title">Espaço livre para uma nova leitura</string>
+    <string name="home_empty_variant_3_body">Abra um título já guardado ou registre o livro que quer acompanhar agora.</string>
+    <string name="home_empty_variant_4_title">Qual história começa hoje?</string>
+    <string name="home_empty_variant_4_body">Escolha um volume da biblioteca ou adicione um novo exemplar à estante.</string>
+    <string name="home_empty_choose_library">Escolher da biblioteca</string>
     <string name="home_empty_activity_title">Nenhuma atividade recente</string>
     <string name="home_empty_activity_body">Obras catalogadas e notas do diário aparecerão aqui em ordem cronológica.</string>
     <string name="home_shortcut_open_library">Abrir biblioteca</string>

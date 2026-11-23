@@ -39,13 +39,30 @@
 
     <!-- Home -->
     <string name="home_masthead_title">Reading</string>
-    <string name="home_masthead_empty_subtitle">Your quiet reading desk</string>
+    <string name="home_masthead_empty_subtitle">Nothing on your desk yet</string>
+    <plurals name="home_empty_subtitle_cataloged">
+        <item quantity="one">Nothing on desk · %1$d on shelf</item>
+        <item quantity="other">Nothing on desk · %1$d on shelf</item>
+    </plurals>
+    <plurals name="home_empty_subtitle_paused">
+        <item quantity="one">Nothing open · %1$d paused</item>
+        <item quantity="other">Nothing open · %1$d paused</item>
+    </plurals>
     <string name="home_section_currently_reading">Currently reading</string>
     <string name="home_section_also_reading">Also reading</string>
     <string name="home_section_recent_activity">Recent activity</string>
     <string name="cd_brand_seal" translatable="false">Dipe Libris</string>
-    <string name="home_empty_reading_title">No books in progress</string>
-    <string name="home_empty_reading_body">Mark a book as reading or add a new volume to follow it here.</string>
+    <string name="home_empty_reading_title">Your desk is clear</string>
+    <string name="home_empty_reading_body">Choose your next book from the library or catalog a new volume.</string>
+    <string name="home_empty_variant_1_title">Your desk is clear</string>
+    <string name="home_empty_variant_1_body">Choose your next book from the library or catalog a new volume.</string>
+    <string name="home_empty_variant_2_title">Ready for the next chapter?</string>
+    <string name="home_empty_variant_2_body">Pick a title from your shelves or bring a new book to the desk.</string>
+    <string name="home_empty_variant_3_title">Room for a new reading</string>
+    <string name="home_empty_variant_3_body">Open a volume from your shelves or register the book you want to follow next.</string>
+    <string name="home_empty_variant_4_title">Which story starts today?</string>
+    <string name="home_empty_variant_4_body">Select a book from your library or add a new copy to your collection.</string>
+    <string name="home_empty_choose_library">Choose from library</string>
     <string name="home_empty_activity_title">No recent activity</string>
     <string name="home_empty_activity_body">Cataloged books and diary notes will appear here chronologically.</string>
     <string name="home_shortcut_open_library">Open library</string>
