@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
   val currentlyReading: List<CatalogBook> = emptyList(),
   val snapshot: ArchiveSnapshot = ArchiveSnapshot(),
+  val isLoading: Boolean = false,
 )
 
 class HomeViewModel(
@@ -37,13 +38,14 @@ class HomeViewModel(
         HomeUiState(
           currentlyReading = reading,
           snapshot = snapshot,
+          isLoading = false,
         )
       }
       .flowOn(Dispatchers.Default)
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = HomeUiState(),
+        initialValue = HomeUiState(isLoading = true),
       )
 
   fun updateProgressByPage(

@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -72,6 +73,7 @@ fun BookCoverArtwork(
   compact: Boolean = false,
   elevated: Boolean = false,
   widthHintDp: Dp? = null,
+  contentScale: ContentScale = ContentScale.Crop,
   onImageLoadError: (() -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
@@ -102,75 +104,114 @@ fun BookCoverArtwork(
   val density = LocalDensity.current
   val effectiveWidthDp = widthHintDp ?: if (compact) 52.dp else 160.dp
 
+  val targetWidthPx =
+    remember(effectiveWidthDp, density) {
+      with(density) { effectiveWidthDp.roundToPx() }.coerceIn(64, 1600)
+    }
+  val targetHeightPx = (targetWidthPx * 3) / 2
+
+  val imageRequest =
+    remember(activeUri, context, targetWidthPx, targetHeightPx, contentScale) {
+      activeUri?.let { raw ->
+        val data: Any =
+          when {
+            raw.startsWith("http://") || raw.startsWith("https://") -> raw
+            raw.startsWith("content://") || raw.startsWith("file://") ->
+              android.net.Uri.parse(raw)
+            raw.startsWith("/") -> File(raw)
+            else -> raw
+          }
+        ImageRequest.Builder(context)
+          .data(data)
+          .size(targetWidthPx, targetHeightPx)
+          .precision(Precision.INEXACT)
+          .crossfade(contentScale != ContentScale.Fit)
+          .build()
+      }
+    }
+  val painter = imageRequest?.let { rememberAsyncImagePainter(model = it) }
+  val painterState = painter?.state
+  val isTinyRemotePlaceholder =
+    if (painterState is AsyncImagePainter.State.Success && activeUri?.startsWith("http") == true) {
+      val w = painterState.result.drawable.intrinsicWidth
+      val h = painterState.result.drawable.intrinsicHeight
+      (w in 1..48) || (h in 1..48)
+    } else {
+      false
+    }
+
+  androidx.compose.runtime.LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
+    if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isTinyRemotePlaceholder)) {
+      if (activeUriIndex + 1 < candidateUris.size) {
+        activeUriIndex++
+      } else if (painterState is AsyncImagePainter.State.Error) {
+        onImageLoadError?.invoke()
+      }
+    }
+  }
+  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isTinyRemotePlaceholder
+  val resolvedAspectRatio =
+    if (contentScale == ContentScale.Fit && hasLoadedPhoto) {
+      val drawable = (painterState as AsyncImagePainter.State.Success).result.drawable
+      val w = drawable.intrinsicWidth
+      val h = drawable.intrinsicHeight
+      if (w > 0 && h > 0) (w.toFloat() / h.toFloat()).coerceIn(0.48f, 0.95f) else 2f / 3f
+    } else {
+      2f / 3f
+    }
+
+  val shadowModifier =
+    if (elevated) {
+      Modifier.drawWithCache {
+        val cornerPx = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+        val ambientOffsetY = 3.dp.toPx()
+        val contactOffsetY = 1.5.dp.toPx()
+        val wideSpread = 5.dp.toPx()
+        val midSpread = 2.5.dp.toPx()
+        onDrawBehind {
+          drawRoundRect(
+            color = Color(0x0D000000),
+            topLeft = Offset(-wideSpread * 0.5f, ambientOffsetY - wideSpread * 0.25f),
+            size = Size(size.width + wideSpread, size.height + wideSpread),
+            cornerRadius = cornerPx,
+          )
+          drawRoundRect(
+            color = Color(0x14000000),
+            topLeft = Offset(-midSpread * 0.5f, contactOffsetY),
+            size = Size(size.width + midSpread, size.height + midSpread * 0.9f),
+            cornerRadius = cornerPx,
+          )
+          drawRoundRect(
+            color = Color(0x1A000000),
+            topLeft = Offset(0f, contactOffsetY),
+            size = size,
+            cornerRadius = cornerPx,
+          )
+        }
+      }
+    } else {
+      Modifier
+    }
+
   Box(
     modifier =
       modifier
-        .aspectRatio(2f / 3f)
-        .graphicsLayer {
-          if (elevated) {
-            shadowElevation = 10.dp.toPx()
-            shape = BookCoverShape
-            clip = false
-          }
-        }
+        .aspectRatio(
+          ratio = resolvedAspectRatio,
+          matchHeightConstraintsFirst = contentScale == ContentScale.Fit,
+        )
+        .then(shadowModifier)
         .clip(BookCoverShape)
         .background(palette.clothColor)
         .border(0.75.dp, borderColor, BookCoverShape)
         .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {
-    val targetWidthPx =
-      remember(effectiveWidthDp, density) {
-        with(density) { effectiveWidthDp.roundToPx() }.coerceIn(64, 1600)
-      }
-    val targetHeightPx = (targetWidthPx * 3) / 2
-
-    val imageRequest =
-      remember(activeUri, context, targetWidthPx, targetHeightPx) {
-        activeUri?.let { raw ->
-          val data: Any =
-            when {
-              raw.startsWith("http://") || raw.startsWith("https://") -> raw
-              raw.startsWith("content://") || raw.startsWith("file://") ->
-                android.net.Uri.parse(raw)
-              raw.startsWith("/") -> File(raw)
-              else -> raw
-            }
-          ImageRequest.Builder(context)
-            .data(data)
-            .size(targetWidthPx, targetHeightPx)
-            .precision(Precision.INEXACT)
-            .crossfade(true)
-            .build()
-        }
-      }
-    val painter = imageRequest?.let { rememberAsyncImagePainter(model = it) }
-    val painterState = painter?.state
-    val isTinyRemotePlaceholder =
-      if (painterState is AsyncImagePainter.State.Success && activeUri?.startsWith("http") == true) {
-        val w = painterState.result.drawable.intrinsicWidth
-        val h = painterState.result.drawable.intrinsicHeight
-        (w in 1..48) || (h in 1..48)
-      } else {
-        false
-      }
-
-    androidx.compose.runtime.LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
-      if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isTinyRemotePlaceholder)) {
-        if (activeUriIndex + 1 < candidateUris.size) {
-          activeUriIndex++
-        } else if (painterState is AsyncImagePainter.State.Error) {
-          onImageLoadError?.invoke()
-        }
-      }
-    }
-    val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isTinyRemotePlaceholder
-
     if (painter != null) {
       Image(
         painter = painter,
         contentDescription = null,
-        contentScale = ContentScale.Crop,
+        contentScale = contentScale,
         modifier = Modifier.fillMaxSize(),
       )
       if (hasLoadedPhoto) {

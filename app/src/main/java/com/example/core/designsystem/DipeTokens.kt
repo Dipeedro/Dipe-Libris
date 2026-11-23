@@ -137,3 +137,50 @@ class TopSquircleShape(
   }
 }
 
+class TopEndSquircleShape(
+  private val cornerRadius: Dp = 24.dp,
+) : androidx.compose.ui.graphics.Shape {
+  override fun createOutline(
+    size: androidx.compose.ui.geometry.Size,
+    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    density: androidx.compose.ui.unit.Density,
+  ): androidx.compose.ui.graphics.Outline {
+    val radiusPx = with(density) { cornerRadius.toPx() }
+    val reach = (radiusPx * 1.4f).coerceAtMost(size.width * 0.65f).coerceAtMost(size.height * 0.45f)
+    val handle = reach * 0.30f
+    val path =
+      androidx.compose.ui.graphics.Path().apply {
+        if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) {
+          moveTo(size.width, 0f)
+          lineTo(reach, 0f)
+          cubicTo(
+            x1 = handle,
+            y1 = 0f,
+            x2 = 0f,
+            y2 = handle,
+            x3 = 0f,
+            y3 = reach,
+          )
+          lineTo(0f, size.height)
+          lineTo(size.width, size.height)
+          close()
+        } else {
+          moveTo(0f, 0f)
+          lineTo(size.width - reach, 0f)
+          cubicTo(
+            x1 = size.width - handle,
+            y1 = 0f,
+            x2 = size.width,
+            y2 = handle,
+            x3 = size.width,
+            y3 = reach,
+          )
+          lineTo(size.width, size.height)
+          lineTo(0f, size.height)
+          close()
+        }
+      }
+    return androidx.compose.ui.graphics.Outline.Generic(path)
+  }
+}
+

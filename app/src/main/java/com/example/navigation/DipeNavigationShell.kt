@@ -3,6 +3,7 @@ package com.example.navigation
 import android.app.Activity
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,9 +12,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.defaultMinSize
@@ -31,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -39,9 +43,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -50,7 +51,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +73,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,6 +90,7 @@ import com.example.R
 import com.example.core.designsystem.DipeElevation
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
+import com.example.core.designsystem.TopEndSquircleShape
 import com.example.core.designsystem.TopSquircleShape
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.di.AppContainer
@@ -272,79 +274,10 @@ fun DipeNavigationShell(
     ) { innerPadding ->
       Row(modifier = Modifier.fillMaxSize()) {
         if (isTopLevel && useRail) {
-          NavigationRail(
-            containerColor = DipeTheme.colors.navBarContainer,
-            windowInsets =
-              WindowInsets.systemBars
-                .union(WindowInsets.displayCutout)
-                .only(WindowInsetsSides.Vertical + WindowInsetsSides.Start),
-            modifier = Modifier.fillMaxHeight().testTag("dipe_navigation_rail"),
-          ) {
-            Column(
-              modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-              verticalArrangement =
-                Arrangement.spacedBy(DipeSpacing.xs, Alignment.CenterVertically),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              TopLevelDestination.entries.forEach { dest ->
-                val selected = currentDestination?.hasRoute(dest.route::class) == true
-                val label = stringResource(dest.labelRes)
-                NavigationRailItem(
-                  selected = selected,
-                  onClick = { navigateToTopLevel(dest) },
-                  icon = {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-                    ) {
-                      Box(
-                        modifier =
-                          Modifier.width(2.5.dp)
-                            .height(18.dp)
-                            .background(
-                              color =
-                                if (selected) DipeTheme.colors.navBarContent
-                                else Color.Transparent,
-                              shape = CircleShape,
-                            )
-                      )
-                      Icon(
-                        imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                        contentDescription = label,
-                        modifier = Modifier.size(22.dp),
-                      )
-                    }
-                  },
-                  label = {
-                    Text(
-                      text = label,
-                      style =
-                        if (selected) DipeTheme.typography.navBarLabelActive
-                        else DipeTheme.typography.navBarLabel,
-                      maxLines = 1,
-                      softWrap = false,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  },
-                  colors =
-                    NavigationRailItemDefaults.colors(
-                      selectedIconColor = DipeTheme.colors.navBarContent,
-                      selectedTextColor = DipeTheme.colors.navBarContent,
-                      indicatorColor = Color.Transparent,
-                      unselectedIconColor = DipeTheme.colors.navBarContentMuted,
-                      unselectedTextColor = DipeTheme.colors.navBarContentMuted,
-                    ),
-                  modifier =
-                    Modifier.padding(vertical = DipeSpacing.xxs)
-                      .testTag("nav_rail_${dest.routeKey}"),
-                )
-              }
-            }
-          }
-          VerticalDivider(
-            modifier = Modifier.fillMaxHeight(),
-            thickness = 0.5.dp,
-            color = DipeTheme.colors.dividerHairline,
+          EditorialSideNavBar(
+            currentDestination = currentDestination,
+            onNavigate = navigateToTopLevel,
+            topInsetPadding = innerPadding.calculateTopPadding(),
           )
         }
 
@@ -893,6 +826,100 @@ private fun EditorialBottomNavBar(
               )
             }
           }
+          Icon(
+            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(22.dp),
+          )
+          Text(
+            text = label,
+            style = labelStyle,
+            color = contentColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun EditorialSideNavBar(
+  currentDestination: NavDestination?,
+  onNavigate: (TopLevelDestination) -> Unit,
+  topInsetPadding: Dp,
+  modifier: Modifier = Modifier,
+) {
+  val motion = DipeTheme.motion
+  val layoutDirection = LocalLayoutDirection.current
+  val sidebarShape = remember { TopEndSquircleShape(cornerRadius = 24.dp) }
+  val safeEdgeInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).asPaddingValues()
+  val startSafeInset = safeEdgeInsets.calculateStartPadding(layoutDirection)
+  val bottomSafeInset =
+    WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues().calculateBottomPadding()
+
+  Surface(
+    modifier =
+      modifier
+        .padding(top = topInsetPadding)
+        .fillMaxHeight()
+        .testTag("dipe_navigation_rail"),
+    shape = sidebarShape,
+    color = DipeTheme.colors.navBarContainer,
+    tonalElevation = DipeElevation.flat,
+    shadowElevation = DipeElevation.flat,
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxHeight()
+          .verticalScroll(rememberScrollState())
+          .padding(
+            start = startSafeInset + DipeSpacing.md,
+            end = DipeSpacing.md,
+            top = DipeSpacing.md,
+            bottom = bottomSafeInset + DipeSpacing.md,
+          )
+          .width(IntrinsicSize.Max)
+          .widthIn(min = 104.dp)
+          .selectableGroup(),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs, Alignment.CenterVertically),
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      TopLevelDestination.entries.forEach { dest ->
+        val selected = currentDestination?.hasRoute(dest.route::class) == true
+        val label = stringResource(dest.labelRes)
+        val pillColor by
+          animateColorAsState(
+            targetValue = if (selected) Color.White.copy(alpha = 0.16f) else Color.Transparent,
+            animationSpec = motion.standardTween(180),
+            label = "nav_rail_pill_${dest.routeKey}",
+          )
+        val contentColor =
+          if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
+        val labelStyle =
+          if (selected) DipeTheme.typography.navBarLabelActive
+          else DipeTheme.typography.navBarLabel
+
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+              .clip(CircleShape)
+              .background(pillColor)
+              .selectable(
+                selected = selected,
+                onClick = { onNavigate(dest) },
+                role = Role.Tab,
+              )
+              .padding(horizontal = 14.dp, vertical = 10.dp)
+              .testTag("nav_rail_${dest.routeKey}"),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        ) {
           Icon(
             imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
             contentDescription = label,

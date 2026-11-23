@@ -55,6 +55,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -63,6 +66,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
@@ -76,8 +82,10 @@ import com.example.core.localization.LocaleManager
 import com.example.core.model.AppLanguage
 import com.example.core.model.CatalogBook
 import com.example.feature.library.QuickProgressSheet
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun HomeScreen(
@@ -128,12 +136,19 @@ fun HomeScreen(
       else -> stringResource(R.string.home_masthead_empty_subtitle)
     }
 
+  if (uiState.isLoading) {
+    Box(modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas))
+    return
+  }
+
   val centerPrimaryStage = secondaryReading.isEmpty()
 
   BoxWithConstraints(
     modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas),
     contentAlignment = Alignment.TopCenter,
   ) {
+    val viewportMaxHeight = maxHeight
+    val isLandscape = maxWidth > maxHeight && maxWidth >= 480.dp
     val isCompactHeight = maxHeight < 480.dp
     val topContentPadding = if (isCompactHeight) DipeSpacing.xs else DipeSpacing.md
     val bottomContentPadding =
@@ -144,7 +159,7 @@ fun HomeScreen(
       }
     val mastheadReserve = if (isCompactHeight) 92.dp else 124.dp
     val minStageHeight = (maxHeight - mastheadReserve).coerceAtLeast(180.dp)
-    val maxContentWidth = if (widthClass == WindowWidthClass.COMPACT) 760.dp else 840.dp
+    val maxContentWidth = if (widthClass == WindowWidthClass.COMPACT) 760.dp else 880.dp
 
     LazyColumn(
       state = listState,
@@ -188,6 +203,8 @@ fun HomeScreen(
             FeaturedReadingShowcase(
               book = featuredReading,
               widthClass = widthClass,
+              isLandscape = isLandscape,
+              viewportMaxHeight = viewportMaxHeight,
               language = language,
               onClick = onFeaturedClick,
               onUpdateProgress = { progressSheetBook = featuredReading },
@@ -244,13 +261,15 @@ fun HomeScreen(
 private fun FeaturedReadingShowcase(
   book: CatalogBook,
   widthClass: WindowWidthClass,
+  isLandscape: Boolean,
+  viewportMaxHeight: Dp,
   language: AppLanguage,
   onClick: () -> Unit,
   onUpdateProgress: () -> Unit,
 ) {
   val progressPercent = book.activeProgressPercent
   val currentPage = book.activeCurrentPage
-  val isExpanded = widthClass == WindowWidthClass.EXPANDED
+  val isSideBySide = isLandscape || widthClass == WindowWidthClass.EXPANDED
   val showTotalInProgress = progressPercent != null && currentPage != null && book.totalPages != null
 
   val metadataParts =
@@ -264,28 +283,127 @@ private fun FeaturedReadingShowcase(
       }
     }
 
-  if (isExpanded) {
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val context = LocalContext.current
+  val density = LocalDensity.current
+  val coverReady = remember(book.id, reduceMotion) { mutableStateOf(reduceMotion || book.coverUri.isNullOrBlank()) }
+  val coverProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  val titleMetaProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  val progressStageProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  val buttonsProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+
+  if (!reduceMotion) {
+    LaunchedEffect(book.id, book.coverUri) {
+      val rawUri = book.coverUri?.takeIf { it.isNotBlank() }
+      if (rawUri != null && !coverReady.value) {
+        val data: Any =
+          when {
+            rawUri.startsWith("http://") || rawUri.startsWith("https://") -> rawUri
+            rawUri.startsWith("content://") || rawUri.startsWith("file://") ->
+              android.net.Uri.parse(rawUri)
+            rawUri.startsWith("/") -> File(rawUri)
+            else -> rawUri
+          }
+        val coverWidthHint =
+          if (isSideBySide) {
+            ((viewportMaxHeight * 0.70f).coerceAtLeast(150.dp) * 0.72f).coerceIn(140.dp, 236.dp)
+          } else {
+            if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp
+          }
+        val preloadWidthPx = with(density) { coverWidthHint.roundToPx() }.coerceIn(64, 1600)
+        val preloadHeightPx = (preloadWidthPx * 3) / 2
+        withTimeoutOrNull(350L) {
+          runCatching {
+            context.imageLoader.execute(
+              ImageRequest.Builder(context)
+                .data(data)
+                .size(preloadWidthPx, preloadHeightPx)
+                .precision(Precision.INEXACT)
+                .build()
+            )
+          }
+        }
+      }
+      coverReady.value = true
+    }
+
+    LaunchedEffect(book.id, coverReady.value) {
+      if (!coverReady.value) return@LaunchedEffect
+      launch {
+        coverProgress.animateTo(1f, tween(durationMillis = 360, easing = FastOutSlowInEasing))
+      }
+      launch {
+        delay(70L)
+        titleMetaProgress.animateTo(1f, tween(durationMillis = 340, easing = FastOutSlowInEasing))
+      }
+      launch {
+        delay(140L)
+        progressStageProgress.animateTo(1f, tween(durationMillis = 320, easing = FastOutSlowInEasing))
+      }
+      launch {
+        delay(210L)
+        buttonsProgress.animateTo(1f, tween(durationMillis = 320, easing = FastOutSlowInEasing))
+      }
+    }
+  }
+
+  val risePx = with(density) { 14.dp.toPx() }
+  val coverCascadeModifier =
+    Modifier.graphicsLayer {
+      val p = coverProgress.value
+      alpha = p
+      translationY = (1f - p) * risePx
+    }
+  val titleMetaCascadeModifier =
+    Modifier.graphicsLayer {
+      val p = titleMetaProgress.value
+      alpha = p
+      translationY = (1f - p) * risePx
+    }
+  val progressCascadeModifier =
+    Modifier.graphicsLayer {
+      val p = progressStageProgress.value
+      alpha = p
+      translationY = (1f - p) * risePx
+    }
+  val buttonsCascadeModifier =
+    Modifier.graphicsLayer {
+      val p = buttonsProgress.value
+      alpha = p
+      translationY = (1f - p) * risePx
+    }
+
+  val interactionSource = remember { MutableInteractionSource() }
+
+  if (isSideBySide) {
+    val maxCoverHeight = (viewportMaxHeight * 0.70f).coerceAtLeast(150.dp)
+    val maxCoverWidthHint = (maxCoverHeight * 0.72f).coerceIn(140.dp, 236.dp)
     Row(
       modifier =
         Modifier.fillMaxWidth()
-          .clip(MaterialTheme.shapes.large)
-          .clickable(onClick = onClick)
-          .padding(vertical = DipeSpacing.md)
+          .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+          .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.sm)
           .testTag("home_reading_book_${book.id}"),
-      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xl),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xl, Alignment.CenterHorizontally),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      BookCoverArtwork(
-        title = book.title,
-        author = book.author,
-        isFavorite = book.isFavorite,
-        coverUri = book.coverUri,
-        elevated = true,
-        widthHintDp = 232.dp,
-        modifier = Modifier.width(232.dp),
-      )
+      Box(
+        modifier = coverCascadeModifier,
+        contentAlignment = Alignment.Center,
+      ) {
+        BookCoverArtwork(
+          title = book.title,
+          author = book.author,
+          isFavorite = book.isFavorite,
+          coverUri = book.coverUri,
+          elevated = true,
+          widthHintDp = maxCoverWidthHint,
+          contentScale = ContentScale.Fit,
+          modifier = Modifier.heightIn(max = maxCoverHeight).widthIn(max = 260.dp),
+        )
+      }
       Column(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.weight(1f).widthIn(max = 440.dp),
         horizontalAlignment = Alignment.Start,
       ) {
         FeaturedBookDetails(
@@ -295,6 +413,10 @@ private fun FeaturedReadingShowcase(
           currentPage = currentPage,
           language = language,
           centered = false,
+          isLandscape = isLandscape,
+          titleMetaModifier = titleMetaCascadeModifier,
+          progressModifier = progressCascadeModifier,
+          buttonsModifier = buttonsCascadeModifier,
           onOpenBook = onClick,
           onUpdateProgress = onUpdateProgress,
         )
@@ -304,9 +426,8 @@ private fun FeaturedReadingShowcase(
     Column(
       modifier =
         Modifier.fillMaxWidth()
-          .clip(MaterialTheme.shapes.large)
-          .clickable(onClick = onClick)
-          .padding(vertical = DipeSpacing.sm)
+          .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+          .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.sm)
           .testTag("home_reading_book_${book.id}"),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -318,7 +439,7 @@ private fun FeaturedReadingShowcase(
         coverUri = book.coverUri,
         elevated = true,
         widthHintDp = featuredWidth,
-        modifier = Modifier.width(featuredWidth),
+        modifier = coverCascadeModifier.width(featuredWidth),
       )
 
       Spacer(modifier = Modifier.height(DipeSpacing.md))
@@ -330,6 +451,10 @@ private fun FeaturedReadingShowcase(
         currentPage = currentPage,
         language = language,
         centered = true,
+        isLandscape = false,
+        titleMetaModifier = titleMetaCascadeModifier,
+        progressModifier = progressCascadeModifier,
+        buttonsModifier = buttonsCascadeModifier,
         onOpenBook = onClick,
         onUpdateProgress = onUpdateProgress,
       )
@@ -346,6 +471,10 @@ private fun FeaturedBookDetails(
   currentPage: Int?,
   language: AppLanguage,
   centered: Boolean,
+  isLandscape: Boolean,
+  titleMetaModifier: Modifier = Modifier,
+  progressModifier: Modifier = Modifier,
+  buttonsModifier: Modifier = Modifier,
   onOpenBook: () -> Unit,
   onUpdateProgress: () -> Unit,
 ) {
@@ -356,44 +485,77 @@ private fun FeaturedBookDetails(
     modifier = Modifier.fillMaxWidth(),
     horizontalAlignment = columnAlignment,
   ) {
-    Text(
-      text = book.title,
-      style = MaterialTheme.typography.displayMedium,
-      color = MaterialTheme.colorScheme.onBackground,
-      textAlign = textAlign,
-      maxLines = 3,
-      overflow = TextOverflow.Ellipsis,
-    )
-
-    Spacer(modifier = Modifier.height(DipeSpacing.xs))
-
-    FlowRow(
-      horizontalArrangement =
-        Arrangement.spacedBy(
-          DipeSpacing.compact,
-          if (centered) Alignment.CenterHorizontally else Alignment.Start,
-        ),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+    Column(
+      modifier = Modifier.fillMaxWidth().then(titleMetaModifier),
+      horizontalAlignment = columnAlignment,
     ) {
       Text(
-        text = book.author,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        text = book.title,
+        style = MaterialTheme.typography.displayMedium,
+        color = MaterialTheme.colorScheme.onBackground,
         textAlign = textAlign,
-        maxLines = 2,
+        maxLines = 3,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.align(Alignment.CenterVertically),
+        modifier = Modifier.fillMaxWidth(),
       )
-      if (metadataParts.isNotEmpty()) {
-        Text(
-          text = metadataParts.joinToString(" · "),
-          style = DipeTheme.typography.monoMetadata,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          textAlign = textAlign,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.align(Alignment.CenterVertically),
-        )
+
+      Spacer(modifier = Modifier.height(DipeSpacing.xs))
+
+      if (isLandscape) {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalAlignment = Alignment.Start,
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+        ) {
+          Text(
+            text = book.author,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Start,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (metadataParts.isNotEmpty()) {
+            Text(
+              text = metadataParts.joinToString(" · "),
+              style = DipeTheme.typography.monoMetadata,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = TextAlign.Start,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      } else {
+        FlowRow(
+          horizontalArrangement =
+            Arrangement.spacedBy(
+              DipeSpacing.compact,
+              if (centered) Alignment.CenterHorizontally else Alignment.Start,
+            ),
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+        ) {
+          Text(
+            text = book.author,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = textAlign,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.CenterVertically),
+          )
+          if (metadataParts.isNotEmpty()) {
+            Text(
+              text = metadataParts.joinToString(" · "),
+              style = DipeTheme.typography.monoMetadata,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = textAlign,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.align(Alignment.CenterVertically),
+            )
+          }
+        }
       }
     }
 
@@ -424,7 +586,9 @@ private fun FeaturedBookDetails(
         }
 
       Column(
-        modifier = Modifier.widthIn(max = 264.dp).fillMaxWidth(),
+        modifier =
+          (if (isLandscape) Modifier.fillMaxWidth() else Modifier.widthIn(max = 264.dp).fillMaxWidth())
+            .then(progressModifier),
         horizontalAlignment = columnAlignment,
         verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
       ) {
@@ -441,49 +605,146 @@ private fun FeaturedBookDetails(
 
     Spacer(modifier = Modifier.height(DipeSpacing.lg))
 
-    FlowRow(
-      horizontalArrangement =
-        Arrangement.spacedBy(
-          DipeSpacing.compact,
-          if (centered) Alignment.CenterHorizontally else Alignment.Start,
-        ),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-    ) {
-      Button(
-        onClick = onOpenBook,
-        shape = CircleShape,
-        colors =
-          ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondary,
-            contentColor = MaterialTheme.colorScheme.onSecondary,
-          ),
-        contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
-        modifier = Modifier.heightIn(min = 48.dp),
-      ) {
-        Text(
-          text = stringResource(R.string.home_open_book),
-          style = MaterialTheme.typography.labelLarge,
-          maxLines = 1,
-        )
-      }
+    if (isLandscape) {
+      BoxWithConstraints(modifier = Modifier.fillMaxWidth().then(buttonsModifier)) {
+        val sideBySideButtons = maxWidth >= 320.dp
+        if (sideBySideButtons) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Button(
+              onClick = onOpenBook,
+              shape = CircleShape,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.secondary,
+                  contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+              contentPadding = PaddingValues(horizontal = DipeSpacing.compact, vertical = DipeSpacing.compact),
+              modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+            ) {
+              Text(
+                text = stringResource(R.string.home_open_book),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
 
-      OutlinedButton(
-        onClick = onUpdateProgress,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        colors =
-          ButtonDefaults.outlinedButtonColors(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onBackground,
+            OutlinedButton(
+              onClick = onUpdateProgress,
+              shape = CircleShape,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              colors =
+                ButtonDefaults.outlinedButtonColors(
+                  containerColor = Color.Transparent,
+                  contentColor = MaterialTheme.colorScheme.onBackground,
+                ),
+              contentPadding = PaddingValues(horizontal = DipeSpacing.compact, vertical = DipeSpacing.compact),
+              modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("home_update_progress_button"),
+            ) {
+              Text(
+                text = stringResource(R.string.journey_update_progress),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+        } else {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          ) {
+            Button(
+              onClick = onOpenBook,
+              shape = CircleShape,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.secondary,
+                  contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+              contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+              Text(
+                text = stringResource(R.string.home_open_book),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+              )
+            }
+
+            OutlinedButton(
+              onClick = onUpdateProgress,
+              shape = CircleShape,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              colors =
+                ButtonDefaults.outlinedButtonColors(
+                  containerColor = Color.Transparent,
+                  contentColor = MaterialTheme.colorScheme.onBackground,
+                ),
+              contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("home_update_progress_button"),
+            ) {
+              Text(
+                text = stringResource(R.string.journey_update_progress),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+              )
+            }
+          }
+        }
+      }
+    } else {
+      FlowRow(
+        modifier = buttonsModifier,
+        horizontalArrangement =
+          Arrangement.spacedBy(
+            DipeSpacing.compact,
+            if (centered) Alignment.CenterHorizontally else Alignment.Start,
           ),
-        contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
-        modifier = Modifier.heightIn(min = 48.dp).testTag("home_update_progress_button"),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
       ) {
-        Text(
-          text = stringResource(R.string.journey_update_progress),
-          style = MaterialTheme.typography.labelLarge,
-          maxLines = 1,
-        )
+        Button(
+          onClick = onOpenBook,
+          shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text(
+            text = stringResource(R.string.home_open_book),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+          )
+        }
+
+        OutlinedButton(
+          onClick = onUpdateProgress,
+          shape = CircleShape,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          colors =
+            ButtonDefaults.outlinedButtonColors(
+              containerColor = Color.Transparent,
+              contentColor = MaterialTheme.colorScheme.onBackground,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
+          modifier = Modifier.heightIn(min = 48.dp).testTag("home_update_progress_button"),
+        ) {
+          Text(
+            text = stringResource(R.string.journey_update_progress),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+          )
+        }
       }
     }
   }
