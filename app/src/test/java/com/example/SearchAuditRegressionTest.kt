@@ -49,13 +49,8 @@ import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -100,7 +95,6 @@ private class AuditFakeAdapter(
   }
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SearchAuditRegressionTest {
@@ -111,11 +105,9 @@ class SearchAuditRegressionTest {
   private lateinit var context: Context
   private lateinit var db: DipeLibrisDatabase
   private lateinit var libraryRepo: RoomLibraryRepository
-  private val testDispatcher = UnconfinedTestDispatcher()
 
   @Before
   fun setUp() {
-    Dispatchers.setMain(testDispatcher)
     context = ApplicationProvider.getApplicationContext()
     db = Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java)
       .addCallback(DipeLibrisDatabase.SEED_CALLBACK)
@@ -140,7 +132,6 @@ class SearchAuditRegressionTest {
   @After
   fun tearDown() {
     db.close()
-    Dispatchers.resetMain()
   }
 
   @Test
@@ -590,6 +581,7 @@ class SearchAuditRegressionTest {
           editionDao = db.editionDao(),
           bookDao = db.bookDao(),
           libraryRepository = libraryRepo,
+          primaryBatchDeadlineMs = 2_500L,
         )
 
       val t0 = System.currentTimeMillis()
@@ -699,19 +691,24 @@ class SearchAuditRegressionTest {
 
     // Windowed editions start at 6 instead of inflating all 15
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
-    composeTestRule.onNodeWithTag("search_edition_select_0_5").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_5"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_5").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_select_0_6").assertDoesNotExist()
 
     // Clicking "Show more editions" reveals next +8 window (total 14)
-    composeTestRule.onNodeWithTag("search_edition_show_more_0").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_show_more_0"))
+    composeTestRule.onNodeWithTag("search_edition_show_more_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_select_0_13").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_13"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_13").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_select_0_14").assertDoesNotExist()
 
     // Second click reveals final 15th edition and hides button
-    composeTestRule.onNodeWithTag("search_edition_show_more_0").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_show_more_0"))
+    composeTestRule.onNodeWithTag("search_edition_show_more_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_select_0_14").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_14"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_14").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_show_more_0").assertDoesNotExist()
   }
 
@@ -988,5 +985,152 @@ class SearchAuditRegressionTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
     composeTestRule.onNodeWithTag("search_edition_load_more_0").assertDoesNotExist()
+  }
+
+  @Test
+  fun auditI_giantMultiEditionCacheBoundedProgressiveStreamingAndSecondaryTimeoutDiscreet() = runBlocking {
+    val giantSynopses =
+      listOf(
+        com.example.core.model.SynopsisCandidate(
+          source = MetadataSource.GOOGLE_BOOKS,
+          text = "Sinopse extensa de Harry Potter e a Pedra Filosofal. ".repeat(60),
+          language = "pt-br",
+        )
+      )
+    val hugeCandidates =
+      (1..200).map { idx ->
+        SearchEditionCandidate(
+          candidateId = "hp_huge_$idx",
+          workTitle = "Harry Potter e a Pedra Filosofal",
+          contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+          publisher = "Editora Rocco",
+          publicationYear = 1998 + (idx % 26),
+          totalPages = 223 + (idx % 40),
+          isbn13 = "97885325${(10000 + idx)}",
+          language = "pt",
+          canonicalLanguageTag = "pt-br",
+          languageTierRank = LanguageTier.PT_BR.rank,
+          coverCandidates =
+            (1..6).map { cIdx ->
+              CoverCandidate("https://covers.example.com/$idx/$cIdx.jpg", MetadataSource.GOOGLE_BOOKS)
+            },
+          synopsisCandidates = giantSynopses,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        )
+      }
+
+    val fastGb =
+      AuditFakeAdapter(MetadataSource.GOOGLE_BOOKS) {
+        SourceAdapterResult(
+          SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, hugeCandidates.size),
+          hugeCandidates,
+        )
+      }
+    val slowerOl =
+      AuditFakeAdapter(MetadataSource.OPEN_LIBRARY) {
+        kotlinx.coroutines.delay(350L)
+        SourceAdapterResult(
+          SourceQueryStatus(MetadataSource.OPEN_LIBRARY, ProviderOutcomeState.SUCCESS, 1),
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "ol_hp_extra",
+              workTitle = "Harry Potter e a Pedra Filosofal",
+              contributors = listOf(CandidateContributor("J. K. Rowling", ContributorRole.AUTHOR)),
+              publisher = "Rocco",
+              isbn13 = "9788532530783",
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.OPEN_LIBRARY),
+            )
+          ),
+        )
+      }
+    val emptyOther = { src: MetadataSource ->
+      AuditFakeAdapter(src) { SourceAdapterResult(SourceQueryStatus(src, ProviderOutcomeState.EMPTY)) }
+    }
+
+    val orchestrator =
+      HybridSearchOrchestrator(
+        openLibraryAdapter = slowerOl,
+        googleBooksAdapter = fastGb,
+        crossrefAdapter = emptyOther(MetadataSource.CROSSREF),
+        wikidataAdapter = emptyOther(MetadataSource.WIKIDATA),
+        brasilApiAdapter = emptyOther(MetadataSource.BRASIL_API),
+        connectivityChecker = object : ConnectivityChecker { override fun isOnline(): Boolean = true },
+        searchCacheDao = db.searchCacheDao(),
+        editionDao = db.editionDao(),
+        bookDao = db.bookDao(),
+        libraryRepository = libraryRepo,
+      )
+
+    val emissions = orchestrator.searchProgressive("Harry Potter e a Pedra Filosofal", "pt-BR").toList()
+    assertTrue("Expected at least 3 progressive emissions (loading, partial, final), got ${emissions.size}", emissions.size >= 3)
+    assertTrue("First streaming emission should be marked partial", emissions.first().isPartialResult)
+    assertTrue(
+      "Second streaming emission should carry partial Google Books groups",
+      emissions[1].isPartialResult && emissions[1].workGroups.isNotEmpty(),
+    )
+    assertFalse("Final streaming emission should not be partial", emissions.last().isPartialResult)
+    assertTrue(emissions.last().workGroups.isNotEmpty())
+
+    // Verify bounded SQLite cache row size (< 850 KB limit avoids CursorWindow SQLiteBlobTooBigException)
+    val cachedRow =
+      db.searchCacheDao().getValidEntry(
+        cacheKey = "v6:q:harry potter e a pedra filosofal:exl=:pref=pt:exp=false",
+        nowMillis = System.currentTimeMillis(),
+      )
+    assertTrue("Cache entry must be saved cleanly", cachedRow != null)
+    val payloadBytes = cachedRow!!.payloadJson.toByteArray(Charsets.UTF_8).size
+    assertTrue("Cache payload exceeded 850KB safe threshold: $payloadBytes bytes", payloadBytes <= 850_000)
+
+    // Verify secondary API timeout is hidden discreetly when primary works are present, while primary timeout stays visible
+    val sampleGroup = emissions.last().workGroups.first()
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Harry Potter e a Pedra Filosofal",
+                hasSearched = true,
+                response =
+                  HybridSearchResponse(
+                    query = "Harry Potter e a Pedra Filosofal",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(sampleGroup),
+                    sourceStatuses =
+                      listOf(
+                        SourceQueryStatus(MetadataSource.OPEN_LIBRARY, ProviderOutcomeState.SUCCESS, 1),
+                        SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.ERROR, message = "Batch deadline exceeded"),
+                        SourceQueryStatus(MetadataSource.APPLE_BOOKS, ProviderOutcomeState.ERROR, message = "Batch deadline exceeded"),
+                      ),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Google Books (timed out)").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Apple Books (timed out)").assertDoesNotExist()
   }
 }

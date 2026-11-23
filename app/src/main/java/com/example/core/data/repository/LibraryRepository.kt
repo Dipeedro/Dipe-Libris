@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -405,67 +406,84 @@ class RoomLibraryRepository(
     else gDao.getGenreBySlug(slug)?.toDomain() ?: entity.toDomain()
   }
 
-  override suspend fun searchLocalLibrary(query: String): List<CatalogBook> {
-    val trimmed = query.trim()
-    if (trimmed.isEmpty()) return emptyList()
+  override suspend fun searchLocalLibrary(query: String): List<CatalogBook> =
+    withContext(Dispatchers.Default) {
+      val trimmed = query.trim()
+      if (trimmed.isEmpty()) return@withContext emptyList()
 
-    val ftsWorkIds =
-      runCatching {
-        val tokens =
-          BibliographicMath.normalizeText(trimmed)
-            .split(' ')
-            .filter { it.length >= 2 }
-        if (tokens.isEmpty()) emptyList()
-        else {
-          val matchQuery = tokens.joinToString(" ") { "$it*" }
-          bookDao.searchWorkIdsFts(matchQuery)
+      val cleanedIsbnQuery = BibliographicMath.cleanIsbn(trimmed)
+      val isbnWorkIds =
+        if (cleanedIsbnQuery.length >= 6 && editionDao != null) {
+          withContext(Dispatchers.IO) {
+            val parsed = BibliographicMath.parseIsbn(cleanedIsbnQuery)
+            editionDao.findEditionsByIsbn(parsed?.isbn13, parsed?.isbn10, cleanedIsbnQuery).map { it.workId }.distinct()
+          }
+        } else {
+          emptyList()
         }
-      }.getOrDefault(emptyList())
 
-    val allSummaries = bookDao.getAllCatalogBookSummariesSnapshot().map { it.toDomain() }
-    val normalizedQuery = BibliographicMath.normalizeText(trimmed)
-    val cleanedIsbnQuery = BibliographicMath.cleanIsbn(trimmed)
-
-    val ftsSet = ftsWorkIds.toSet()
-    val ftsResults = allSummaries.filter { it.work.id in ftsSet }
-
-    val isbnResults =
-      if (cleanedIsbnQuery.length >= 6 && editionDao != null) {
-        val parsed = BibliographicMath.parseIsbn(cleanedIsbnQuery)
-        val edMatches = editionDao.findEditionsByIsbn(parsed?.isbn13, parsed?.isbn10, cleanedIsbnQuery)
-        val isbnWorkIds = edMatches.map { it.workId }.toSet()
-        allSummaries.filter { it.work.id in isbnWorkIds }
-      } else {
-        emptyList()
+      // Exact/clean ISBN match already identifies the exact target work(s) without scanning the whole catalog
+      if (cleanedIsbnQuery.length >= 10 && BibliographicMath.looksLikeIsbnQuery(trimmed) && isbnWorkIds.isNotEmpty()) {
+        val isbnBooks =
+          withContext(Dispatchers.IO) {
+            bookDao.getCatalogBookSummariesByIds(isbnWorkIds).map { it.toDomain() }
+          }
+        if (isbnBooks.isNotEmpty()) return@withContext isbnBooks
       }
 
-    val fallbackResults =
-      if (normalizedQuery.isNotEmpty()) {
-        allSummaries.filter { book ->
-          val haystack =
-            BibliographicMath.normalizeText(
-              listOfNotNull(
-                book.title,
-                book.work.subtitle,
-                book.author,
-                book.primaryEdition?.publisherOrNote,
-                book.primaryEdition?.translator,
-                book.primaryEdition?.seriesName,
-                book.primaryEdition?.isbn13,
-                book.primaryEdition?.isbn10,
-                book.primaryEdition?.isbn,
-                book.primaryGenre?.namePt,
-                book.primaryGenre?.nameEn,
-              ).joinToString(" ")
-            )
-          normalizedQuery in haystack
-        }
-      } else {
-        emptyList()
-      }
+      val ftsWorkIds =
+        runCatching {
+          val tokens =
+            BibliographicMath.normalizeText(trimmed)
+              .split(' ')
+              .filter { it.length >= 2 }
+          if (tokens.isEmpty()) emptyList()
+          else {
+            val matchQuery = tokens.joinToString(" ") { "$it*" }
+            withContext(Dispatchers.IO) { bookDao.searchWorkIdsFts(matchQuery) }
+          }
+        }.getOrDefault(emptyList())
 
-    return (isbnResults + ftsResults + fallbackResults).distinctBy { it.work.id }
-  }
+      val allSummaries =
+        withContext(Dispatchers.IO) {
+          bookDao.getAllCatalogBookSummariesSnapshot().map { it.toDomain() }
+        }
+      val normalizedQuery = BibliographicMath.normalizeText(trimmed)
+
+      val ftsSet = ftsWorkIds.toSet()
+      val ftsResults = allSummaries.filter { it.work.id in ftsSet }
+
+      val isbnSet = isbnWorkIds.toSet()
+      val isbnResults =
+        if (isbnSet.isNotEmpty()) allSummaries.filter { it.work.id in isbnSet } else emptyList()
+
+      val fallbackResults =
+        if (normalizedQuery.isNotEmpty()) {
+          allSummaries.filter { book ->
+            val haystack =
+              BibliographicMath.normalizeText(
+                listOfNotNull(
+                  book.title,
+                  book.work.subtitle,
+                  book.author,
+                  book.primaryEdition?.publisherOrNote,
+                  book.primaryEdition?.translator,
+                  book.primaryEdition?.seriesName,
+                  book.primaryEdition?.isbn13,
+                  book.primaryEdition?.isbn10,
+                  book.primaryEdition?.isbn,
+                  book.primaryGenre?.namePt,
+                  book.primaryGenre?.nameEn,
+                ).joinToString(" ")
+              )
+            normalizedQuery in haystack
+          }
+        } else {
+          emptyList()
+        }
+
+      (isbnResults + ftsResults + fallbackResults).distinctBy { it.work.id }
+    }
 
   override suspend fun assessDuplicates(
     isbn13: String?,
@@ -473,35 +491,48 @@ class RoomLibraryRepository(
     externalWorkKey: String?,
     title: String,
     author: String,
-  ): DuplicateAssessment {
-    val parsed = BibliographicMath.parseIsbn(isbn13 ?: isbn10)
-    val effective13 = parsed?.isbn13 ?: isbn13
-    val effective10 = parsed?.isbn10 ?: isbn10
-    val edDao = editionDao
-    val matchedEditions =
-      if (edDao != null && (effective13 != null || effective10 != null)) {
-        edDao.findEditionsByIsbn(effective13, effective10, effective13 ?: effective10)
-      } else {
-        emptyList()
-      }
-    val copyCounts =
-      if (edDao != null && matchedEditions.isNotEmpty()) {
-        matchedEditions.associate { it.id to edDao.countCopiesForEdition(it.id) }
-      } else {
-        emptyMap()
-      }
-    val localBooks = bookDao.getAllCatalogBookSummariesSnapshot().map { it.toDomain() }
-    return DuplicateDetector.assessRaw(
-      isbn13 = effective13,
-      isbn10 = effective10,
-      externalWorkKey = externalWorkKey,
-      title = title,
-      author = author,
-      localCatalog = localBooks,
-      matchedIsbnEditions = matchedEditions,
-      copyCountsByEditionId = copyCounts,
-    )
-  }
+  ): DuplicateAssessment =
+    withContext(Dispatchers.Default) {
+      val parsed = BibliographicMath.parseIsbn(isbn13 ?: isbn10)
+      val effective13 = parsed?.isbn13 ?: isbn13
+      val effective10 = parsed?.isbn10 ?: isbn10
+      val edDao = editionDao
+      val matchedEditions =
+        if (edDao != null && (effective13 != null || effective10 != null)) {
+          withContext(Dispatchers.IO) {
+            edDao.findEditionsByIsbn(effective13, effective10, effective13 ?: effective10)
+          }
+        } else {
+          emptyList()
+        }
+      val copyCounts =
+        if (edDao != null && matchedEditions.isNotEmpty()) {
+          withContext(Dispatchers.IO) {
+            matchedEditions.associate { it.id to edDao.countCopiesForEdition(it.id) }
+          }
+        } else {
+          emptyMap()
+        }
+      val localBooks =
+        withContext(Dispatchers.IO) {
+          if (matchedEditions.isNotEmpty()) {
+            val targetIds = matchedEditions.map { it.workId }.distinct()
+            bookDao.getCatalogBookSummariesByIds(targetIds).map { it.toDomain() }
+          } else {
+            bookDao.getAllCatalogBookSummariesSnapshot().map { it.toDomain() }
+          }
+        }
+      DuplicateDetector.assessRaw(
+        isbn13 = effective13,
+        isbn10 = effective10,
+        externalWorkKey = externalWorkKey,
+        title = title,
+        author = author,
+        localCatalog = localBooks,
+        matchedIsbnEditions = matchedEditions,
+        copyCountsByEditionId = copyCounts,
+      )
+    }
 
   override suspend fun saveBookFromReview(submission: BookReviewSubmission): Long {
     ensureDefaultGenresSeeded()

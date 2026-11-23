@@ -43,7 +43,14 @@ data class GenreEntity(
       onDelete = ForeignKey.SET_NULL,
     )
   ],
-  indices = [Index(value = ["primaryGenreId"])],
+  indices = [
+    Index(value = ["primaryGenreId"]),
+    Index(value = ["status"]),
+    Index(value = ["isFavorite"]),
+    Index(value = ["externalWorkKey"]),
+    Index(value = ["createdAtEpochMillis"]),
+    Index(value = ["updatedAtEpochMillis"]),
+  ],
 )
 data class WorkEntity(
   @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -79,6 +86,7 @@ data class WorkEntity(
     Index(value = ["workId"]),
     Index(value = ["isbn13"]),
     Index(value = ["isbn10"]),
+    Index(value = ["workId", "isPrimary"]),
   ],
 )
 data class EditionEntity(
@@ -221,6 +229,7 @@ data class SearchCacheEntity(
     Index(value = ["workId"]),
     Index(value = ["editionId"]),
     Index(value = ["status"]),
+    Index(value = ["workId", "status"]),
   ],
 )
 data class MetadataSuggestionEntity(
@@ -324,6 +333,7 @@ data class DiaryEntryEntity(
   indices = [
     Index(value = ["workId"]),
     Index(value = ["copyId"]),
+    Index(value = ["workId", "status", "rereadNumber"]),
   ],
 )
 data class ReadingSessionEntity(

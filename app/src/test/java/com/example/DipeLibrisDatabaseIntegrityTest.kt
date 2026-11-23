@@ -646,6 +646,23 @@ class DipeLibrisDatabaseIntegrityTest {
 
       val ftsHits = migratedDb.bookDao().searchWorkIdsFts("Machado*")
       assertTrue(1L in ftsHits)
+
+      val indexNames = mutableSetOf<String>()
+      migratedDb.openHelper.writableDatabase
+        .query("SELECT name FROM sqlite_master WHERE type = 'index'")
+        .use { cursor ->
+          while (cursor.moveToNext()) {
+            indexNames.add(cursor.getString(0))
+          }
+        }
+      assertTrue("index_works_status" in indexNames)
+      assertTrue("index_works_isFavorite" in indexNames)
+      assertTrue("index_works_externalWorkKey" in indexNames)
+      assertTrue("index_works_createdAtEpochMillis" in indexNames)
+      assertTrue("index_works_updatedAtEpochMillis" in indexNames)
+      assertTrue("index_editions_workId_isPrimary" in indexNames)
+      assertTrue("index_metadata_update_suggestions_workId_status" in indexNames)
+      assertTrue("index_reading_sessions_workId_status_rereadNumber" in indexNames)
     } finally {
       migratedDb.close()
       context.deleteDatabase(dbName)
@@ -659,7 +676,7 @@ class DipeLibrisDatabaseIntegrityTest {
     try {
       val writable = builtDb.openHelper.writableDatabase
       assertTrue(writable.isOpen)
-      assertEquals(4, writable.version)
+      assertEquals(5, writable.version)
     } finally {
       builtDb.close()
       context.deleteDatabase(DipeLibrisDatabase.DATABASE_NAME)

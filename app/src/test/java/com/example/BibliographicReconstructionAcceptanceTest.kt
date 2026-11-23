@@ -56,16 +56,11 @@ import com.example.feature.library.BookSearchUiState
 import java.net.URLDecoder
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -121,21 +116,18 @@ private class FakeAdapter(
   }
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class BibliographicReconstructionAcceptanceTest {
 
   @get:Rule val composeTestRule = createComposeRule()
 
-  private val dispatcher = UnconfinedTestDispatcher()
   private lateinit var context: Context
   private lateinit var db: DipeLibrisDatabase
   private lateinit var libraryRepo: RoomLibraryRepository
 
   @Before
   fun setUp() {
-    Dispatchers.setMain(dispatcher)
     context = ApplicationProvider.getApplicationContext()
     db =
       Room.inMemoryDatabaseBuilder(context, DipeLibrisDatabase::class.java)
@@ -161,7 +153,6 @@ class BibliographicReconstructionAcceptanceTest {
   @After
   fun tearDown() {
     db.close()
-    Dispatchers.resetMain()
   }
 
   private fun jsonClient(handler: (url: String) -> Pair<Int, String>): OkHttpClient =
@@ -689,6 +680,7 @@ class BibliographicReconstructionAcceptanceTest {
         editionDao = db.editionDao(),
         bookDao = db.bookDao(),
         libraryRepository = libraryRepo,
+        primaryBatchDeadlineMs = 2_500L,
       )
 
     // Verify bounded deadline completes quickly & does NOT cache degraded partial response (v4)
@@ -697,7 +689,11 @@ class BibliographicReconstructionAcceptanceTest {
     val elapsed = System.currentTimeMillis() - start
 
     assertTrue("Batch must complete within bounded deadline + margin, took ${elapsed}ms", elapsed < 4_600L)
-    assertEquals(2, emissions.size)
+    assertTrue("Expected loading + progressive OL stream + final emission, got ${emissions.size}", emissions.size >= 2)
+    assertTrue(
+      "Expected progressive emission with Open Library work while Google Books was pending",
+      emissions.any { it.isPartialResult && it.workGroups.firstOrNull()?.canonicalTitle == "Jogos Vorazes" },
+    )
     assertEquals("Jogos Vorazes", emissions.last().workGroups.first().canonicalTitle)
     assertEquals(0, emptyCr.calls.get())
     assertTrue(

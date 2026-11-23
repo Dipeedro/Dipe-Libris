@@ -258,7 +258,7 @@ class AppleBooksAdapter(
 
   private fun parseArtists(rawArtist: String?): List<CandidateContributor> {
     val clean = BibliographicMath.sanitizeDisplayText(rawArtist) ?: return emptyList()
-    val parts = clean.split(Regex("\\s+&\\s+|\\s*;\\s*")).mapNotNull { BibliographicMath.sanitizeDisplayText(it) }
+    val parts = clean.split(ARTIST_SPLIT_REGEX).mapNotNull { BibliographicMath.sanitizeDisplayText(it) }
     return parts.mapIndexed { idx, name ->
       CandidateContributor(
         name = name,
@@ -269,7 +269,7 @@ class AppleBooksAdapter(
 
   private fun cleanAppleTitle(raw: String): String =
     raw
-      .replace(Regex("\\s*\\((?:Portuguese Edition|Edi[çc][ãa]o em Portugu[êe]s)\\)\\s*$", RegexOption.IGNORE_CASE), "")
+      .replace(PT_EDITION_SUFFIX_REGEX, "")
       .trim()
       .ifBlank { raw }
 
@@ -361,5 +361,8 @@ class AppleBooksAdapter(
 
   private companion object {
     const val COOLDOWN_DURATION_MS = 60_000L
+    val ARTIST_SPLIT_REGEX = Regex("\\s+&\\s+|\\s*;\\s*")
+    val PT_EDITION_SUFFIX_REGEX =
+      Regex("\\s*\\((?:Portuguese Edition|Edi[çc][ãa]o em Portugu[êe]s)\\)\\s*$", RegexOption.IGNORE_CASE)
   }
 }

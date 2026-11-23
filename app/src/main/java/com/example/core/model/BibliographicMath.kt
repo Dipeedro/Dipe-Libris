@@ -122,23 +122,28 @@ object BibliographicMath {
     return isbn13.startsWith("978972") || isbn13.startsWith("978989")
   }
 
+  private val controlCharsRegex = Regex("[\\u0000-\\u001F\\u007F-\\u009F]")
+  private val whitespaceCollapseRegex = Regex("\\s+")
+  private val combiningDiacriticsRegex = Regex("\\p{InCombiningDiacriticalMarks}+")
+  private val nonLetterDigitSpaceRegex = Regex("[^\\p{L}\\p{N}\\s]")
+
   fun sanitizeDisplayText(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     return raw
-      .replace(Regex("[\\u0000-\\u001F\\u007F-\\u009F]"), "")
-      .replace(Regex("\\s+"), " ")
+      .replace(controlCharsRegex, "")
+      .replace(whitespaceCollapseRegex, " ")
       .trim()
       .takeIf { it.isNotEmpty() }
   }
 
   fun normalizeText(raw: String?): String {
     if (raw.isNullOrBlank()) return ""
-    val clean = raw.replace(Regex("[\\u0000-\\u001F\\u007F-\\u009F]"), " ")
+    val clean = raw.replace(controlCharsRegex, " ")
     val decomposed = Normalizer.normalize(clean.trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
     return decomposed
-      .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-      .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-      .replace(Regex("\\s+"), " ")
+      .replace(combiningDiacriticsRegex, "")
+      .replace(nonLetterDigitSpaceRegex, " ")
+      .replace(whitespaceCollapseRegex, " ")
       .trim()
   }
 
@@ -683,20 +688,26 @@ object BibliographicMath {
     }
   }
 
+  private val htmlBrRegex = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
+  private val htmlClosingPRegex = Regex("</p>", RegexOption.IGNORE_CASE)
+  private val htmlAnyTagRegex = Regex("<[^>]+>")
+  private val horizontalSpacesRegex = Regex("[ \\t]+")
+  private val multipleNewlinesRegex = Regex("\\n{3,}")
+
   fun stripHtmlTags(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     return raw
-      .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-      .replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n\n")
-      .replace(Regex("<[^>]+>"), " ")
+      .replace(htmlBrRegex, "\n")
+      .replace(htmlClosingPRegex, "\n\n")
+      .replace(htmlAnyTagRegex, " ")
       .replace("&nbsp;", " ")
       .replace("&amp;", "&")
       .replace("&quot;", "\"")
       .replace("&#39;", "'")
       .replace("&lt;", "<")
       .replace("&gt;", ">")
-      .replace(Regex("[ \\t]+"), " ")
-      .replace(Regex("\\n{3,}"), "\n\n")
+      .replace(horizontalSpacesRegex, " ")
+      .replace(multipleNewlinesRegex, "\n\n")
       .trim()
       .takeIf { it.isNotEmpty() }
   }
@@ -739,19 +750,24 @@ object BibliographicMath {
       RegexOption.IGNORE_CASE,
     )
 
+  private val spanishDiacriticsRegex = Regex("[ñ¿¡]")
+  private val germanDiacriticsRegex = Regex("[äöß]")
+  private val frenchDiacriticsRegex = Regex("[èùïîûœæ]")
+  private val startsWithDasRegex = Regex("^das\\b")
+
   fun detectClearForeignLatinLanguage(rawText: String?): String? {
     val clean = sanitizeDisplayText(rawText) ?: return null
     if (nonLatinScriptRegex.containsMatchIn(clean)) return null
     val norm = normalizeText(clean)
     if (norm.isBlank()) return null
 
-    if (Regex("[ñ¿¡]").containsMatchIn(clean) || spanishAccentedCueRegex.containsMatchIn(clean) || clearSpanishWordsRegex.containsMatchIn(norm)) {
+    if (spanishDiacriticsRegex.containsMatchIn(clean) || spanishAccentedCueRegex.containsMatchIn(clean) || clearSpanishWordsRegex.containsMatchIn(norm)) {
       return "es"
     }
-    if (Regex("[äöß]").containsMatchIn(clean) || clearGermanWordsRegex.containsMatchIn(norm)) {
+    if (germanDiacriticsRegex.containsMatchIn(clean) || clearGermanWordsRegex.containsMatchIn(norm)) {
       return "de"
     }
-    if (Regex("[èùïîûœæ]").containsMatchIn(clean) || clearFrenchWordsRegex.containsMatchIn(norm)) {
+    if (frenchDiacriticsRegex.containsMatchIn(clean) || clearFrenchWordsRegex.containsMatchIn(norm)) {
       return "fr"
     }
     if (clearItalianWordsRegex.containsMatchIn(norm)) {
@@ -760,7 +776,7 @@ object BibliographicMath {
     if (clearEnglishWordsRegex.containsMatchIn(norm)) {
       return "en"
     }
-    if (Regex("^das\\b").containsMatchIn(norm) && !ptDistinctiveDiacriticsRegex.containsMatchIn(clean) && !ptDistinctiveWordsRegex.containsMatchIn(norm)) {
+    if (startsWithDasRegex.containsMatchIn(norm) && !ptDistinctiveDiacriticsRegex.containsMatchIn(clean) && !ptDistinctiveWordsRegex.containsMatchIn(norm)) {
       return "de"
     }
     return null

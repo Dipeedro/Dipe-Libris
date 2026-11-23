@@ -5,14 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,7 +32,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -42,8 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -100,19 +95,13 @@ fun HomeScreen(
       stringResource(R.string.home_masthead_empty_subtitle)
     }
 
-  val density = LocalDensity.current
-  var mastheadHeightPx by remember { mutableIntStateOf(0) }
   val centerPrimaryStage = secondaryReading.isEmpty()
+  val verticalPadding = DipeSpacing.md
 
-  BoxWithConstraints(
+  Box(
     modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas),
     contentAlignment = Alignment.TopCenter,
   ) {
-    val mastheadHeightDp = with(density) { mastheadHeightPx.toDp() }
-    val verticalPadding = DipeSpacing.md
-    val centeredStageMinHeight =
-      (maxHeight - verticalPadding - mastheadHeightDp - verticalPadding).coerceAtLeast(0.dp)
-
     LazyColumn(
       state = listState,
       modifier = Modifier.widthIn(max = 760.dp).fillMaxSize().testTag("home_lazy_column"),
@@ -130,7 +119,6 @@ fun HomeScreen(
         EditorialMasthead(
           title = stringResource(R.string.home_masthead_title),
           subtitle = mastheadSubtitle,
-          modifier = Modifier.onSizeChanged { mastheadHeightPx = it.height },
         )
       }
 
@@ -138,7 +126,7 @@ fun HomeScreen(
         Box(
           modifier =
             if (centerPrimaryStage) {
-              Modifier.fillMaxWidth().defaultMinSize(minHeight = centeredStageMinHeight)
+              Modifier.fillMaxWidth().fillParentMaxHeight(0.74f)
             } else {
               Modifier.fillMaxWidth()
             },
@@ -250,6 +238,7 @@ private fun FeaturedReadingShowcase(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
+        widthHintDp = 232.dp,
         modifier = Modifier.width(232.dp),
       )
       Column(
@@ -278,14 +267,15 @@ private fun FeaturedReadingShowcase(
           .testTag("home_reading_book_${book.id}"),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+      val featuredWidth = if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp
       BookCoverArtwork(
         title = book.title,
         author = book.author,
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
-        modifier =
-          Modifier.width(if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp),
+        widthHintDp = featuredWidth,
+        modifier = Modifier.width(featuredWidth),
       )
 
       Spacer(modifier = Modifier.height(DipeSpacing.md))
@@ -477,6 +467,7 @@ private fun CurrentlyReadingPlate(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
+      widthHintDp = 120.dp,
       modifier = Modifier.fillMaxWidth(),
     )
     book.activeProgressPercent?.let { pct ->

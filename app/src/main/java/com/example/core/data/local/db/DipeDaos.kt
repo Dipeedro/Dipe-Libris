@@ -475,6 +475,9 @@ interface SearchCacheDao {
   @Query("UPDATE search_cache_entries SET lastAccessedEpochMillis = :accessedAt WHERE cacheKey = :cacheKey")
   suspend fun touchEntry(cacheKey: String, accessedAt: Long)
 
+  @Query("DELETE FROM search_cache_entries WHERE cacheKey = :cacheKey")
+  suspend fun deleteByKey(cacheKey: String)
+
   @Query("DELETE FROM search_cache_entries WHERE expiresAtEpochMillis < :nowMillis")
   suspend fun deleteExpired(nowMillis: Long)
 

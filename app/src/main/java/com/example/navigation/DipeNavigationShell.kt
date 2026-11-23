@@ -47,7 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -216,7 +216,7 @@ fun DipeNavigationShell(
     val isDarkCanvas = canvasColor.luminance() < 0.5f
 
     if (!view.isInEditMode) {
-      SideEffect {
+      LaunchedEffect(view, hasTerracottaBottomBar, isDarkCanvas, canvasColor, navBarContainerColor) {
         val window = (view.context as? Activity)?.window
         if (window != null) {
           val insetsController = WindowCompat.getInsetsController(window, view)
@@ -466,6 +466,7 @@ fun DipeNavigationShell(
                 onToggleSecondaryLanguages = searchViewModel::toggleSecondaryLanguagesExpanded,
                 onToggleDerivativeWorks = searchViewModel::toggleDerivativeWorksExpanded,
                 onToggleGroupSecondaryEditions = searchViewModel::toggleGroupSecondaryEditionsExpanded,
+                onShowMoreLocalEditions = searchViewModel::expandLocalEditionsWindow,
               )
             }
 

@@ -248,27 +248,39 @@ fun BookDetailScreen(
 
       val unspecified = stringResource(R.string.book_detail_unspecified)
       val pagesDisplay =
-        focusedEdition?.totalPages?.let { LocaleManager.formatInteger(it, language) } ?: unspecified
-      val yearDisplay = focusedEdition?.publicationYear?.toString() ?: unspecified
+        remember(focusedEdition?.totalPages, language, unspecified) {
+          focusedEdition?.totalPages?.let { LocaleManager.formatInteger(it, language) } ?: unspecified
+        }
+      val yearDisplay =
+        remember(focusedEdition?.publicationYear, unspecified) {
+          focusedEdition?.publicationYear?.toString() ?: unspecified
+        }
       val editionDisplay =
-        focusedEdition?.publisherOrNote?.takeIf { it.isNotBlank() } ?: unspecified
-
-      val seriesDisplay =
-        focusedEdition?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
-          val vol = focusedEdition.seriesVolume?.takeIf { it.isNotBlank() }
-          if (vol != null) "$series #$vol" else series
+        remember(focusedEdition?.publisherOrNote, unspecified) {
+          focusedEdition?.publisherOrNote?.takeIf { it.isNotBlank() } ?: unspecified
         }
 
+      val seriesDisplay =
+        remember(focusedEdition?.seriesName, focusedEdition?.seriesVolume) {
+          focusedEdition?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+            val vol = focusedEdition.seriesVolume?.takeIf { it.isNotBlank() }
+            if (vol != null) "$series #$vol" else series
+          }
+        }
+
+      val formatLabel = focusedEdition?.format?.let { editionFormatLabel(it) }
       val secondaryMetaLine =
-        listOfNotNull(
-            focusedEdition?.editionLabel?.takeIf { it.isNotBlank() },
-            focusedEdition?.format?.let { editionFormatLabel(it) },
-            focusedEdition?.language?.takeIf { it.isNotBlank() },
-            focusedEdition?.translator?.takeIf { it.isNotBlank() },
-            seriesDisplay,
-            (focusedEdition?.isbn13 ?: focusedEdition?.isbn)?.takeIf { it.isNotBlank() }?.let { "ISBN $it" },
-          )
-          .joinToString(" · ")
+        remember(focusedEdition, formatLabel, seriesDisplay) {
+          listOfNotNull(
+              focusedEdition?.editionLabel?.takeIf { it.isNotBlank() },
+              formatLabel,
+              focusedEdition?.language?.takeIf { it.isNotBlank() },
+              focusedEdition?.translator?.takeIf { it.isNotBlank() },
+              seriesDisplay,
+              (focusedEdition?.isbn13 ?: focusedEdition?.isbn)?.takeIf { it.isNotBlank() }?.let { "ISBN $it" },
+            )
+            .joinToString(" · ")
+        }
 
       val chipColors =
         FilterChipDefaults.filterChipColors(
@@ -379,6 +391,7 @@ fun BookDetailScreen(
                           isFavorite = work.isFavorite,
                           coverUri = pageEdition.coverUri,
                           elevated = true,
+                          widthHintDp = coverWidth,
                           modifier = Modifier.width(coverWidth),
                         )
                       }
@@ -390,6 +403,7 @@ fun BookDetailScreen(
                       isFavorite = work.isFavorite,
                       coverUri = focusedEdition?.coverUri,
                       elevated = true,
+                      widthHintDp = coverWidth,
                       modifier = Modifier.width(coverWidth),
                     )
                   }

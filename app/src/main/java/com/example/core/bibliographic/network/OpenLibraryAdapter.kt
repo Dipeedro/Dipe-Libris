@@ -345,7 +345,7 @@ class OpenLibraryAdapter(
               .distinctBy { it.candidateId }
 
           val searchElapsedMs = System.currentTimeMillis() - startMs
-          val enrichBudgetMs = (2_750L - searchElapsedMs).coerceAtMost(1_600L)
+          val enrichBudgetMs = (5_200L - searchElapsedMs).coerceAtMost(2_000L)
           if (plan.shouldEnrichMissingPtWorks && combined.isNotEmpty() && enrichBudgetMs >= 450L) {
             val enrichedExtras =
               withTimeoutOrNull(enrichBudgetMs) {
@@ -825,9 +825,8 @@ class OpenLibraryAdapter(
 
   private fun looksPortugueseTitle(title: String): Boolean {
     val lower = title.lowercase()
-    return Regex("[ãõçáéíóúâêôà]").containsMatchIn(lower) ||
-      Regex("\\b(e a|e o|dos|das|uma|um|memorias|senhor|principe|casmurro|alienista|vorazes)\\b")
-        .containsMatchIn(BibliographicMath.normalizeText(lower))
+    return PT_TITLE_DIACRITICS_REGEX.containsMatchIn(lower) ||
+      PT_TITLE_WORDS_REGEX.containsMatchIn(BibliographicMath.normalizeText(lower))
   }
 
   private fun buildCandidateFromEdition(
@@ -1012,5 +1011,7 @@ class OpenLibraryAdapter(
   private companion object {
     const val SEARCH_FIELDS =
       "key,title,subtitle,author_name,author_key,first_publish_year,isbn,edition_key,edition_count,ratings_count,readinglog_count,language,subject,cover_i,number_of_pages_median,publisher,editions,editions.key,editions.title,editions.subtitle,editions.language,editions.publisher,editions.isbn,editions.cover_i,editions.publish_year,editions.number_of_pages_median,editions.physical_format"
+    val PT_TITLE_DIACRITICS_REGEX = Regex("[ãõçáéíóúâêôà]")
+    val PT_TITLE_WORDS_REGEX = Regex("\\b(e a|e o|dos|das|uma|um|memorias|senhor|principe|casmurro|alienista|vorazes)\\b")
   }
 }

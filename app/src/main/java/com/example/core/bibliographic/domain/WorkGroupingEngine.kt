@@ -23,6 +23,11 @@ data class GroupedSearchOutcome(
 
 object WorkGroupingEngine {
 
+  private val audioIntentRegex =
+    Regex("\\b(audio|audiobook|audiolivro|audivel|cd)\\b", RegexOption.IGNORE_CASE)
+  private val portugueseTitleCuesRegex =
+    Regex("\\b(jogos|vorazes|senhor|aneis|principe|pequeno|memorias|casmurro)\\b", RegexOption.IGNORE_CASE)
+
   private data class EvaluatedCandidate(
     val candidate: SearchEditionCandidate,
     val evaluation: CandidateMatchEvaluation,
@@ -259,6 +264,7 @@ object WorkGroupingEngine {
       val cand = item.candidate
       var matchedBucket = -1
       val checked = HashSet<Int>()
+      val cachedSurname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
 
       val wKey = cand.externalWorkKey
       if (wKey != null) {
@@ -266,8 +272,7 @@ object WorkGroupingEngine {
         matchedBucket =
           buckets.firstOrNull { bIdx ->
             checked.add(bIdx)
-            !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
-              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            bucketMatchesCandidate(workBuckets[bIdx], item)
           } ?: -1
       }
 
@@ -277,8 +282,7 @@ object WorkGroupingEngine {
         matchedBucket =
           buckets.firstOrNull { bIdx ->
             if (!checked.add(bIdx)) false
-            else !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
-              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            else bucketMatchesCandidate(workBuckets[bIdx], item)
           } ?: -1
       }
 
@@ -287,15 +291,13 @@ object WorkGroupingEngine {
         extractTitleLookupKeys(cand, item.titleStructure).forEach { key ->
           coreTitleToBuckets[key]?.let { candidateIndices.addAll(it) }
         }
-        val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
-        if (surname.isNotEmpty()) {
-          surnameToBuckets[surname]?.let { candidateIndices.addAll(it) }
+        if (cachedSurname.isNotEmpty()) {
+          surnameToBuckets[cachedSurname]?.let { candidateIndices.addAll(it) }
         }
         matchedBucket =
           candidateIndices.firstOrNull { bIdx ->
             if (!checked.add(bIdx)) false
-            else !hasExplicitVolumeConflict(workBuckets[bIdx], item) &&
-              workBuckets[bIdx].any { member -> belongsToSameWork(member, item) }
+            else bucketMatchesCandidate(workBuckets[bIdx], item)
           } ?: -1
       }
 
@@ -314,9 +316,8 @@ object WorkGroupingEngine {
       extractTitleLookupKeys(cand, item.titleStructure).forEach { key ->
         coreTitleToBuckets.getOrPut(key) { mutableListOf() }.addDistinct(targetIdx)
       }
-      val surname = BibliographicMath.normalizeAuthorSurname(cand.primaryAuthorsText)
-      if (surname.isNotEmpty()) {
-        surnameToBuckets.getOrPut(surname) { mutableListOf() }.addDistinct(targetIdx)
+      if (cachedSurname.isNotEmpty()) {
+        surnameToBuckets.getOrPut(cachedSurname) { mutableListOf() }.addDistinct(targetIdx)
       }
     }
 
@@ -470,6 +471,14 @@ object WorkGroupingEngine {
       }
 
     return rankedKeys.sortedWith(comparator).map { it.group }
+  }
+
+  private fun bucketMatchesCandidate(
+    bucket: List<EvaluatedCandidate>,
+    incoming: EvaluatedCandidate,
+  ): Boolean {
+    if (hasExplicitVolumeConflict(bucket, incoming)) return false
+    return bucket.asSequence().take(6).any { member -> belongsToSameWork(member, incoming) }
   }
 
   private fun MutableList<Int>.addDistinct(value: Int) {
@@ -711,7 +720,7 @@ object WorkGroupingEngine {
     val explicitRequestedLang = parsedIntent?.explicitLanguageRequest
     val audioRequested =
       parsedIntent?.normalizedQuery?.let {
-        Regex("\\b(audio|audiobook|audiolivro|audivel|cd)\\b", RegexOption.IGNORE_CASE).containsMatchIn(it)
+        audioIntentRegex.containsMatchIn(it)
       } == true
     val allowGuides = parsedIntent?.allowGuidesOrAnalyses == true
     val groupBundleKind = workGroup.effectiveBundleKind
@@ -1082,8 +1091,7 @@ object WorkGroupingEngine {
 
   private fun looksPortugueseLike(title: String): Boolean =
     BibliographicMath.looksPortugueseEditionTitle(title) ||
-      Regex("\\b(jogos|vorazes|senhor|aneis|principe|pequeno|memorias|casmurro)\\b", RegexOption.IGNORE_CASE)
-        .containsMatchIn(BibliographicMath.normalizeText(title))
+      portugueseTitleCuesRegex.containsMatchIn(BibliographicMath.normalizeText(title))
 
   private fun editionSelectionScore(
     cand: SearchEditionCandidate,

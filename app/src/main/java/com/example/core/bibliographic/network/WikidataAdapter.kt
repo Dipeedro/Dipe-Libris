@@ -439,7 +439,7 @@ class WikidataAdapter(
       }
   }
 
-  private fun isQid(value: String): Boolean = Regex("^Q\\d+$").matches(value.trim())
+  private fun isQid(value: String): Boolean = QID_REGEX.matches(value.trim())
 
   private fun formatHyphenated13Fallback(isbn13: String): String? {
     if (isbn13.length != 13) return null
@@ -447,7 +447,8 @@ class WikidataAdapter(
   }
 
   private companion object {
-    const val BRIDGE_TIMEOUT_MS = 900L
+    const val BRIDGE_TIMEOUT_MS = 2_200L
+    val QID_REGEX = Regex("^Q\\d+$")
     val BOOK_ENTITY_P31_IDS =
       setOf(
         "Q7725634",  // literary work

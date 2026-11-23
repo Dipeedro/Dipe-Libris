@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -39,6 +40,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -58,6 +61,9 @@ import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.metadataSourceLabel
 import com.example.core.localization.LocalAppLanguage
+import com.example.core.model.AppLanguage
+import com.example.core.model.Genre
+import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
@@ -84,6 +90,7 @@ fun BookSearchScreen(
   onToggleSecondaryLanguages: () -> Unit = {},
   onToggleDerivativeWorks: () -> Unit = {},
   onToggleGroupSecondaryEditions: (String) -> Unit = {},
+  onShowMoreLocalEditions: ((String) -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
@@ -96,6 +103,44 @@ fun BookSearchScreen(
         response.derivativeWorkGroups.isNotEmpty() ||
         response.localMatches.isNotEmpty()
       )
+  val hasLiteraryWorks =
+    response != null && (
+      response.workGroups.isNotEmpty() ||
+        response.secondaryWorkGroups.isNotEmpty() ||
+        response.localMatches.isNotEmpty()
+      )
+  val displayedStatuses =
+    remember(response?.sourceStatuses, hasLiteraryWorks) {
+      response?.sourceStatuses.orEmpty().filter { st ->
+        if (!hasLiteraryWorks) {
+          true
+        } else {
+          val isPrimarySource =
+            st.source == MetadataSource.OPEN_LIBRARY || st.source == MetadataSource.GOOGLE_BOOKS
+          val isDiscreetFailure =
+            st.state == ProviderOutcomeState.ERROR ||
+              st.state == ProviderOutcomeState.RATE_LIMITED ||
+              st.state == ProviderOutcomeState.SKIPPED_NO_API_KEY
+          isPrimarySource || !isDiscreetFailure
+        }
+      }
+    }
+
+  val fallbackEditionWindowLimits =
+    remember(response?.query, response?.isFromCache) { mutableStateMapOf<String, Int>() }
+  val windowLimitFor: (String) -> Int = { groupId ->
+    uiState.editionWindowLimits[groupId]
+      ?: fallbackEditionWindowLimits[groupId]
+      ?: BookSearchViewModel.DEFAULT_EDITION_WINDOW_SIZE
+  }
+  val handleShowMoreLocalEditions: (String) -> Unit = { groupId ->
+    if (onShowMoreLocalEditions != null) {
+      onShowMoreLocalEditions(groupId)
+    } else {
+      fallbackEditionWindowLimits[groupId] =
+        windowLimitFor(groupId) + BookSearchViewModel.EDITION_WINDOW_INCREMENT
+    }
+  }
 
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(modifier = Modifier.widthIn(max = 880.dp).fillMaxSize()) {
@@ -181,32 +226,37 @@ fun BookSearchScreen(
           PaddingValues(
             start = horizontalPadding,
             end = horizontalPadding,
-            top = DipeSpacing.compact,
+            top = DipeSpacing.xxs,
             bottom = DipeSpacing.xxl,
           ),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+        verticalArrangement = Arrangement.Top,
       ) {
         // Live local library matches while typing (before user submits search)
         if (!uiState.hasSearched && uiState.localLiveMatches.isNotEmpty() && !uiState.isSearching) {
-          item(key = "search_live_local_header") {
-            EditorialSectionHeader(title = stringResource(R.string.search_live_local_matches_section))
+          item(key = "search_live_local_header", contentType = "section_header") {
+            EditorialSectionHeader(
+              title = stringResource(R.string.search_live_local_matches_section),
+              modifier = Modifier.padding(top = DipeSpacing.compact),
+            )
           }
           itemsIndexed(
             items = uiState.localLiveMatches,
             key = { _, book -> "live_local_${book.work.id}" },
+            contentType = { _, _ -> "local_match" },
           ) { index, book ->
             SearchLocalMatchCard(
               book = book,
               testTag = "search_live_local_match_$index",
               onClick = { onOpenExistingBook(book.work.id) },
+              modifier = Modifier.padding(top = DipeSpacing.compact),
             )
           }
         }
 
         if (uiState.isSearching && !hasAnyResponseWorks) {
-          item(key = "search_loading_indicator") {
+          item(key = "search_loading_indicator", contentType = "loading_indicator") {
             Row(
-              modifier = Modifier.fillMaxWidth().padding(vertical = DipeSpacing.md),
+              modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact, bottom = DipeSpacing.md),
               horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm, Alignment.CenterHorizontally),
               verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -222,9 +272,12 @@ fun BookSearchScreen(
 
         if (response != null) {
           if (response.isOffline) {
-            item(key = "search_offline_banner") {
+            item(key = "search_offline_banner", contentType = "offline_banner") {
               Row(
-                modifier = Modifier.fillMaxWidth().testTag("search_offline_banner"),
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .padding(top = DipeSpacing.compact)
+                    .testTag("search_offline_banner"),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
               ) {
@@ -243,14 +296,15 @@ fun BookSearchScreen(
             }
           }
 
-          if (response.sourceStatuses.isNotEmpty() || (!response.isOffline && response.isFromCache)) {
-            item(key = "search_source_statuses") {
+          if (displayedStatuses.isNotEmpty() || (!response.isOffline && response.isFromCache)) {
+            item(key = "search_source_statuses", contentType = "source_statuses") {
               LazyRow(
+                modifier = Modifier.padding(top = DipeSpacing.compact),
                 horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 if (!response.isOffline && response.isFromCache) {
-                  item(key = "cache_pill") {
+                  item(key = "cache_pill", contentType = "status_pill") {
                     Surface(
                       shape = CircleShape,
                       color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -277,7 +331,11 @@ fun BookSearchScreen(
                   }
                 }
 
-                items(response.sourceStatuses, key = { it.source.name }) { st ->
+                items(
+                  items = displayedStatuses,
+                  key = { it.source.name },
+                  contentType = { "status_pill" },
+                ) { st ->
                   val srcLabel = metadataSourceLabel(st.source)
                   val label =
                     when (st.state) {
@@ -328,25 +386,30 @@ fun BookSearchScreen(
           }
 
           if (response.localMatches.isNotEmpty()) {
-            item(key = "search_local_header") {
-              EditorialSectionHeader(title = stringResource(R.string.search_local_matches_section))
+            item(key = "search_local_header", contentType = "section_header") {
+              EditorialSectionHeader(
+                title = stringResource(R.string.search_local_matches_section),
+                modifier = Modifier.padding(top = DipeSpacing.compact),
+              )
             }
             itemsIndexed(
               items = response.localMatches,
               key = { _, book -> "local_${book.work.id}" },
+              contentType = { _, _ -> "local_match" },
             ) { index, book ->
               SearchLocalMatchCard(
                 book = book,
                 testTag = "search_local_match_$index",
                 onClick = { onOpenExistingBook(book.work.id) },
+                modifier = Modifier.padding(top = DipeSpacing.compact),
               )
             }
           }
 
           if (response.workGroups.isNotEmpty()) {
-            item(key = "search_works_header") {
+            item(key = "search_works_header", contentType = "section_header") {
               Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
               ) {
@@ -364,26 +427,23 @@ fun BookSearchScreen(
               }
             }
 
-            itemsIndexed(
-              items = response.workGroups,
-              key = { _, group -> group.groupId },
-            ) { groupIndex, group ->
-              val genreName =
-                group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
-              SearchWorkGroupCard(
-                group = group,
-                groupIndex = groupIndex,
-                genreLabel = genreName,
-                isExpanded = group.groupId in uiState.expandedGroupIds,
-                isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
-                isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
-                onToggleExpand = { onToggleGroupExpanded(group.groupId) },
-                onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
-                onLoadMoreEditions = { onLoadMoreEditions(group) },
-                onSelectEdition = onSelectEdition,
-                isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
-              )
-            }
+            flattenedWorkGroupItems(
+              sectionPrefix = "pri",
+              groups = response.workGroups,
+              indexOffset = 0,
+              genresBySlug = uiState.genresBySlug,
+              language = language,
+              expandedGroupIds = uiState.expandedGroupIds,
+              expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
+              loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
+              exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+              windowLimitFor = windowLimitFor,
+              onToggleExpand = onToggleGroupExpanded,
+              onShowMoreLocalEditions = handleShowMoreLocalEditions,
+              onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
+              onLoadMoreEditions = onLoadMoreEditions,
+              onSelectEdition = onSelectEdition,
+            )
           }
 
           // Secondary languages (pt-PT & other foreign works)
@@ -392,68 +452,66 @@ fun BookSearchScreen(
             val showSecondaryList = !hasPrimary || uiState.isSecondaryLanguagesExpanded
             val indexOffset = response.workGroups.size
 
-            item(key = "search_secondary_languages_header") {
-              if (hasPrimary) {
-                OutlinedButton(
-                  onClick = onToggleSecondaryLanguages,
-                  shape = CircleShape,
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .minimumInteractiveComponentSize()
-                      .testTag("search_secondary_languages_toggle"),
-                ) {
-                  Text(
-                    text =
-                      stringResource(
-                        R.string.search_secondary_languages_toggle,
-                        response.secondaryWorkGroups.size,
-                      ),
-                    modifier = Modifier.weight(1f),
-                  )
-                  Icon(
-                    imageVector =
-                      if (uiState.isSecondaryLanguagesExpanded) Icons.Outlined.ExpandLess
-                      else Icons.Outlined.ExpandMore,
-                    contentDescription = null,
-                  )
-                }
-              } else {
-                EditorialSurfaceCard(
-                  containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                  contentPadding = PaddingValues(DipeSpacing.compact),
-                  modifier = Modifier.testTag("search_secondary_only_notice"),
-                ) {
-                  Text(
-                    text = stringResource(R.string.search_secondary_languages_only_notice),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
+            item(key = "search_secondary_languages_header", contentType = "drawer_toggle") {
+              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact)) {
+                if (hasPrimary) {
+                  OutlinedButton(
+                    onClick = onToggleSecondaryLanguages,
+                    shape = CircleShape,
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("search_secondary_languages_toggle"),
+                  ) {
+                    Text(
+                      text =
+                        stringResource(
+                          R.string.search_secondary_languages_toggle,
+                          response.secondaryWorkGroups.size,
+                        ),
+                      modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                      imageVector =
+                        if (uiState.isSecondaryLanguagesExpanded) Icons.Outlined.ExpandLess
+                        else Icons.Outlined.ExpandMore,
+                      contentDescription = null,
+                    )
+                  }
+                } else {
+                  EditorialSurfaceCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentPadding = PaddingValues(DipeSpacing.compact),
+                    modifier = Modifier.testTag("search_secondary_only_notice"),
+                  ) {
+                    Text(
+                      text = stringResource(R.string.search_secondary_languages_only_notice),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
                 }
               }
             }
 
             if (showSecondaryList) {
-              itemsIndexed(
-                items = response.secondaryWorkGroups,
-                key = { _, group -> "sec_${group.groupId}" },
-              ) { secIdx, group ->
-                val groupIndex = indexOffset + secIdx
-                val genreName =
-                  group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
-                SearchWorkGroupCard(
-                  group = group,
-                  groupIndex = groupIndex,
-                  genreLabel = genreName,
-                  isExpanded = group.groupId in uiState.expandedGroupIds,
-                  isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
-                  isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
-                  onToggleExpand = { onToggleGroupExpanded(group.groupId) },
-                  onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
-                  onLoadMoreEditions = { onLoadMoreEditions(group) },
-                  onSelectEdition = onSelectEdition,
-                  isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
-                )
-              }
+              flattenedWorkGroupItems(
+                sectionPrefix = "sec",
+                groups = response.secondaryWorkGroups,
+                indexOffset = indexOffset,
+                genresBySlug = uiState.genresBySlug,
+                language = language,
+                expandedGroupIds = uiState.expandedGroupIds,
+                expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
+                loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
+                exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                windowLimitFor = windowLimitFor,
+                onToggleExpand = onToggleGroupExpanded,
+                onShowMoreLocalEditions = handleShowMoreLocalEditions,
+                onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
+                onLoadMoreEditions = onLoadMoreEditions,
+                onSelectEdition = onSelectEdition,
+              )
             }
           } else if (
             response.workGroups.isEmpty() &&
@@ -461,7 +519,7 @@ fun BookSearchScreen(
               !uiState.isSearching &&
               response.localMatches.isEmpty()
           ) {
-            item(key = "search_empty_results") {
+            item(key = "search_empty_results", contentType = "empty_state") {
               EditorialEmptyState(
                 icon = Icons.AutoMirrored.Outlined.LibraryBooks,
                 title = stringResource(R.string.search_no_results_title),
@@ -469,6 +527,7 @@ fun BookSearchScreen(
                 actionLabel = stringResource(R.string.search_action_manual),
                 actionTestTag = "search_empty_manual_button",
                 onAction = onManualCatalog,
+                modifier = Modifier.padding(top = DipeSpacing.compact),
               )
             }
           }
@@ -479,80 +538,79 @@ fun BookSearchScreen(
             val showDerivatives = !hasLiterary || uiState.isDerivativeWorksExpanded
             val derivOffset = response.workGroups.size + response.secondaryWorkGroups.size
 
-            item(key = "search_derivative_works_header") {
-              if (hasLiterary) {
-                OutlinedButton(
-                  onClick = onToggleDerivativeWorks,
-                  shape = CircleShape,
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .minimumInteractiveComponentSize()
-                      .testTag("search_derivative_works_toggle"),
-                ) {
-                  Text(
-                    text =
-                      stringResource(
-                        R.string.search_derivative_drawer_toggle,
-                        response.derivativeWorkGroups.size,
-                      ),
-                    modifier = Modifier.weight(1f),
-                  )
-                  Icon(
-                    imageVector =
-                      if (uiState.isDerivativeWorksExpanded) Icons.Outlined.ExpandLess
-                      else Icons.Outlined.ExpandMore,
-                    contentDescription = null,
-                  )
-                }
-              } else {
-                EditorialSurfaceCard(
-                  containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                  contentPadding = PaddingValues(DipeSpacing.compact),
-                  modifier = Modifier.testTag("search_derivative_only_notice"),
-                ) {
-                  Text(
-                    text = stringResource(R.string.search_derivative_only_notice),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
+            item(key = "search_derivative_works_header", contentType = "drawer_toggle") {
+              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact)) {
+                if (hasLiterary) {
+                  OutlinedButton(
+                    onClick = onToggleDerivativeWorks,
+                    shape = CircleShape,
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("search_derivative_works_toggle"),
+                  ) {
+                    Text(
+                      text =
+                        stringResource(
+                          R.string.search_derivative_drawer_toggle,
+                          response.derivativeWorkGroups.size,
+                        ),
+                      modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                      imageVector =
+                        if (uiState.isDerivativeWorksExpanded) Icons.Outlined.ExpandLess
+                        else Icons.Outlined.ExpandMore,
+                      contentDescription = null,
+                    )
+                  }
+                } else {
+                  EditorialSurfaceCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentPadding = PaddingValues(DipeSpacing.compact),
+                    modifier = Modifier.testTag("search_derivative_only_notice"),
+                  ) {
+                    Text(
+                      text = stringResource(R.string.search_derivative_only_notice),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
                 }
               }
             }
 
             if (showDerivatives) {
-              itemsIndexed(
-                items = response.derivativeWorkGroups,
-                key = { _, group -> "deriv_${group.groupId}" },
-              ) { derivIdx, group ->
-                val groupIndex = derivOffset + derivIdx
-                val genreName =
-                  group.suggestedGenreSlug?.let { uiState.genresBySlug[it]?.localizedName(language) }
-                SearchWorkGroupCard(
-                  group = group,
-                  groupIndex = groupIndex,
-                  genreLabel = genreName,
-                  isExpanded = group.groupId in uiState.expandedGroupIds,
-                  isSecondaryEditionsExpanded = group.groupId in uiState.expandedSecondaryEditionGroupIds,
-                  isLoadingMore = group.groupId in uiState.loadingMoreEditionsForGroups,
-                  onToggleExpand = { onToggleGroupExpanded(group.groupId) },
-                  onToggleSecondaryEditions = { onToggleGroupSecondaryEditions(group.groupId) },
-                  onLoadMoreEditions = { onLoadMoreEditions(group) },
-                  onSelectEdition = onSelectEdition,
-                  isExpansionExhausted = group.groupId in uiState.exhaustedEditionGroupIds,
-                )
-              }
+              flattenedWorkGroupItems(
+                sectionPrefix = "deriv",
+                groups = response.derivativeWorkGroups,
+                indexOffset = derivOffset,
+                genresBySlug = uiState.genresBySlug,
+                language = language,
+                expandedGroupIds = uiState.expandedGroupIds,
+                expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
+                loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
+                exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                windowLimitFor = windowLimitFor,
+                onToggleExpand = onToggleGroupExpanded,
+                onShowMoreLocalEditions = handleShowMoreLocalEditions,
+                onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
+                onLoadMoreEditions = onLoadMoreEditions,
+                onSelectEdition = onSelectEdition,
+              )
             }
           }
 
           // Manual Pagination Footer
           if (response.hasMoreResults && !response.isOffline && !uiState.isSearching) {
-            item(key = "search_load_more_results") {
+            item(key = "search_load_more_results", contentType = "footer_button") {
               OutlinedButton(
                 onClick = onLoadMoreResults,
                 enabled = !uiState.isLoadingMoreResults,
                 shape = CircleShape,
                 modifier =
                   Modifier.fillMaxWidth()
+                    .padding(top = DipeSpacing.compact)
                     .minimumInteractiveComponentSize()
                     .testTag("search_load_more_results_button"),
               ) {
@@ -568,12 +626,13 @@ fun BookSearchScreen(
           }
 
           if (!response.expandedSecondarySources && !response.isIsbnQuery && !response.isOffline && !uiState.isSearching) {
-            item(key = "search_expand_sources") {
+            item(key = "search_expand_sources", contentType = "footer_button") {
               OutlinedButton(
                 onClick = onExpandSecondarySources,
                 shape = CircleShape,
                 modifier =
                   Modifier.fillMaxWidth()
+                    .padding(top = DipeSpacing.compact)
                     .minimumInteractiveComponentSize()
                     .testTag("search_expand_sources_button"),
               ) {
@@ -584,9 +643,9 @@ fun BookSearchScreen(
 
           // Subtle manual registration footer below results
           if (hasAnyResponseWorks && !uiState.isSearching) {
-            item(key = "search_manual_footer") {
+            item(key = "search_manual_footer", contentType = "manual_footer") {
               Column(
-                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.sm),
+                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.lg),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
               ) {
@@ -618,7 +677,7 @@ fun BookSearchScreen(
             }
           }
         } else if (!uiState.hasSearched && !uiState.isSearching && uiState.localLiveMatches.isEmpty()) {
-          item(key = "search_initial_prompt") {
+          item(key = "search_initial_prompt", contentType = "empty_state") {
             EditorialEmptyState(
               icon = Icons.Outlined.Search,
               title = stringResource(R.string.search_empty_prompt_title),
@@ -626,6 +685,7 @@ fun BookSearchScreen(
               actionLabel = stringResource(R.string.search_action_manual),
               actionTestTag = "search_manual_button",
               onAction = onManualCatalog,
+              modifier = Modifier.padding(top = DipeSpacing.compact),
             )
           }
         }
@@ -642,5 +702,100 @@ fun BookSearchScreen(
       onAddEdition = onDuplicateAddEdition,
       onSaveSeparately = onDuplicateSaveSeparately,
     )
+  }
+}
+
+private fun LazyListScope.flattenedWorkGroupItems(
+  sectionPrefix: String,
+  groups: List<SearchWorkGroup>,
+  indexOffset: Int,
+  genresBySlug: Map<String, Genre>,
+  language: AppLanguage,
+  expandedGroupIds: Set<String>,
+  expandedSecondaryEditionGroupIds: Set<String>,
+  loadingMoreEditionsForGroups: Set<String>,
+  exhaustedEditionGroupIds: Set<String>,
+  windowLimitFor: (String) -> Int,
+  onToggleExpand: (String) -> Unit,
+  onShowMoreLocalEditions: (String) -> Unit,
+  onToggleSecondaryEditions: (String) -> Unit,
+  onLoadMoreEditions: (SearchWorkGroup) -> Unit,
+  onSelectEdition: (SearchEditionCandidate) -> Unit,
+) {
+  groups.forEachIndexed { localIdx, group ->
+    val groupIndex = indexOffset + localIdx
+    val isExpanded = group.groupId in expandedGroupIds
+    val isSecondaryEditionsExpanded = group.groupId in expandedSecondaryEditionGroupIds
+    val isLoadingMore = group.groupId in loadingMoreEditionsForGroups
+    val isExpansionExhausted = group.groupId in exhaustedEditionGroupIds
+    val visibleEditions =
+      if (isSecondaryEditionsExpanded) {
+        group.primaryTierEditions + group.secondaryTierEditions
+      } else {
+        group.primaryTierEditions
+      }
+    val editionLimit = windowLimitFor(group.groupId)
+    val displayedEditions = if (isExpanded) visibleEditions.take(editionLimit) else emptyList()
+    val remainingEditions =
+      if (isExpanded) (visibleEditions.size - displayedEditions.size).coerceAtLeast(0) else 0
+    val canLoadMoreRemote =
+      isExpanded &&
+        (group.externalWorkKey != null || group.displayAuthors.isNotBlank()) &&
+        !isExpansionExhausted
+    val showActionsFooter =
+      isExpanded &&
+        (remainingEditions > 0 || group.secondaryTierEditions.isNotEmpty() || canLoadMoreRemote)
+    val hasExpandedContentBelow =
+      isExpanded && (displayedEditions.isNotEmpty() || showActionsFooter)
+    val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
+
+    item(
+      key = "${sectionPrefix}_hdr_${group.groupId}",
+      contentType = "search_work_header",
+    ) {
+      SearchWorkHeaderItem(
+        group = group,
+        groupIndex = groupIndex,
+        genreLabel = genreName,
+        isExpanded = isExpanded,
+        hasExpandedContentBelow = hasExpandedContentBelow,
+        onToggleExpand = { onToggleExpand(group.groupId) },
+      )
+    }
+
+    if (displayedEditions.isNotEmpty()) {
+      itemsIndexed(
+        items = displayedEditions,
+        key = { edIdx, edition -> "${sectionPrefix}_ed_${group.groupId}_${edition.candidateId}_$edIdx" },
+        contentType = { _, _ -> "search_edition_row" },
+      ) { editionIdx, edition ->
+        val isLastItemInGroup = !showActionsFooter && editionIdx == displayedEditions.lastIndex
+        SearchEditionRowItem(
+          edition = edition,
+          testTag = "search_edition_select_${groupIndex}_$editionIdx",
+          isLastItemInGroup = isLastItemInGroup,
+          onClick = { onSelectEdition(edition) },
+        )
+      }
+    }
+
+    if (showActionsFooter) {
+      item(
+        key = "${sectionPrefix}_act_${group.groupId}",
+        contentType = "search_work_actions",
+      ) {
+        SearchWorkActionsFooterItem(
+          groupIndex = groupIndex,
+          remainingEditions = remainingEditions,
+          secondaryEditionsCount = group.secondaryTierEditions.size,
+          isSecondaryEditionsExpanded = isSecondaryEditionsExpanded,
+          canLoadMoreRemoteEditions = canLoadMoreRemote,
+          isLoadingMore = isLoadingMore,
+          onShowMoreLocalEditions = { onShowMoreLocalEditions(group.groupId) },
+          onToggleSecondaryEditions = { onToggleSecondaryEditions(group.groupId) },
+          onLoadMoreRemoteEditions = { onLoadMoreEditions(group) },
+        )
+      }
+    }
   }
 }

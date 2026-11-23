@@ -24,7 +24,7 @@ class DipeLibrisApplication : Application(), ImageLoaderFactory {
       .okHttpClient { BibliographicHttpClients.imageOkHttpClient }
       .memoryCache {
         MemoryCache.Builder(this)
-          .maxSizePercent(0.20)
+          .maxSizePercent(0.22)
           .build()
       }
       .diskCache {
@@ -34,6 +34,6 @@ class DipeLibrisApplication : Application(), ImageLoaderFactory {
           .build()
       }
       .respectCacheHeaders(false)
-      .crossfade(true)
+      .crossfade(120)
       .build()
 }

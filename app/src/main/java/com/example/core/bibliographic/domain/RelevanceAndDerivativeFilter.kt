@@ -35,13 +35,23 @@ data class CandidateMatchEvaluation(
 object RelevanceAndDerivativeFilter {
 
   private val diacriticsRegex = Regex("\\p{InCombiningDiacriticalMarks}+")
+  private val whitespaceCollapseRegex = Regex("\\s+")
+  private val endsWithNotebookRegex = Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE)
+  private val startsWithResumoOrAnaliseRegex =
+    Regex(
+      "^\\s*(?:resumo|analise|fichamento|study\\s+guide|summary)(?:\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida|essencial|pratico|pratica))?\\s*[:\\-]\\s*",
+      RegexOption.IGNORE_CASE,
+    )
+  private val fictionCategoryExceptionRegex = Regex("\\b(fiction|ficcao|fantasy|fantasia|romance|juvenile)\\b")
+  private val safeLiteratureCategoryRegex = Regex("\\b(fiction|ficcao|fantasy|romance|literature)\\b")
+  private val volumeOnlySubtitleRegex = Regex("^(?:livro|vol|volume|parte|part|tomo)\\s*[0-9ivx]+$")
 
   private fun stripAccentsLower(raw: String?): String {
     if (raw.isNullOrBlank()) return ""
     val decomposed = Normalizer.normalize(raw.trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
     return diacriticsRegex
       .replace(decomposed, "")
-      .replace(Regex("\\s+"), " ")
+      .replace(whitespaceCollapseRegex, " ")
       .trim()
   }
 
@@ -438,8 +448,7 @@ object RelevanceAndDerivativeFilter {
       val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedTitleNormPunct)
       val hasSecondaryStationeryCue =
         stationerySecondarySignals.containsMatchIn("$combinedTitleNormPunct $synopsisNormPunct $categoriesNorm")
-      val endsWithNotebookOrJournal =
-        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(titleNormPunct)
+      val endsWithNotebookOrJournal = endsWithNotebookRegex.containsMatchIn(titleNormPunct)
       if (hasStrongStationeryPhrase || (endsWithNotebookOrJournal && (hasSecondaryStationeryCue || candidate.contributors.isEmpty()))) {
         return true
       }
@@ -448,11 +457,7 @@ object RelevanceAndDerivativeFilter {
       val authorNormSafe = BibliographicMath.normalizeText(candidate.primaryAuthorsText)
       val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedTitleNormPunct ${synopsisNormPunct.take(200)}")
       val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm || it in authorNormSafe }
-      val startsWithResumoOrAnalise =
-        Regex(
-          "^\\s*(?:resumo|analise|fichamento|study\\s+guide|summary)(?:\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida|essencial|pratico|pratica))?\\s*[:\\-]\\s*",
-          RegexOption.IGNORE_CASE,
-        ).containsMatchIn(titleNormPunct)
+      val startsWithResumoOrAnalise = startsWithResumoOrAnaliseRegex.containsMatchIn(titleNormPunct)
       if (hasHardSpamPhrase || isSummaryPublisher || startsWithResumoOrAnalise) {
         return true
       }
@@ -514,8 +519,7 @@ object RelevanceAndDerivativeFilter {
       val hasStrongStationeryPhrase = stationeryStrongRegex.containsMatchIn(combinedWorkNormPunct)
       val hasSecondaryStationeryCue =
         stationerySecondarySignals.containsMatchIn("$combinedWorkNormPunct $synopsisNormPunct $categoriesNorm")
-      val endsWithNotebookOrJournal =
-        Regex("\\b(notebook|journal)\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(titleNormPunct)
+      val endsWithNotebookOrJournal = endsWithNotebookRegex.containsMatchIn(titleNormPunct)
       if (hasStrongStationeryPhrase || (endsWithNotebookOrJournal && (hasSecondaryStationeryCue || candidate.contributors.isEmpty()))) {
         return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "stationery_notebook")
       }
@@ -523,11 +527,7 @@ object RelevanceAndDerivativeFilter {
     if (!intent.allowGuidesOrAnalyses) {
       val hasHardSpamPhrase = hardGuideSpamRegex.containsMatchIn("$combinedWorkNormPunct ${synopsisNormPunct.take(200)}")
       val isSummaryPublisher = derivativeSummaryPublishers.any { it in publisherNorm || it in normAuthors }
-      val startsWithResumoOrAnalise =
-        Regex(
-          "^\\s*(?:resumo|analise|fichamento|study\\s+guide|summary)(?:\\s+(?:completo|completa|detalhado|detalhada|rapido|rapida|essencial|pratico|pratica))?\\s*[:\\-]\\s*",
-          RegexOption.IGNORE_CASE,
-        ).containsMatchIn(titleNormPunct)
+      val startsWithResumoOrAnalise = startsWithResumoOrAnaliseRegex.containsMatchIn(titleNormPunct)
       if (hasHardSpamPhrase || isSummaryPublisher || startsWithResumoOrAnalise) {
         return CandidateMatchEvaluation(false, 0, 0, 0, 0f, rejectionReason = "derivative_summary_or_guide")
       }
@@ -716,7 +716,7 @@ object RelevanceAndDerivativeFilter {
       academicSubtitleOrTitleRegex.containsMatchIn("$combinedWorkNormPunct ${synopsisNormPunct.take(200)}")
     val hasAcademicCategory =
       academicCategoryTokens.any { it in categoriesNorm } &&
-        !Regex("\\b(fiction|ficcao|fantasy|fantasia|romance|juvenile)\\b").containsMatchIn(categoriesNorm)
+        !fictionCategoryExceptionRegex.containsMatchIn(categoriesNorm)
     val hasExplanatoryNonEditionSubtitle =
       struct.subtitleNormalized.isNotEmpty() &&
         !isEditionOrVolumeSubtitle(struct.subtitleNormalized) &&
@@ -897,13 +897,13 @@ object RelevanceAndDerivativeFilter {
     intentType == QueryIntentType.EXPLICIT_TITLE
 
   private fun isAcademicCategorySafe(categoriesNorm: String): Boolean =
-    Regex("\\b(fiction|ficcao|fantasy|romance|literature)\\b").containsMatchIn(categoriesNorm)
+    safeLiteratureCategoryRegex.containsMatchIn(categoriesNorm)
 
   internal fun isEditionOrVolumeSubtitle(subtitleNorm: String): Boolean {
     if (subtitleNorm.isBlank()) return true
     if (subtitleNorm in benignSubtitlePrefixes) return true
     if (editionOnlySubtitleRegex.matches(subtitleNorm)) return true
-    return Regex("^(?:livro|vol|volume|parte|part|tomo)\\s*[0-9ivx]+$").matches(subtitleNorm)
+    return volumeOnlySubtitleRegex.matches(subtitleNorm)
   }
 
   private val queryStopwords =

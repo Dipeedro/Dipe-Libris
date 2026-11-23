@@ -48,6 +48,7 @@ data class BookSearchUiState(
   val isDerivativeWorksExpanded: Boolean = false,
   val expandedSecondaryEditionGroupIds: Set<String> = emptySet(),
   val exhaustedEditionGroupIds: Set<String> = emptySet(),
+  val editionWindowLimits: Map<String, Int> = emptyMap(),
 )
 
 class BookSearchViewModel(
@@ -71,6 +72,7 @@ class BookSearchViewModel(
   private val isDerivativeWorksExpanded = MutableStateFlow(false)
   private val expandedSecondaryEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
   private val exhaustedEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
+  private val editionWindowLimits = MutableStateFlow<Map<String, Int>>(emptyMap())
 
   private val searchGenerationId = AtomicLong(0L)
   private var localSearchJob: Job? = null
@@ -78,9 +80,13 @@ class BookSearchViewModel(
   private var paginationJob: Job? = null
   private var userToggledGroupInCurrentSearch: Boolean = false
 
-  private val editionTogglePair =
-    combine(expandedSecondaryEditionGroupIds, exhaustedEditionGroupIds) { secEditions, exhausted ->
-      secEditions to exhausted
+  private val editionExpansionState =
+    combine(
+      expandedSecondaryEditionGroupIds,
+      exhaustedEditionGroupIds,
+      editionWindowLimits,
+    ) { secEditions, exhausted, windowLimits ->
+      Triple(secEditions, exhausted, windowLimits)
     }
 
   private val extraState =
@@ -89,9 +95,17 @@ class BookSearchViewModel(
       isLoadingMoreResults,
       isSecondaryLanguagesExpanded,
       isDerivativeWorksExpanded,
-      editionTogglePair,
-    ) { localMatches, loadingMore, secondaryExpanded, derivativeExpanded, (secEditions, exhausted) ->
-      ExtraSearchState(localMatches, loadingMore, secondaryExpanded, derivativeExpanded, secEditions, exhausted)
+      editionExpansionState,
+    ) { localMatches, loadingMore, secondaryExpanded, derivativeExpanded, expansion ->
+      ExtraSearchState(
+        localMatches = localMatches,
+        loadingMoreResults = loadingMore,
+        secondaryExpanded = secondaryExpanded,
+        derivativeExpanded = derivativeExpanded,
+        expandedSecondaryEditionGroupIds = expansion.first,
+        exhaustedEditionGroupIds = expansion.second,
+        editionWindowLimits = expansion.third,
+      )
     }
 
   private val detailState =
@@ -128,6 +142,7 @@ class BookSearchViewModel(
           isDerivativeWorksExpanded = extra.derivativeExpanded,
           expandedSecondaryEditionGroupIds = extra.expandedSecondaryEditionGroupIds,
           exhaustedEditionGroupIds = extra.exhaustedEditionGroupIds,
+          editionWindowLimits = extra.editionWindowLimits,
         )
       }
       .stateIn(
@@ -150,6 +165,7 @@ class BookSearchViewModel(
     val derivativeExpanded: Boolean,
     val expandedSecondaryEditionGroupIds: Set<String>,
     val exhaustedEditionGroupIds: Set<String>,
+    val editionWindowLimits: Map<String, Int>,
   )
 
   init {
@@ -199,6 +215,7 @@ class BookSearchViewModel(
     isDerivativeWorksExpanded.value = false
     expandedSecondaryEditionGroupIds.value = emptySet()
     exhaustedEditionGroupIds.value = emptySet()
+    editionWindowLimits.value = emptyMap()
     loadingMoreEditions.value = emptySet()
 
     searchJob =
@@ -286,6 +303,12 @@ class BookSearchViewModel(
       }
   }
 
+  fun expandLocalEditionsWindow(groupId: String) {
+    val current = editionWindowLimits.value
+    val nextLimit = (current[groupId] ?: DEFAULT_EDITION_WINDOW_SIZE) + EDITION_WINDOW_INCREMENT
+    editionWindowLimits.value = current + (groupId to nextLimit)
+  }
+
   fun loadMoreEditionsForWork(group: SearchWorkGroup) {
     if ((group.externalWorkKey == null && group.canonicalTitle.isBlank()) ||
       group.groupId in loadingMoreEditions.value ||
@@ -302,6 +325,13 @@ class BookSearchViewModel(
         val updatedGroup = expandedResult.group
         if (!expandedResult.hasMoreToLoad) {
           exhaustedEditionGroupIds.value = exhaustedEditionGroupIds.value + group.groupId
+        }
+        if (updatedGroup.editions.size > group.editions.size) {
+          val currentLimits = editionWindowLimits.value
+          val prevLimit = currentLimits[group.groupId] ?: DEFAULT_EDITION_WINDOW_SIZE
+          if (updatedGroup.editions.size > prevLimit) {
+            editionWindowLimits.value = currentLimits + (group.groupId to updatedGroup.editions.size)
+          }
         }
         val currentResp = response.value ?: return@launch
         val updatedPrimary =
@@ -326,6 +356,11 @@ class BookSearchViewModel(
         loadingMoreEditions.value = loadingMoreEditions.value - group.groupId
       }
     }
+  }
+
+  companion object {
+    const val DEFAULT_EDITION_WINDOW_SIZE = 6
+    const val EDITION_WINDOW_INCREMENT = 8
   }
 
   fun selectEditionCandidate(

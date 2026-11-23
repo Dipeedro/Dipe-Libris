@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -55,20 +55,15 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -100,7 +95,6 @@ import com.example.core.model.CatalogBook
 import com.example.core.model.LibrarySortOrder
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.ReadingStatus
-import kotlin.math.roundToInt
 
 @Composable
 fun LibraryScreen(
@@ -118,25 +112,11 @@ fun LibraryScreen(
   onCheckUpdates: () -> Unit = {},
 ) {
   val language = LocalAppLanguage.current
+  val density = LocalDensity.current
   val gridState = rememberLazyGridState()
   val listState = rememberLazyListState()
   var showFiltersSheet by remember { mutableStateOf(false) }
-
-  val mastheadHeightPx = remember { mutableFloatStateOf(0f) }
-  val mastheadOffsetPx = remember { mutableFloatStateOf(0f) }
-  val nestedScrollConnection = remember {
-    object : NestedScrollConnection {
-      override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-        val maxCollapse = -mastheadHeightPx.floatValue
-        if (maxCollapse >= 0f) return Offset.Zero
-        val prev = mastheadOffsetPx.floatValue
-        val next = (prev + available.y).coerceIn(maxCollapse, 0f)
-        val consumed = next - prev
-        mastheadOffsetPx.floatValue = next
-        return Offset(0f, consumed)
-      }
-    }
-  }
+  var containerWidthPx by remember { mutableIntStateOf(0) }
 
   val countForPlural = if (uiState.books.size == 1) 1 else 2
   val subtitle =
@@ -154,69 +134,24 @@ fun LibraryScreen(
     uiState.genreFilter != null ||
       uiState.sortOrder != LibrarySortOrder.RECENTLY_ADDED ||
       uiState.totalPendingSuggestionsCount > 0
-
-  BoxWithConstraints(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-    val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
-    val contentMaxWidth = minOf(maxWidth, 960.dp) - (horizontalPadding * 2)
-    val shelfInnerWidth = (contentMaxWidth - (DipeSpacing.xs * 2)).coerceAtLeast(48.dp)
-    val spinesPerShelf =
-      remember(shelfInnerWidth) {
+  val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
+  val spinesPerShelf =
+    remember(containerWidthPx, horizontalPadding, density) {
+      if (containerWidthPx <= 0) {
+        6
+      } else {
+        val availableWidthDp =
+          with(density) { containerWidthPx.toDp() }.coerceAtMost(960.dp) - (horizontalPadding * 2)
+        val shelfInnerWidth = (availableWidthDp - (DipeSpacing.xs * 2)).coerceAtLeast(48.dp)
         (((shelfInnerWidth + DipeSpacing.xs) / (48.dp + DipeSpacing.xs)).toInt()).coerceAtLeast(1)
       }
+    }
 
-    Column(
-      modifier =
-        Modifier.widthIn(max = 960.dp)
-          .fillMaxSize()
-          .nestedScroll(nestedScrollConnection),
-    ) {
-      // Collapsing editorial masthead aligned with Home ("Leitura")
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .clipToBounds()
-            .layout { measurable, constraints ->
-              val placeable = measurable.measure(constraints)
-              val offset = mastheadOffsetPx.floatValue.roundToInt()
-              val visibleHeight = (placeable.height + offset).coerceAtLeast(0)
-              layout(placeable.width, visibleHeight) {
-                placeable.place(0, offset)
-              }
-            }
-            .onSizeChanged { mastheadHeightPx.floatValue = it.height.toFloat() }
-            .padding(horizontal = horizontalPadding),
-      ) {
-        EditorialMasthead(
-          title = stringResource(R.string.nav_library),
-          subtitle = subtitle,
-          trailingContent = {
-            Button(
-              onClick = onOpenAddBook,
-              shape = CircleShape,
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = MaterialTheme.colorScheme.secondary,
-                  contentColor = MaterialTheme.colorScheme.onSecondary,
-                ),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
-            ) {
-              Icon(
-                imageVector = Icons.Outlined.Add,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-              )
-              Spacer(modifier = Modifier.width(DipeSpacing.xs))
-              Text(
-                text = stringResource(R.string.library_add_book),
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-              )
-            }
-          },
-        )
-      }
-
+  Box(
+    modifier = modifier.fillMaxSize().onSizeChanged { containerWidthPx = it.width },
+    contentAlignment = Alignment.TopCenter,
+  ) {
+    Column(modifier = Modifier.widthIn(max = 960.dp).fillMaxSize()) {
       // Fixed sticky search + compact icon tools + single status chip row
       LibraryStickyHeader(
         horizontalPadding = horizontalPadding,
@@ -248,12 +183,20 @@ fun LibraryScreen(
             PaddingValues(
               start = horizontalPadding,
               end = horizontalPadding,
-              top = DipeSpacing.md,
+              top = DipeSpacing.sm,
               bottom = DipeSpacing.xxl,
             ),
           horizontalArrangement = Arrangement.spacedBy(20.dp),
           verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
+          item(
+            key = "library_masthead",
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = "masthead",
+          ) {
+            LibraryMastheadItem(subtitle = subtitle, onOpenAddBook = onOpenAddBook)
+          }
+
           items(
             items = uiState.books,
             key = { it.id },
@@ -277,11 +220,15 @@ fun LibraryScreen(
             PaddingValues(
               start = horizontalPadding,
               end = horizontalPadding,
-              top = DipeSpacing.md,
+              top = DipeSpacing.sm,
               bottom = DipeSpacing.xxl,
             ),
           verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
         ) {
+          item(key = "library_masthead", contentType = "masthead") {
+            LibraryMastheadItem(subtitle = subtitle, onOpenAddBook = onOpenAddBook)
+          }
+
           if (uiState.totalCatalogCount == 0) {
             item(key = "library_empty", contentType = "empty_state") {
               EditorialEmptyState(
@@ -368,6 +315,42 @@ fun LibraryScreen(
       onDismiss = { showFiltersSheet = false },
     )
   }
+}
+
+@Composable
+private fun LibraryMastheadItem(
+  subtitle: String,
+  onOpenAddBook: () -> Unit,
+) {
+  EditorialMasthead(
+    title = stringResource(R.string.nav_library),
+    subtitle = subtitle,
+    trailingContent = {
+      Button(
+        onClick = onOpenAddBook,
+        shape = CircleShape,
+        colors =
+          ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondary,
+            contentColor = MaterialTheme.colorScheme.onSecondary,
+          ),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Add,
+          contentDescription = null,
+          modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(DipeSpacing.xs))
+        Text(
+          text = stringResource(R.string.library_add_book),
+          style = MaterialTheme.typography.labelLarge,
+          maxLines = 1,
+        )
+      }
+    },
+  )
 }
 
 @Composable
@@ -645,6 +628,7 @@ private fun LibraryGridCard(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
+      widthHintDp = 160.dp,
       modifier = Modifier.fillMaxWidth(),
     )
     if (showActiveProgress) {
@@ -751,6 +735,7 @@ private fun LibraryListRow(
           coverUri = book.coverUri,
           compact = true,
           elevated = true,
+          widthHintDp = 50.dp,
           modifier = Modifier.width(50.dp),
         )
         Column(
@@ -919,6 +904,7 @@ private fun LibraryGalleryItem(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
+        widthHintDp = 196.dp,
         modifier = Modifier.width(196.dp),
       )
       Column(

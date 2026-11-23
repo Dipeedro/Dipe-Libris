@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -27,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -61,6 +59,7 @@ private val BookCoverShape =
   RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
 
 private val BookSpineShape = RoundedCornerShape(DipeRadii.sharp)
+private val WHITESPACE_SPLIT_REGEX = Regex("\\s+")
 
 @Composable
 fun BookCoverArtwork(
@@ -72,6 +71,7 @@ fun BookCoverArtwork(
   fallbackCoverUris: List<String> = emptyList(),
   compact: Boolean = false,
   elevated: Boolean = false,
+  widthHintDp: Dp? = null,
   onImageLoadError: (() -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
@@ -84,7 +84,7 @@ fun BookCoverArtwork(
   val authorUpper = remember(author) { author.uppercase() }
   val monogram =
     remember(title) {
-      val words = title.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+      val words = title.trim().split(WHITESPACE_SPLIT_REGEX).filter { it.isNotEmpty() }
       when {
         words.isEmpty() -> "L"
         words.size == 1 -> words.first().take(2).uppercase()
@@ -100,8 +100,9 @@ fun BookCoverArtwork(
   var activeUriIndex by remember(candidateUris) { mutableIntStateOf(0) }
   val activeUri = candidateUris.getOrNull(activeUriIndex)
   val density = LocalDensity.current
+  val effectiveWidthDp = widthHintDp ?: if (compact) 52.dp else 160.dp
 
-  BoxWithConstraints(
+  Box(
     modifier =
       modifier
         .aspectRatio(2f / 3f)
@@ -116,29 +117,23 @@ fun BookCoverArtwork(
         .background(palette.clothColor)
         .border(0.75.dp, borderColor, BookCoverShape)
         .semantics { contentDescription = coverCd },
+    contentAlignment = Alignment.Center,
   ) {
     val targetWidthPx =
-      if (constraints.hasBoundedWidth && constraints.maxWidth > 0) {
-        constraints.maxWidth.coerceIn(64, 1600)
-      } else {
-        with(density) { (if (compact) 56.dp else 160.dp).roundToPx() }.coerceAtLeast(64)
+      remember(effectiveWidthDp, density) {
+        with(density) { effectiveWidthDp.roundToPx() }.coerceIn(64, 1600)
       }
-    val targetHeightPx =
-      if (constraints.hasBoundedHeight && constraints.maxHeight > 0 && constraints.maxHeight < Int.MAX_VALUE / 2) {
-        constraints.maxHeight.coerceIn(96, 2400)
-      } else {
-        (targetWidthPx * 3) / 2
-      }
+    val targetHeightPx = (targetWidthPx * 3) / 2
 
     val imageRequest =
       remember(activeUri, context, targetWidthPx, targetHeightPx) {
         activeUri?.let { raw ->
-          val file = File(raw)
           val data: Any =
             when {
-              file.exists() -> file
+              raw.startsWith("http://") || raw.startsWith("https://") -> raw
               raw.startsWith("content://") || raw.startsWith("file://") ->
                 android.net.Uri.parse(raw)
+              raw.startsWith("/") -> File(raw)
               else -> raw
             }
           ImageRequest.Builder(context)
@@ -176,11 +171,12 @@ fun BookCoverArtwork(
         painter = painter,
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier =
-          Modifier.fillMaxSize().drawWithContent {
-            drawContent()
-            if (hasLoadedPhoto) {
-              // Subtle book-binding crease and favorite ribbon over photographed covers
+        modifier = Modifier.fillMaxSize(),
+      )
+      if (hasLoadedPhoto) {
+        Spacer(
+          modifier =
+            Modifier.fillMaxSize().drawWithCache {
               val spineGradient =
                 Brush.horizontalGradient(
                   0.0f to Color(0x42000000),
@@ -189,17 +185,16 @@ fun BookCoverArtwork(
                   startX = 0f,
                   endX = size.width,
                 )
-              drawRect(brush = spineGradient)
-              if (isFavorite) {
-                val isTiny = compact || size.width < 92.dp.toPx()
-                val rWidth = (if (isTiny) 5.dp else 8.dp).toPx()
-                val rHeight = (if (isTiny) 14.dp else 23.dp).toPx()
-                val rEnd = (if (isTiny) 6.dp else 13.dp).toPx()
-                val rRight = size.width - rEnd
-                val rLeft = rRight - rWidth
-                val rMid = (rLeft + rRight) * 0.5f
-                val notch = (if (isTiny) 2.5.dp else 3.5.dp).toPx()
-                val ribbonPath =
+              val ribbonPath =
+                if (isFavorite) {
+                  val isTiny = compact || size.width < 92.dp.toPx()
+                  val rWidth = (if (isTiny) 5.dp else 8.dp).toPx()
+                  val rHeight = (if (isTiny) 14.dp else 23.dp).toPx()
+                  val rEnd = (if (isTiny) 6.dp else 13.dp).toPx()
+                  val rRight = size.width - rEnd
+                  val rLeft = rRight - rWidth
+                  val rMid = (rLeft + rRight) * 0.5f
+                  val notch = (if (isTiny) 2.5.dp else 3.5.dp).toPx()
                   Path().apply {
                     moveTo(rLeft, 0f)
                     lineTo(rRight, 0f)
@@ -208,15 +203,22 @@ fun BookCoverArtwork(
                     lineTo(rLeft, rHeight)
                     close()
                   }
-                drawPath(path = ribbonPath, color = coverTokens.favoriteRibbon)
+                } else {
+                  null
+                }
+              onDrawBehind {
+                drawRect(brush = spineGradient)
+                if (ribbonPath != null) {
+                  drawPath(path = ribbonPath, color = coverTokens.favoriteRibbon)
+                }
               }
-            }
-          },
-      )
+            },
+        )
+      }
     }
 
     if (!hasLoadedPhoto) {
-      val coverWidth = maxWidth
+      val coverWidth = effectiveWidthDp
       Box(
         modifier =
           Modifier.fillMaxSize().drawWithCache {

@@ -158,7 +158,7 @@ object BibliographicHttpClients {
   val okHttpClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
       .connectTimeout(5, TimeUnit.SECONDS)
-      .readTimeout(7, TimeUnit.SECONDS)
+      .readTimeout(8, TimeUnit.SECONDS)
       .writeTimeout(5, TimeUnit.SECONDS)
       .connectionPool(okhttp3.ConnectionPool(8, 3, TimeUnit.MINUTES))
       .addInterceptor { chain ->
@@ -208,8 +208,10 @@ object BibliographicHttpClients {
   }
 }
 
+private val YEAR_REGEX = Regex("(1[4-9]\\d{2}|20\\d{2}|2100)")
+
 internal fun extractYear(raw: String?): Int? {
   if (raw.isNullOrBlank()) return null
-  val match = Regex("(1[4-9]\\d{2}|20\\d{2}|2100)").find(raw) ?: return null
+  val match = YEAR_REGEX.find(raw) ?: return null
   return match.value.toIntOrNull()?.takeIf { it in 1400..2100 }
 }

@@ -38,7 +38,7 @@ import com.example.core.model.BibliographicMath
     ReadingSessionEntity::class,
     ReadingProgressLogEntity::class,
   ],
-  version = 4,
+  version = 5,
   exportSchema = true,
 )
 @TypeConverters(DipeConverters::class)
@@ -631,6 +631,24 @@ abstract class DipeLibrisDatabase : RoomDatabase() {
         }
       }
 
+    val MIGRATION_4_5: Migration =
+      object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_works_status` ON `works` (`status`)")
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_works_isFavorite` ON `works` (`isFavorite`)")
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_works_externalWorkKey` ON `works` (`externalWorkKey`)")
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_works_createdAtEpochMillis` ON `works` (`createdAtEpochMillis`)")
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_works_updatedAtEpochMillis` ON `works` (`updatedAtEpochMillis`)")
+          db.execSQL("CREATE INDEX IF NOT EXISTS `index_editions_workId_isPrimary` ON `editions` (`workId`, `isPrimary`)")
+          db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_metadata_update_suggestions_workId_status` ON `metadata_update_suggestions` (`workId`, `status`)"
+          )
+          db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_reading_sessions_workId_status_rereadNumber` ON `reading_sessions` (`workId`, `status`, `rereadNumber`)"
+          )
+        }
+      }
+
     fun seedDefaultGenres(db: SupportSQLiteDatabase) {
       val now = System.currentTimeMillis()
       DefaultGenres.seeds.forEach { seed ->
@@ -649,7 +667,7 @@ abstract class DipeLibrisDatabase : RoomDatabase() {
     /**
      * Ordered list of explicit schema migrations for database versions.
      */
-    val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
     val SEED_CALLBACK: Callback =
       object : Callback() {
