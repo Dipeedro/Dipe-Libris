@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
@@ -171,6 +173,7 @@ fun CompactEditorialSearchPill(
   onSearchSubmit: (() -> Unit)? = null,
   leadingInsetPx: (() -> Float)? = null,
   trailingInsetPx: (() -> Float)? = null,
+  placeholderOverflowClip: Boolean = false,
 ) {
   var isFocused by remember { mutableStateOf(false) }
   val fillColor =
@@ -200,6 +203,7 @@ fun CompactEditorialSearchPill(
         onSearchSubmit = onSearchSubmit,
         leadingInsetPx = null,
         trailingInsetPx = null,
+        placeholderOverflowClip = placeholderOverflowClip,
       )
     }
   } else {
@@ -247,6 +251,7 @@ fun CompactEditorialSearchPill(
         onSearchSubmit = onSearchSubmit,
         leadingInsetPx = leadingInsetPx,
         trailingInsetPx = trailingInsetPx,
+        placeholderOverflowClip = placeholderOverflowClip,
       )
     }
   }
@@ -265,6 +270,7 @@ private fun CompactEditorialSearchPillContent(
   onSearchSubmit: (() -> Unit)?,
   leadingInsetPx: (() -> Float)?,
   trailingInsetPx: (() -> Float)?,
+  placeholderOverflowClip: Boolean,
 ) {
   Row(
     modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp),
@@ -286,6 +292,17 @@ private fun CompactEditorialSearchPillContent(
       modifier =
         Modifier.weight(1f)
           .padding(vertical = 10.dp)
+          .layout { measurable, constraints ->
+            val leftInset = (leadingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
+            val rightInset = (trailingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
+            val availableWidth =
+              (constraints.maxWidth - leftInset - rightInset).coerceAtLeast(0)
+            val placeable =
+              measurable.measure(constraints.copy(minWidth = 0, maxWidth = availableWidth))
+            layout(constraints.maxWidth, placeable.height) {
+              placeable.placeRelative(0, 0)
+            }
+          }
           .graphicsLayer {
             translationX = leadingInsetPx?.invoke() ?: 0f
           },
@@ -297,7 +314,8 @@ private fun CompactEditorialSearchPillContent(
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
+          softWrap = false,
+          overflow = if (placeholderOverflowClip) TextOverflow.Clip else TextOverflow.Ellipsis,
         )
       }
       BasicTextField(

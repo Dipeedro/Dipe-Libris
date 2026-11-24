@@ -67,6 +67,7 @@
 
     <!-- Library -->
     <string name="library_search_placeholder">Pesquisar título ou autor</string>
+    <string name="library_search_placeholder_compact">Pesquisar</string>
     <string name="library_clear_search">Limpar pesquisa</string>
     <string name="library_add_book">Catalogar livro</string>
     <string name="library_view_grid">Grade</string>

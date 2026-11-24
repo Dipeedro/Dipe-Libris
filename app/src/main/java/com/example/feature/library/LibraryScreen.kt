@@ -1,10 +1,10 @@
 package com.example.feature.library
 
 import android.content.res.Configuration
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -78,13 +78,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -126,11 +131,32 @@ import com.example.core.model.CatalogBook
 import com.example.core.model.LibrarySortOrder
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.ReadingStatus
+import kotlin.math.abs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 
-private val EditorialCollapseEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private const val HEADER_COLLAPSE_ANIM_MS = 220
+private const val HEADER_COLLAPSE_ANIM_MS = 300
+private const val HEADER_COOLDOWN_MS = 350L
+private const val COVER_ENTRANCE_DURATION_MS = 600
 private const val VIEW_MODE_PILL_DURATION_MS = 1200L
+
+private enum class LibraryHeaderState {
+  EXPANDED,
+  COLLAPSED,
+}
+
+private class LibraryHeaderScrollAccumulator {
+  var activeDirection: Int = 0
+  var accumulatedPx: Float = 0f
+  var cooldownUntilUptimeMs: Long = 0L
+  var reservedHeaderHeightPx: Int = 0
+  var firstItemSpanPx: Int = 0
+
+  fun reset() {
+    activeDirection = 0
+    accumulatedPx = 0f
+  }
+}
 
 @Composable
 fun LibraryScreen(
@@ -157,13 +183,34 @@ fun LibraryScreen(
 
   var showFiltersSheet by remember { mutableStateOf(false) }
   var containerWidthPx by remember { mutableIntStateOf(0) }
-  var isHeaderCollapsed by remember { mutableStateOf(false) }
+  var headerState by rememberSaveable { mutableStateOf(LibraryHeaderState.EXPANDED) }
+  val collapseFractionAnim = remember {
+    Animatable(if (headerState == LibraryHeaderState.COLLAPSED) 1f else 0f)
+  }
+  val scrollAccumulator = remember { LibraryHeaderScrollAccumulator() }
 
   var statusDialogBook by remember { mutableStateOf<CatalogBook?>(null) }
   var deleteConfirmBook by remember { mutableStateOf<CatalogBook?>(null) }
 
   var modePillMode by remember { mutableStateOf<LibraryViewMode?>(null) }
   var modePillTrigger by remember { mutableIntStateOf(0) }
+
+  var initialCoverEntranceDone by rememberSaveable { mutableStateOf(reduceMotion) }
+  val screenCoverProgress =
+    remember(reduceMotion) { Animatable(if (reduceMotion || initialCoverEntranceDone) 1f else 0f) }
+  LaunchedEffect(reduceMotion, uiState.books.isNotEmpty()) {
+    if (reduceMotion || initialCoverEntranceDone) {
+      screenCoverProgress.snapTo(1f)
+      initialCoverEntranceDone = true
+    } else if (uiState.books.isNotEmpty()) {
+      screenCoverProgress.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = COVER_ENTRANCE_DURATION_MS, easing = FastOutSlowInEasing),
+      )
+      initialCoverEntranceDone = true
+    }
+  }
+  val screenCoverProgressProvider: () -> Float = { screenCoverProgress.value }
 
   LaunchedEffect(modePillTrigger) {
     if (modePillTrigger > 0) {
@@ -173,8 +220,140 @@ fun LibraryScreen(
   }
 
   val isGridActive = uiState.viewMode == LibraryViewMode.GRID && uiState.books.isNotEmpty()
-  val collapseStepPx = remember(density) { with(density) { 12.dp.roundToPx() } }
-  val topSnapThresholdPx = remember(density) { with(density) { 16.dp.roundToPx() } }
+  val minDeltaPx = remember(density) { with(density) { 2.dp.toPx() } }
+  val collapseDownThresholdPx = remember(density) { with(density) { 56.dp.toPx() } }
+  val expandUpThresholdPx = remember(density) { with(density) { 320.dp.toPx() } }
+  val topOffsetThresholdPx = remember(density) { with(density) { 8.dp.roundToPx() } }
+  val fallbackHeaderHeightPx = remember(density) { with(density) { 96.dp.roundToPx() } }
+
+  LaunchedEffect(headerState, reduceMotion) {
+    val target = if (headerState == LibraryHeaderState.COLLAPSED) 1f else 0f
+    if (reduceMotion) {
+      collapseFractionAnim.snapTo(target)
+    } else if (collapseFractionAnim.value != target) {
+      collapseFractionAnim.animateTo(
+        targetValue = target,
+        animationSpec = tween(durationMillis = HEADER_COLLAPSE_ANIM_MS, easing = FastOutSlowInEasing),
+      )
+    }
+  }
+
+  val headerNestedScrollConnection =
+    remember(
+      isGridActive,
+      uiState.books.isEmpty(),
+      minDeltaPx,
+      collapseDownThresholdPx,
+      expandUpThresholdPx,
+      topOffsetThresholdPx,
+      fallbackHeaderHeightPx,
+    ) {
+      object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+          if (uiState.books.isEmpty()) {
+            scrollAccumulator.reset()
+            return Offset.Zero
+          }
+
+          val dy = available.y
+          if (abs(dy) < minDeltaPx) {
+            return Offset.Zero
+          }
+
+          val firstIndex: Int
+          val firstOffset: Int
+          val canScrollForward: Boolean
+          val canScrollBackward: Boolean
+          if (isGridActive) {
+            firstIndex = gridState.firstVisibleItemIndex
+            firstOffset = gridState.firstVisibleItemScrollOffset
+            canScrollForward = gridState.canScrollForward
+            canScrollBackward = gridState.canScrollBackward
+            if (firstIndex == 0) {
+              val firstRowItem = gridState.layoutInfo.visibleItemsInfo.firstOrNull()
+              if (firstRowItem != null) {
+                scrollAccumulator.firstItemSpanPx =
+                  firstRowItem.size.height + gridState.layoutInfo.mainAxisItemSpacing
+              }
+            }
+          } else {
+            firstIndex = listState.firstVisibleItemIndex
+            firstOffset = listState.firstVisibleItemScrollOffset
+            canScrollForward = listState.canScrollForward
+            canScrollBackward = listState.canScrollBackward
+            if (firstIndex == 0) {
+              val firstListItem = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+              if (firstListItem != null) {
+                scrollAccumulator.firstItemSpanPx =
+                  firstListItem.size + listState.layoutInfo.mainAxisItemSpacing
+              }
+            }
+          }
+
+          if (!canScrollBackward && !canScrollForward) {
+            scrollAccumulator.reset()
+            return Offset.Zero
+          }
+
+          if ((dy < 0f && !canScrollForward) || (dy > 0f && !canScrollBackward)) {
+            scrollAccumulator.reset()
+            return Offset.Zero
+          }
+
+          val nowMs = SystemClock.uptimeMillis()
+          if (collapseFractionAnim.isRunning || nowMs < scrollAccumulator.cooldownUntilUptimeMs) {
+            scrollAccumulator.reset()
+            return Offset.Zero
+          }
+
+          val direction = if (dy < 0f) 1 else -1
+          if (direction != scrollAccumulator.activeDirection) {
+            scrollAccumulator.accumulatedPx = 0f
+            scrollAccumulator.activeDirection = direction
+          }
+          scrollAccumulator.accumulatedPx += abs(dy)
+
+          val headerGatePx =
+            if (scrollAccumulator.reservedHeaderHeightPx > 0) scrollAccumulator.reservedHeaderHeightPx
+            else fallbackHeaderHeightPx
+          val hasPassedHeader =
+            when {
+              firstIndex == 0 -> firstOffset >= headerGatePx
+              firstIndex == 1 && scrollAccumulator.firstItemSpanPx > 0 ->
+                (scrollAccumulator.firstItemSpanPx + firstOffset) >= headerGatePx
+              else -> true
+            }
+          val isAtTop = firstIndex == 0 && firstOffset <= topOffsetThresholdPx
+
+          when (headerState) {
+            LibraryHeaderState.EXPANDED -> {
+              if (
+                scrollAccumulator.activeDirection == 1 &&
+                  scrollAccumulator.accumulatedPx >= collapseDownThresholdPx &&
+                  hasPassedHeader
+              ) {
+                headerState = LibraryHeaderState.COLLAPSED
+                scrollAccumulator.cooldownUntilUptimeMs = nowMs + HEADER_COOLDOWN_MS
+                scrollAccumulator.reset()
+              }
+            }
+
+            LibraryHeaderState.COLLAPSED -> {
+              if (
+                isAtTop ||
+                  (scrollAccumulator.activeDirection == -1 &&
+                    scrollAccumulator.accumulatedPx >= expandUpThresholdPx)
+              ) {
+                headerState = LibraryHeaderState.EXPANDED
+                scrollAccumulator.cooldownUntilUptimeMs = nowMs + HEADER_COOLDOWN_MS
+                scrollAccumulator.reset()
+              }
+            }
+          }
+          return Offset.Zero
+        }
+      }
+    }
 
   LaunchedEffect(
     isGridActive,
@@ -184,72 +363,45 @@ fun LibraryScreen(
     uiState.searchQuery,
   ) {
     if (uiState.books.isEmpty()) {
-      isHeaderCollapsed = false
+      scrollAccumulator.reset()
+      headerState = LibraryHeaderState.EXPANDED
       return@LaunchedEffect
     }
-    var lastIndex =
-      if (isGridActive) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
-    var lastOffset =
-      if (isGridActive) gridState.firstVisibleItemScrollOffset
-      else listState.firstVisibleItemScrollOffset
-    var anchorIndex = lastIndex
-    var anchorOffset = lastOffset
-    var lastDirection = 0
-
     snapshotFlow {
-        if (isGridActive) {
-          gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
-        } else {
-          listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
-        }
+        val index =
+          if (isGridActive) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
+        val offset =
+          if (isGridActive) gridState.firstVisibleItemScrollOffset
+          else listState.firstVisibleItemScrollOffset
+        index == 0 && offset <= topOffsetThresholdPx
       }
-      .collect { (index, offset) ->
-        if (index == 0 && offset <= topSnapThresholdPx) {
-          isHeaderCollapsed = false
-          anchorIndex = index
-          anchorOffset = offset
-          lastDirection = 0
-        } else {
-          val deltaDir =
-            when {
-              index > lastIndex || (index == lastIndex && offset > lastOffset) -> 1
-              index < lastIndex || (index == lastIndex && offset < lastOffset) -> -1
-              else -> 0
-            }
-          if (deltaDir != 0) {
-            if (deltaDir != lastDirection) {
-              anchorIndex = lastIndex
-              anchorOffset = lastOffset
-              lastDirection = deltaDir
-            }
-            if (deltaDir == 1) {
-              if (index > anchorIndex || (index == anchorIndex && offset - anchorOffset >= collapseStepPx)) {
-                isHeaderCollapsed = true
-                anchorIndex = index
-                anchorOffset = offset
-              }
+      .distinctUntilChanged()
+      .collect { atTop ->
+        if (atTop && headerState == LibraryHeaderState.COLLAPSED) {
+          val waitMs =
+            maxOf(0L, scrollAccumulator.cooldownUntilUptimeMs - SystemClock.uptimeMillis())
+          if (waitMs > 0L) delay(waitMs)
+          while (collapseFractionAnim.isRunning) {
+            delay(16L)
+          }
+          val stillAtTop =
+            if (isGridActive) {
+              gridState.firstVisibleItemIndex == 0 &&
+                gridState.firstVisibleItemScrollOffset <= topOffsetThresholdPx
             } else {
-              if (index < anchorIndex || (index == anchorIndex && anchorOffset - offset >= collapseStepPx)) {
-                isHeaderCollapsed = false
-                anchorIndex = index
-                anchorOffset = offset
-              }
+              listState.firstVisibleItemIndex == 0 &&
+                listState.firstVisibleItemScrollOffset <= topOffsetThresholdPx
             }
+          if (stillAtTop && headerState == LibraryHeaderState.COLLAPSED) {
+            scrollAccumulator.cooldownUntilUptimeMs = SystemClock.uptimeMillis() + HEADER_COOLDOWN_MS
+            scrollAccumulator.reset()
+            headerState = LibraryHeaderState.EXPANDED
           }
         }
-        lastIndex = index
-        lastOffset = offset
       }
   }
 
-  val collapseFraction by
-    animateFloatAsState(
-      targetValue = if (isHeaderCollapsed) 1f else 0f,
-      animationSpec =
-        if (reduceMotion) snap()
-        else tween(durationMillis = HEADER_COLLAPSE_ANIM_MS, easing = EditorialCollapseEasing),
-      label = "library_header_collapse",
-    )
+  val collapseFraction = collapseFractionAnim.value
 
   val activeReadingCount =
     remember(uiState.readingCount, uiState.books, uiState.totalCatalogCount) {
@@ -291,7 +443,7 @@ fun LibraryScreen(
       } else {
         val availableWidthDp =
           with(density) { containerWidthPx.toDp() }.coerceAtMost(960.dp) - (horizontalPadding * 2)
-        val shelfInnerWidth = (availableWidthDp - (DipeSpacing.xs * 2)).coerceAtLeast(48.dp)
+        val shelfInnerWidth = (availableWidthDp - (DipeSpacing.md * 2)).coerceAtLeast(48.dp)
         (((shelfInnerWidth + DipeSpacing.xs) / (48.dp + DipeSpacing.xs)).toInt()).coerceAtLeast(1)
       }
     }
@@ -319,6 +471,7 @@ fun LibraryScreen(
 
     Box(modifier = Modifier.widthIn(max = 960.dp).fillMaxSize()) {
       LibraryHeaderReserveScaffold(
+        onHeaderHeightMeasured = { scrollAccumulator.reservedHeaderHeightPx = it },
         header = {
           if (isLandscape) {
             LibraryLandscapeHeader(
@@ -328,6 +481,7 @@ fun LibraryScreen(
               activeGenreName = activeGenre?.localizedName(language),
               viewMode = uiState.viewMode,
               hasActiveSheetBadge = hasActiveSheetBadge,
+              isCollapsed = headerState == LibraryHeaderState.COLLAPSED,
               collapseFraction = collapseFraction,
               onSearchChange = onSearchChange,
               onStatusFilterChange = onStatusFilterChange,
@@ -345,6 +499,7 @@ fun LibraryScreen(
               activeGenreName = activeGenre?.localizedName(language),
               viewMode = uiState.viewMode,
               hasActiveSheetBadge = hasActiveSheetBadge,
+              isCollapsed = headerState == LibraryHeaderState.COLLAPSED,
               collapseFraction = collapseFraction,
               onSearchChange = onSearchChange,
               onStatusFilterChange = onStatusFilterChange,
@@ -356,7 +511,7 @@ fun LibraryScreen(
           }
         },
         body = { reservedTopHeight ->
-          val listTopPadding = reservedTopHeight + DipeSpacing.sm
+          val listTopPadding = reservedTopHeight + DipeSpacing.md
           when {
             uiState.totalCatalogCount == 0 -> {
               Box(
@@ -402,7 +557,10 @@ fun LibraryScreen(
               LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize().testTag("library_grid"),
+                modifier =
+                  Modifier.fillMaxSize()
+                    .nestedScroll(headerNestedScrollConnection)
+                    .testTag("library_grid"),
                 contentPadding =
                   PaddingValues(
                     start = horizontalPadding,
@@ -421,6 +579,7 @@ fun LibraryScreen(
                   val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                   LibraryGridCard(
                     book = book,
+                    coverProgressProvider = screenCoverProgressProvider,
                     onClick = onBookClick,
                   )
                 }
@@ -436,7 +595,10 @@ fun LibraryScreen(
 
               LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().testTag("library_lazy_column"),
+                modifier =
+                  Modifier.fillMaxSize()
+                    .nestedScroll(headerNestedScrollConnection)
+                    .testTag("library_lazy_column"),
                 contentPadding =
                   PaddingValues(
                     start = horizontalPadding,
@@ -457,6 +619,7 @@ fun LibraryScreen(
                       val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                       LibraryListRow(
                         book = book,
+                        coverProgressProvider = screenCoverProgressProvider,
                         onClick = onBookClick,
                         onChangeStatus = { statusDialogBook = book },
                         onViewDetails = onBookClick,
@@ -473,6 +636,7 @@ fun LibraryScreen(
                     ) { shelfBooks ->
                       LibraryShelfRow(
                         shelfBooks = shelfBooks,
+                        coverProgressProvider = screenCoverProgressProvider,
                         onOpenBook = onOpenBook,
                       )
                     }
@@ -487,6 +651,7 @@ fun LibraryScreen(
                       val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                       LibraryGalleryItem(
                         book = book,
+                        coverProgressProvider = screenCoverProgressProvider,
                         onClick = onBookClick,
                       )
                     }
@@ -680,6 +845,7 @@ fun LibraryScreen(
 
 @Composable
 private fun LibraryHeaderReserveScaffold(
+  onHeaderHeightMeasured: (Int) -> Unit,
   header: @Composable () -> Unit,
   body: @Composable (reservedHeaderHeight: Dp) -> Unit,
 ) {
@@ -688,6 +854,7 @@ private fun LibraryHeaderReserveScaffold(
     val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
     val headerPlaceables = subcompose("header", header).map { it.measure(looseConstraints) }
     val headerHeightPx = headerPlaceables.maxOfOrNull { it.height } ?: 0
+    onHeaderHeightMeasured(headerHeightPx)
     val headerHeightDp = with(density) { headerHeightPx.toDp() }
     val bodyPlaceables =
       subcompose("body") { body(headerHeightDp) }.map { it.measure(constraints) }
@@ -708,6 +875,7 @@ private fun LibraryPortraitHeader(
   activeGenreName: String?,
   viewMode: LibraryViewMode,
   hasActiveSheetBadge: Boolean,
+  isCollapsed: Boolean,
   collapseFraction: Float,
   onSearchChange: (String) -> Unit,
   onStatusFilterChange: (ReadingStatus?) -> Unit,
@@ -720,6 +888,10 @@ private fun LibraryPortraitHeader(
   var topSectionHeightPx by remember { mutableIntStateOf(0) }
   val topOffsetPx = collapseFraction * topSectionHeightPx.toFloat()
   val topFadeAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
+  val isCompactSearch = isCollapsed || collapseFraction > 0.25f
+  val searchPlaceholder =
+    if (isCompactSearch) stringResource(R.string.library_search_placeholder_compact)
+    else stringResource(R.string.library_search_placeholder)
 
   val buttonSizePx = remember(density) { with(density) { 48.dp.toPx() } }
   val buttonGapPx = remember(density) { with(density) { DipeSpacing.compact.toPx() } }
@@ -803,11 +975,12 @@ private fun LibraryPortraitHeader(
           CompactEditorialSearchPill(
             query = searchQuery,
             onQueryChange = onSearchChange,
-            placeholder = stringResource(R.string.library_search_placeholder),
+            placeholder = searchPlaceholder,
             clearContentDescription = stringResource(R.string.library_clear_search),
             inputTestTag = "library_search_input",
             imeAction = ImeAction.Done,
             trailingInsetPx = { twoButtonsSlotPx + (collapseFraction * addSlotPx) },
+            placeholderOverflowClip = isCompactSearch,
             modifier = Modifier.fillMaxWidth(),
           )
 
@@ -871,6 +1044,7 @@ private fun LibraryLandscapeHeader(
   activeGenreName: String?,
   viewMode: LibraryViewMode,
   hasActiveSheetBadge: Boolean,
+  isCollapsed: Boolean,
   collapseFraction: Float,
   onSearchChange: (String) -> Unit,
   onStatusFilterChange: (ReadingStatus?) -> Unit,
@@ -883,6 +1057,10 @@ private fun LibraryLandscapeHeader(
   val titleGapPx = remember(density) { with(density) { DipeSpacing.compact.toPx() } }
   var titleSlotWidthPx by remember { mutableIntStateOf(0) }
   val titleAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
+  val isCompactSearch = isCollapsed || collapseFraction > 0.25f
+  val searchPlaceholder =
+    if (isCompactSearch) stringResource(R.string.library_search_placeholder_compact)
+    else stringResource(R.string.library_search_placeholder)
 
   Surface(color = MaterialTheme.colorScheme.background) {
     Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
@@ -914,11 +1092,12 @@ private fun LibraryLandscapeHeader(
             CompactEditorialSearchPill(
               query = searchQuery,
               onQueryChange = onSearchChange,
-              placeholder = stringResource(R.string.library_search_placeholder),
+              placeholder = searchPlaceholder,
               clearContentDescription = stringResource(R.string.library_clear_search),
               inputTestTag = "library_search_input",
               imeAction = ImeAction.Done,
               leadingInsetPx = { (1f - collapseFraction) * titleSlotWidthPx.toFloat() },
+              placeholderOverflowClip = isCompactSearch,
               modifier = Modifier.fillMaxWidth(),
             )
           }
@@ -1278,6 +1457,7 @@ private fun viewModePillLabel(mode: LibraryViewMode): String =
 @Composable
 private fun LibraryGridCard(
   book: CatalogBook,
+  coverProgressProvider: () -> Float,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -1300,8 +1480,9 @@ private fun LibraryGridCard(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
-      animateEntrance = true,
+      shadowElevation = 8.dp,
       entranceKey = "lib_grid_${book.id}",
+      entranceProgress = coverProgressProvider,
       bottomProgressPercent = if (showActiveProgress) book.activeProgressPercent else null,
       widthHintDp = 160.dp,
       modifier = Modifier.fillMaxWidth(),
@@ -1435,6 +1616,7 @@ private fun LibraryGridStatusAndLanguageRow(
 @Composable
 private fun LibraryListRow(
   book: CatalogBook,
+  coverProgressProvider: () -> Float,
   onClick: () -> Unit,
   onChangeStatus: () -> Unit,
   onViewDetails: () -> Unit,
@@ -1451,7 +1633,7 @@ private fun LibraryListRow(
     modifier = Modifier.testTag("library_list_book_${book.id}"),
     containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
     shape = MaterialTheme.shapes.medium,
-    contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
+    contentPadding = PaddingValues(DipeSpacing.md),
     onClick = onClick,
   ) {
     Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
@@ -1467,8 +1649,9 @@ private fun LibraryListRow(
           coverUri = book.coverUri,
           compact = true,
           elevated = true,
-          animateEntrance = true,
+          shadowElevation = 8.dp,
           entranceKey = "lib_list_${book.id}",
+          entranceProgress = coverProgressProvider,
           widthHintDp = 50.dp,
           modifier = Modifier.width(50.dp),
         )
@@ -1620,13 +1803,14 @@ private fun LibraryListRow(
 @Composable
 private fun LibraryShelfRow(
   shelfBooks: List<CatalogBook>,
+  coverProgressProvider: () -> Float,
   onOpenBook: (Long) -> Unit,
 ) {
   Column(
-    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md, bottom = DipeSpacing.sm),
+    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md, bottom = DipeSpacing.md),
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.xs),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.md),
       horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
       verticalAlignment = Alignment.Bottom,
     ) {
@@ -1642,8 +1826,9 @@ private fun LibraryShelfRow(
           hasActiveReading = book.status == ReadingStatus.READING,
           hasMultipleCopies = book.copyCount > 1,
           elevated = true,
-          animateEntrance = true,
+          shadowElevation = 8.dp,
           entranceKey = "lib_shelf_${book.id}",
+          entranceProgress = coverProgressProvider,
           modifier =
             Modifier.clickable(onClick = onBookClick)
               .testTag("library_shelf_book_${book.id}"),
@@ -1668,6 +1853,7 @@ private fun LibraryShelfRow(
 @Composable
 private fun LibraryGalleryItem(
   book: CatalogBook,
+  coverProgressProvider: () -> Float,
   onClick: () -> Unit,
 ) {
   val language = LocalAppLanguage.current
@@ -1697,8 +1883,9 @@ private fun LibraryGalleryItem(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
-        animateEntrance = true,
+        shadowElevation = 8.dp,
         entranceKey = "lib_gallery_${book.id}",
+        entranceProgress = coverProgressProvider,
         widthHintDp = 196.dp,
         modifier = Modifier.width(196.dp),
       )

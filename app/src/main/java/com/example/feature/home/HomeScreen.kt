@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -144,6 +145,24 @@ fun HomeScreen(
     return
   }
 
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  var homeInitialEntranceDone by rememberSaveable { mutableStateOf(reduceMotion) }
+  val screenCoverProgress =
+    remember(reduceMotion) { Animatable(if (reduceMotion || homeInitialEntranceDone) 1f else 0f) }
+  LaunchedEffect(reduceMotion, featuredReading != null || secondaryReading.isNotEmpty()) {
+    if (reduceMotion || homeInitialEntranceDone) {
+      screenCoverProgress.snapTo(1f)
+      homeInitialEntranceDone = true
+    } else if (featuredReading != null || secondaryReading.isNotEmpty()) {
+      screenCoverProgress.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
+      )
+      homeInitialEntranceDone = true
+    }
+  }
+  val screenCoverProgressProvider: () -> Float = { screenCoverProgress.value }
+
   val centerPrimaryStage = secondaryReading.isEmpty()
   val configuration = LocalConfiguration.current
   val density = LocalDensity.current
@@ -226,6 +245,7 @@ fun HomeScreen(
               viewportMaxHeight = viewportMaxHeight,
               stageAvailableHeight = minStageHeight,
               language = language,
+              coverProgressProvider = screenCoverProgressProvider,
               onClick = onFeaturedClick,
               onUpdateProgress = {
                 progressSheetFocusTotal = false
@@ -242,16 +262,24 @@ fun HomeScreen(
 
       if (secondaryReading.isNotEmpty()) {
         item(key = "home_secondary_reading", contentType = "secondary_reading") {
-          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
+          Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm)) {
             EditorialSectionHeader(title = stringResource(R.string.home_section_also_reading))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md)) {
+            LazyRow(
+              contentPadding = PaddingValues(DipeSpacing.md),
+              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+            ) {
               items(
                 items = secondaryReading,
                 key = { it.id },
                 contentType = { "reading_plate" },
               ) { book ->
                 val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
-                CurrentlyReadingPlate(book = book, language = language, onClick = onBookClick)
+                CurrentlyReadingPlate(
+                  book = book,
+                  language = language,
+                  entranceProgress = screenCoverProgressProvider,
+                  onClick = onBookClick,
+                )
               }
             }
           }
@@ -302,6 +330,7 @@ private fun FeaturedReadingShowcase(
   viewportMaxHeight: Dp,
   stageAvailableHeight: Dp,
   language: AppLanguage,
+  coverProgressProvider: () -> Float,
   onClick: () -> Unit,
   onUpdateProgress: () -> Unit,
   onDefineTotal: () -> Unit,
@@ -324,16 +353,12 @@ private fun FeaturedReadingShowcase(
 
   val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
-  val coverProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val titleMetaProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val progressStageProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val buttonsProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
 
   if (!reduceMotion) {
     LaunchedEffect(book.id) {
-      launch {
-        coverProgress.animateTo(1f, tween(durationMillis = 600, easing = FastOutSlowInEasing))
-      }
       launch {
         delay(70L)
         titleMetaProgress.animateTo(1f, tween(durationMillis = 340, easing = FastOutSlowInEasing))
@@ -350,7 +375,6 @@ private fun FeaturedReadingShowcase(
   }
 
   val risePx = with(density) { 14.dp.toPx() }
-  val coverProgressProvider: () -> Float = { coverProgress.value }
   val titleMetaCascadeModifier =
     Modifier.graphicsLayer {
       val p = titleMetaProgress.value
@@ -377,7 +401,7 @@ private fun FeaturedReadingShowcase(
       if (isLandscape) {
         minOf(
           viewportMaxHeight * 0.64f,
-          (stageAvailableHeight - 28.dp).coerceAtLeast(140.dp),
+          (stageAvailableHeight - 32.dp).coerceAtLeast(140.dp),
         ).coerceAtLeast(140.dp)
       } else {
         (viewportMaxHeight * 0.64f).coerceAtLeast(150.dp)
@@ -393,7 +417,7 @@ private fun FeaturedReadingShowcase(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
-        modifier = Modifier.padding(14.dp),
+        modifier = Modifier.padding(16.dp),
         contentAlignment = Alignment.Center,
       ) {
         BookCoverArtwork(
@@ -402,6 +426,7 @@ private fun FeaturedReadingShowcase(
           isFavorite = book.isFavorite,
           coverUri = book.coverUri,
           elevated = true,
+          shadowElevation = 12.dp,
           entranceKey = "home_featured_${book.id}",
           entranceProgress = coverProgressProvider,
           widthHintDp = maxCoverWidthHint,
@@ -440,19 +465,25 @@ private fun FeaturedReadingShowcase(
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       val featuredWidth = if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp
-      BookCoverArtwork(
-        title = book.title,
-        author = book.author,
-        isFavorite = book.isFavorite,
-        coverUri = book.coverUri,
-        elevated = true,
-        entranceKey = "home_featured_${book.id}",
-        entranceProgress = coverProgressProvider,
-        widthHintDp = featuredWidth,
-        modifier = Modifier.width(featuredWidth),
-      )
+      Box(
+        modifier = Modifier.padding(16.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        BookCoverArtwork(
+          title = book.title,
+          author = book.author,
+          isFavorite = book.isFavorite,
+          coverUri = book.coverUri,
+          elevated = true,
+          shadowElevation = 12.dp,
+          entranceKey = "home_featured_${book.id}",
+          entranceProgress = coverProgressProvider,
+          widthHintDp = featuredWidth,
+          modifier = Modifier.width(featuredWidth),
+        )
+      }
 
-      Spacer(modifier = Modifier.height(DipeSpacing.lg))
+      Spacer(modifier = Modifier.height(DipeSpacing.sm))
 
       FeaturedBookDetails(
         book = book,
@@ -827,13 +858,13 @@ private fun FeaturedBookDetails(
 private fun CurrentlyReadingPlate(
   book: CatalogBook,
   language: AppLanguage,
+  entranceProgress: () -> Float,
   onClick: () -> Unit,
 ) {
   Column(
     modifier =
       Modifier.width(120.dp)
         .clickable(onClick = onClick)
-        .padding(DipeSpacing.xs)
         .testTag("home_reading_book_${book.id}"),
     verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
   ) {
@@ -843,8 +874,9 @@ private fun CurrentlyReadingPlate(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
-      animateEntrance = true,
+      shadowElevation = 12.dp,
       entranceKey = "home_plate_${book.id}",
+      entranceProgress = entranceProgress,
       widthHintDp = 120.dp,
       modifier = Modifier.fillMaxWidth(),
     )

@@ -84,6 +84,7 @@
 
     <!-- Library -->
     <string name="library_search_placeholder">Search title or author</string>
+    <string name="library_search_placeholder_compact">Search</string>
     <string name="library_clear_search">Clear search</string>
     <string name="library_add_book">Catalog book</string>
     <string name="library_view_grid">Grid</string>
