@@ -27,9 +27,13 @@ class CoverUpgradeCoordinator(
   private val hasStartedSession = AtomicBoolean(false)
 
   suspend fun upgradeLowResCoversIfNeeded() {
+    if (!connectivityChecker.isOnline()) return
     if (!hasStartedSession.compareAndSet(false, true)) return
     withContext(Dispatchers.IO) {
-      if (!connectivityChecker.isOnline()) return@withContext
+      if (!connectivityChecker.isOnline()) {
+        hasStartedSession.set(false)
+        return@withContext
+      }
       val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
       val preferredLang =
         runCatching { preferencesRepository.preferences.first().language.tag }.getOrNull()
@@ -38,8 +42,8 @@ class CoverUpgradeCoordinator(
 
       for (edition in editions) {
         if (!connectivityChecker.isOnline()) break
+        val attemptKey = "edition_${edition.id}"
         try {
-          val attemptKey = "edition_${edition.id}"
           val lastAttempt = prefs.getLong(attemptKey, 0L)
           if (lastAttempt > 0L && now - lastAttempt < RETRY_COOLDOWN_MS) continue
 
@@ -99,15 +103,25 @@ class CoverUpgradeCoordinator(
               .filter { it.startsWith("https://") || it.startsWith("http://") }
               .distinct()
 
-          prefs.edit().putLong(attemptKey, now).apply()
-          if (allCandidateUrls.isEmpty()) continue
+          if (allCandidateUrls.isEmpty()) {
+            // Short cooldown when no candidate URLs were returned (e.g., transient API timeout)
+            prefs.edit().putLong(attemptKey, now - RETRY_COOLDOWN_MS + TRANSIENT_RETRY_COOLDOWN_MS).apply()
+            continue
+          }
 
           val requiredWidth = maxOf(TARGET_MIN_WIDTH_PX, currentWidth + 60)
           val upgradedPath =
             coverStorageManager.downloadBestAvailableCover(
               imageUrls = allCandidateUrls,
               minPreferredWidth = requiredWidth,
-            ) ?: continue
+            )
+
+          if (upgradedPath == null) {
+            if (connectivityChecker.isOnline()) {
+              prefs.edit().putLong(attemptKey, now).apply()
+            }
+            continue
+          }
 
           val newDims = coverStorageManager.getLocalCoverDimensions(upgradedPath)
           val isBetter =
@@ -117,6 +131,7 @@ class CoverUpgradeCoordinator(
 
           if (!isBetter) {
             coverStorageManager.deleteCoverIfManaged(upgradedPath)
+            prefs.edit().putLong(attemptKey, now).apply()
             continue
           }
 
@@ -127,13 +142,14 @@ class CoverUpgradeCoordinator(
           }
 
           editionDao.updateEdition(latest.copy(coverUri = upgradedPath))
+          prefs.edit().putLong(attemptKey, now).apply()
           if (!isRemote && existingUri != upgradedPath) {
             coverStorageManager.deleteCoverIfManaged(existingUri)
           }
         } catch (ce: CancellationException) {
           throw ce
         } catch (_: Throwable) {
-          // Best-effort background cover upgrade; ignore individual failures
+          // Best-effort background cover upgrade; do not lock 7-day cooldown on unexpected error
         }
       }
     }
@@ -152,5 +168,6 @@ class CoverUpgradeCoordinator(
     const val PREFS_NAME = "dipe_cover_upgrade_prefs"
     const val TARGET_MIN_WIDTH_PX = 320
     const val RETRY_COOLDOWN_MS = 7L * 24 * 60 * 60 * 1000
+    const val TRANSIENT_RETRY_COOLDOWN_MS = 6L * 60 * 60 * 1000
   }
 }

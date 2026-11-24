@@ -297,17 +297,19 @@ class GoogleBooksAdapter(
       )
     val lang = langAssessment.normalizedCode
     val cleanSynopsis = BibliographicMath.stripHtmlTags(info.description)
-    val rawImage =
-      info.imageLinks?.extraLarge
-        ?: info.imageLinks?.large
-        ?: info.imageLinks?.medium
-        ?: info.imageLinks?.small
-        ?: info.imageLinks?.thumbnail
-        ?: info.imageLinks?.smallThumbnail
+    val rawImages =
+      listOfNotNull(
+        info.imageLinks?.extraLarge,
+        info.imageLinks?.large,
+        info.imageLinks?.medium,
+        info.imageLinks?.small,
+        info.imageLinks?.thumbnail,
+        info.imageLinks?.smallThumbnail,
+      )
 
     val covers =
       CoverRanker.buildGoogleBooksCoverCandidates(
-        rawUrl = rawImage,
+        rawUrls = rawImages,
         matchesIsbn = isbn13 != null || isbn10 != null,
         matchesPublisherYear = pub != null && year != null,
         matchesLanguage = lang != null,

@@ -1077,7 +1077,7 @@ class SearchAuditRegressionTest {
     // Verify bounded SQLite cache row size (< 850 KB limit avoids CursorWindow SQLiteBlobTooBigException)
     val cachedRow =
       db.searchCacheDao().getValidEntry(
-        cacheKey = "v6:q:harry potter e a pedra filosofal:exl=:pref=pt:exp=false",
+        cacheKey = "v7:q:harry potter e a pedra filosofal:exl=:pref=pt:exp=false",
         nowMillis = System.currentTimeMillis(),
       )
     assertTrue("Cache entry must be saved cleanly", cachedRow != null)

@@ -111,10 +111,15 @@ class HybridSearchOrchestrator(
     val entries: List<PrecomputedLocalBook>,
   )
 
+  private data class MemoryCacheEntry(
+    val response: HybridSearchResponse,
+    val cachedAtMs: Long,
+  )
+
   private val memoryCacheLock = Any()
   private val memoryCache =
-    object : LinkedHashMap<String, HybridSearchResponse>(MEMORY_CACHE_MAX_ENTRIES, 0.75f, true) {
-      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, HybridSearchResponse>?): Boolean =
+    object : LinkedHashMap<String, MemoryCacheEntry>(MEMORY_CACHE_MAX_ENTRIES, 0.75f, true) {
+      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MemoryCacheEntry>?): Boolean =
         size > MEMORY_CACHE_MAX_ENTRIES
     }
 
@@ -181,7 +186,16 @@ class HybridSearchOrchestrator(
 
     // 1. Check fast in-memory cache first
     if (!forceRefresh) {
-      val memHit = synchronized(memoryCacheLock) { memoryCache[cacheKey] }
+      val memHit =
+        synchronized(memoryCacheLock) {
+          val entry = memoryCache[cacheKey]
+          if (entry != null && (!online || (startClockMs - entry.cachedAtMs) <= MEMORY_CACHE_TTL_MS)) {
+            entry.response
+          } else {
+            if (entry != null && online) memoryCache.remove(cacheKey)
+            null
+          }
+        }
       if (memHit != null) {
         val elapsed = (System.currentTimeMillis() - startClockMs).coerceAtLeast(1L)
         val refreshed =
@@ -299,7 +313,9 @@ class HybridSearchOrchestrator(
               firstResultLatencyMs = elapsed,
               totalLatencyMs = elapsed,
             )
-          synchronized(memoryCacheLock) { memoryCache[cacheKey] = cachedResponse }
+          synchronized(memoryCacheLock) {
+            memoryCache[cacheKey] = MemoryCacheEntry(cachedResponse, System.currentTimeMillis())
+          }
           send(cachedResponse)
           return@channelFlow
         }
@@ -617,7 +633,9 @@ class HybridSearchOrchestrator(
           (st.state == ProviderOutcomeState.ERROR || st.state == ProviderOutcomeState.RATE_LIMITED)
       }
     if (hasAnyLiteraryResults && !allAdaptersErrored && !essentialSourceDegraded) {
-      synchronized(memoryCacheLock) { memoryCache[cacheKey] = finalResp }
+      synchronized(memoryCacheLock) {
+        memoryCache[cacheKey] = MemoryCacheEntry(finalResp, System.currentTimeMillis())
+      }
       val ttlMillis = if (isIsbn) ISBN_CACHE_TTL_MS else QUERY_CACHE_TTL_MS
       val sourcesList =
         finalResp.sourceStatuses
@@ -779,7 +797,9 @@ class HybridSearchOrchestrator(
         hasMoreResults = hasMore,
         totalFoundHint = statusList.mapNotNull { it.totalAvailable }.maxOrNull() ?: currentResponse.totalFoundHint,
       )
-    synchronized(memoryCacheLock) { memoryCache[cacheKey] = nextResponse }
+    synchronized(memoryCacheLock) {
+      memoryCache[cacheKey] = MemoryCacheEntry(nextResponse, System.currentTimeMillis())
+    }
     return nextResponse
   }
 
@@ -940,7 +960,8 @@ class HybridSearchOrchestrator(
     synchronized(memoryCacheLock) {
       val keys = memoryCache.keys.toList()
       for (k in keys) {
-        val cached = memoryCache[k] ?: continue
+        val entry = memoryCache[k] ?: continue
+        val cached = entry.response
         var changed = false
         val newPrimary =
           cached.workGroups.map { g ->
@@ -965,10 +986,14 @@ class HybridSearchOrchestrator(
           }
         if (changed) {
           memoryCache[k] =
-            cached.copy(
-              workGroups = newPrimary,
-              secondaryWorkGroups = newSecondary,
-              derivativeWorkGroups = newDeriv,
+            MemoryCacheEntry(
+              response =
+                cached.copy(
+                  workGroups = newPrimary,
+                  secondaryWorkGroups = newSecondary,
+                  derivativeWorkGroups = newDeriv,
+                ),
+              cachedAtMs = System.currentTimeMillis(),
             )
         }
       }
@@ -1057,9 +1082,9 @@ class HybridSearchOrchestrator(
     val langPart = BibliographicMath.normalizeLanguageCode(preferredLanguage).orEmpty()
     val isbn = intent.parsedIsbn
     return if (isbn != null) {
-      "v6:isbn:${isbn.isbn13 ?: isbn.cleaned}:lang=$langPart"
+      "v7:isbn:${isbn.isbn13 ?: isbn.cleaned}:lang=$langPart"
     } else {
-      "v6:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
+      "v7:q:${intent.normalizedQuery}:exl=${intent.explicitLanguageRequest.orEmpty()}:pref=$langPart:exp=$expandSecondary"
     }
   }
 
@@ -1261,5 +1286,6 @@ class HybridSearchOrchestrator(
     const val ISBN_CACHE_TTL_MS = 15L * 24L * 60L * 60L * 1000L
     const val CACHE_MAX_ENTRIES = 120
     const val MEMORY_CACHE_MAX_ENTRIES = 24
+    const val MEMORY_CACHE_TTL_MS = 10L * 60L * 1000L
   }
 }

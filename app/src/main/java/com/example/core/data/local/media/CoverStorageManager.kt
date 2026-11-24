@@ -138,22 +138,19 @@ class InternalCoverStorageManager(
             .build()
         val tempFile = File.createTempFile("cover_dl_", ".tmp", context.cacheDir)
         tempSourceFile = tempFile
+        var responseContentType: String? = null
         okHttpClient.newCall(request).execute().use { response ->
           if (!response.isSuccessful) return@withContext null
+          responseContentType = response.header("Content-Type")
+          if (!CoverPlaceholderDetector.isValidImageContentType(responseContentType)) {
+            return@withContext null
+          }
           val body = response.body ?: return@withContext null
           body.byteStream().use { input ->
             FileOutputStream(tempFile).use { output -> input.copyTo(output) }
           }
         }
-        val length = tempFile.length()
-        if (!tempFile.exists() || length < 256L) {
-          return@withContext null
-        }
-        // Reject tiny placeholder responses (~9KB "image not available" PNG) on Google Books HD endpoints
-        val isGoogleHdProbe =
-          cleanUrl.contains("books.google.com") &&
-            (cleanUrl.contains("fife=w") || cleanUrl.contains("zoom=0") || cleanUrl.contains("frontcovers"))
-        if (isGoogleHdProbe && length in 1L..11_000L) {
+        if (CoverPlaceholderDetector.isGooglePlaceholderFile(cleanUrl, responseContentType, tempFile)) {
           return@withContext null
         }
         decodeAndSaveTempFile(tempFile, minWidth = 50, minHeight = 60)

@@ -64,10 +64,72 @@ class Bloco2ImprovementsTest {
       )
     assertEquals(2, compactUrls.size)
     assertFalse(compactUrls.any { "fife=w800" in it || "zoom=0" in it })
+    assertFalse(compactUrls.any { "/frontcovers/" in it && "zoom=1" in it })
 
     val expandedOl =
       CoverRanker.expandHdVariants("http://covers.openlibrary.org/b/id/12345-M.jpg")
     assertEquals("https://covers.openlibrary.org/b/id/12345-L.jpg", expandedOl.first())
+  }
+
+  @Test
+  fun coverRanker_preservesOpenLibraryFallbackAndNeverRewritesFrontcoversToZoom1() {
+    val googleCandidates =
+      CoverRanker.buildGoogleBooksCoverCandidates(
+        rawUrl = "http://books.google.com/books/content?id=VolXYZ&printsec=frontcover&img=1&zoom=1&edge=curl",
+        matchesIsbn = true,
+        matchesPublisherYear = true,
+        matchesLanguage = true,
+      )
+    val openLibraryCover =
+      CoverCandidate(
+        imageUrl = "https://covers.openlibrary.org/b/id/555123-L.jpg?default=false",
+        source = MetadataSource.OPEN_LIBRARY,
+        matchesIsbn = true,
+        matchesPublisherYear = true,
+        matchesLanguage = true,
+        widthHint = 333,
+        heightHint = 500,
+      )
+
+    val combined = CoverRanker.rankAndDeduplicate(googleCandidates + openLibraryCover)
+    assertEquals(MetadataSource.OPEN_LIBRARY, combined.first().source)
+
+    val compactFromGoogleFirst =
+      CoverRanker.selectForDisplaySize(
+        orderedUrls = googleCandidates.map { it.imageUrl } + openLibraryCover.imageUrl,
+        maxWidthDp = 52,
+      )
+    assertEquals(2, compactFromGoogleFirst.size)
+    assertFalse(compactFromGoogleFirst.any { "/frontcovers/" in it && "zoom=1" in it })
+    assertTrue(compactFromGoogleFirst.any { "books.google.com/books/content" in it && "zoom=1" in it })
+    assertTrue(compactFromGoogleFirst.any { "covers.openlibrary.org" in it && "-M.jpg" in it })
+
+    val appleQueryCandidates =
+      CoverRanker.buildAppleBooksCoverCandidates(
+        artworkUrl100 = "https://is1-ssl.mzstatic.com/image/thumb/Pub/100x100bb.jpg?v=2",
+        matchesIsbn = false,
+        matchesPublisherYear = false,
+        matchesLanguage = false,
+      )
+    assertTrue(appleQueryCandidates.any { "1200x1800bb.jpg?v=2" in it.imageUrl })
+    val compactApple = CoverRanker.selectForDisplaySize(appleQueryCandidates.map { it.imageUrl }, 44)
+    assertTrue(compactApple.first().contains("200x300bb.jpg?v=2"))
+
+    assertTrue(
+      com.example.core.data.local.media.CoverPlaceholderDetector.isGoogleBooksHost(
+        "https://books.google.com/books/publisher/content/images/frontcovers/VolXYZ?fife=w800"
+      )
+    )
+    assertFalse(
+      com.example.core.data.local.media.CoverPlaceholderDetector.isValidImageContentType(
+        "text/html; charset=utf-8"
+      )
+    )
+    assertTrue(
+      com.example.core.data.local.media.CoverPlaceholderDetector.isValidImageContentType(
+        "image/png"
+      )
+    )
   }
 
   @Test

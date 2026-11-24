@@ -25,7 +25,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +58,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Precision
 import com.example.R
+import com.example.core.data.local.media.CoverPlaceholderDetector
 import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
@@ -169,8 +169,8 @@ fun BookCoverArtwork(
       (listOfNotNull(coverUri?.takeIf { it.isNotBlank() }) + fallbackCoverUris.filter { it.isNotBlank() })
         .distinct()
     }
-  var activeUriIndex by remember(candidateUris) { mutableIntStateOf(0) }
-  val activeUri = candidateUris.getOrNull(activeUriIndex)
+  var rejectedUris by remember(candidateUris.firstOrNull()) { mutableStateOf(emptySet<String>()) }
+  val activeUri = candidateUris.firstOrNull { it !in rejectedUris }
   val density = LocalDensity.current
   val effectiveWidthDp = widthHintDp ?: if (compact) 52.dp else 160.dp
 
@@ -202,20 +202,26 @@ fun BookCoverArtwork(
     }
   val painter = imageRequest?.let { rememberAsyncImagePainter(model = it) }
   val painterState = painter?.state
-  val isTinyRemotePlaceholder =
+  val isInvalidRemotePlaceholder =
     if (painterState is AsyncImagePainter.State.Success && activeUri?.startsWith("http") == true) {
-      val w = painterState.result.drawable.intrinsicWidth
-      val h = painterState.result.drawable.intrinsicHeight
-      (w in 1..48) || (h in 1..48)
+      val drawable = painterState.result.drawable
+      val w = drawable.intrinsicWidth
+      val h = drawable.intrinsicHeight
+      (w in 1..48) ||
+        (h in 1..48) ||
+        (CoverPlaceholderDetector.isGoogleBooksHost(activeUri) &&
+          CoverPlaceholderDetector.isKnownGooglePlaceholderDrawable(drawable))
     } else {
       false
     }
 
-  LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
-    if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isTinyRemotePlaceholder)) {
-      if (activeUriIndex + 1 < candidateUris.size) {
-        activeUriIndex++
-      } else if (painterState is AsyncImagePainter.State.Error) {
+  LaunchedEffect(activeUri, painterState, isInvalidRemotePlaceholder) {
+    if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isInvalidRemotePlaceholder)) {
+      if (activeUri !in rejectedUris) {
+        rejectedUris = rejectedUris + activeUri
+      }
+      val hasNextCandidate = candidateUris.any { it != activeUri && it !in rejectedUris }
+      if (!hasNextCandidate && painterState is AsyncImagePainter.State.Error) {
         onImageLoadError?.invoke()
       }
     }
@@ -223,7 +229,7 @@ fun BookCoverArtwork(
   val isPhotoLoading =
     activeUri != null &&
       (painterState is AsyncImagePainter.State.Empty || painterState is AsyncImagePainter.State.Loading)
-  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isTinyRemotePlaceholder
+  val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isInvalidRemotePlaceholder
   val showTypographicCloth = activeUri == null || (!isPhotoLoading && !hasLoadedPhoto)
 
   val photoAlpha =

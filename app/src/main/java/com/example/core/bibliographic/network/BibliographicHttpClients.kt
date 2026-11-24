@@ -3,6 +3,7 @@ package com.example.core.bibliographic.network
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.example.core.data.local.media.CoverPlaceholderDetector
 import com.example.core.model.MetadataSource
 import com.example.core.model.ProviderOutcomeState
 import com.example.core.model.SearchEditionCandidate
@@ -20,6 +21,7 @@ import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 
 data class HttpTextSnapshot(
   val code: Int,
@@ -202,7 +204,27 @@ object BibliographicHttpClients {
               }
             }
             .build()
-        chain.proceed(request)
+        val response = chain.proceed(request)
+        val reqUrl = request.url.toString()
+        if (!response.isSuccessful || !CoverPlaceholderDetector.isGoogleBooksHost(reqUrl)) {
+          return@addInterceptor response
+        }
+        val body = response.body ?: return@addInterceptor response
+        val contentLength = body.contentLength()
+        if (contentLength > 8L * 1024L * 1024L) {
+          return@addInterceptor response
+        }
+        val mediaType = body.contentType()
+        val bytes = body.bytes()
+        if (CoverPlaceholderDetector.isGooglePlaceholderBytes(reqUrl, mediaType?.toString(), bytes)) {
+          return@addInterceptor response
+            .newBuilder()
+            .code(404)
+            .message("Google Books placeholder rejected")
+            .body(ByteArray(0).toResponseBody(null))
+            .build()
+        }
+        response.newBuilder().body(bytes.toResponseBody(mediaType)).build()
       }
       .build()
   }

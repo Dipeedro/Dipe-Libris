@@ -22,6 +22,7 @@ data class CoverCandidate(
   val matchesLanguage: Boolean = false,
   val widthHint: Int? = null,
   val heightHint: Int? = null,
+  val isSynthetic: Boolean = false,
 )
 
 @Immutable
@@ -146,7 +147,10 @@ data class SearchWorkGroup(
     get() = editions.firstNotNullOfOrNull { it.bestCover?.imageUrl }
 
   val previewFallbackCoverUrls: List<String>
-    get() = editions.flatMap { it.orderedCoverUrls }.distinct().drop(1)
+    get() {
+      val primary = previewCoverUrl
+      return editions.flatMap { it.orderedCoverUrls }.distinct().filterNot { it == primary }.take(10)
+    }
 
   val primaryTierEditions: List<SearchEditionCandidate>
     get() {
