@@ -246,7 +246,6 @@ fun AddBookSheet(
               },
               modifier =
                 Modifier.width(136.dp)
-                  .clip(MaterialTheme.shapes.small)
                   .clickable(onClick = launchGalleryPicker)
                   .testTag("add_book_pick_cover_button"),
             )

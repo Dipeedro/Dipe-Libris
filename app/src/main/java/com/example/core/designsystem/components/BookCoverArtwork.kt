@@ -2,6 +2,9 @@ package com.example.core.designsystem.components
 
 import android.graphics.BlurMaskFilter
 import android.os.Build
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,8 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,13 +48,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImagePainter
@@ -59,6 +64,7 @@ import coil.size.Precision
 import com.example.R
 import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeCoverTokens
 import com.example.core.designsystem.LocalDipeTypography
 import java.io.File
@@ -79,12 +85,14 @@ fun BookCoverArtwork(
   fallbackCoverUris: List<String> = emptyList(),
   compact: Boolean = false,
   elevated: Boolean = false,
+  shadowAlpha: (() -> Float)? = null,
   widthHintDp: Dp? = null,
   contentScale: ContentScale = ContentScale.Crop,
   onImageLoadError: (() -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
+  val reduceMotion = DipeTheme.motion.reduceMotion
   val coverCd = stringResource(R.string.cd_book_cover, title)
   val borderColor = MaterialTheme.colorScheme.outlineVariant
   val context = LocalContext.current
@@ -132,7 +140,7 @@ fun BookCoverArtwork(
           .data(data)
           .size(targetWidthPx, targetHeightPx)
           .precision(Precision.INEXACT)
-          .crossfade(!elevated && contentScale != ContentScale.Fit)
+          .crossfade(false)
           .build()
       }
     }
@@ -147,7 +155,7 @@ fun BookCoverArtwork(
       false
     }
 
-  androidx.compose.runtime.LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
+  LaunchedEffect(activeUri, painterState, isTinyRemotePlaceholder) {
     if (activeUri != null && (painterState is AsyncImagePainter.State.Error || isTinyRemotePlaceholder)) {
       if (activeUriIndex + 1 < candidateUris.size) {
         activeUriIndex++
@@ -156,7 +164,31 @@ fun BookCoverArtwork(
       }
     }
   }
+  val isPhotoLoading =
+    activeUri != null &&
+      (painterState is AsyncImagePainter.State.Empty || painterState is AsyncImagePainter.State.Loading)
   val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isTinyRemotePlaceholder
+  val showTypographicCloth = activeUri == null || (!isPhotoLoading && !hasLoadedPhoto)
+
+  val photoAlpha =
+    remember(activeUri, reduceMotion) {
+      Animatable(if (reduceMotion || hasLoadedPhoto) 1f else 0f)
+    }
+  var sawAsyncLoading by remember(activeUri) { mutableStateOf(false) }
+
+  LaunchedEffect(activeUri, painterState, hasLoadedPhoto, reduceMotion) {
+    if (painterState is AsyncImagePainter.State.Loading) {
+      sawAsyncLoading = true
+    }
+    if (hasLoadedPhoto && photoAlpha.value < 1f) {
+      if (reduceMotion || !sawAsyncLoading) {
+        photoAlpha.snapTo(1f)
+      } else {
+        photoAlpha.animateTo(1f, tween(durationMillis = 150, easing = FastOutSlowInEasing))
+      }
+    }
+  }
+
   val resolvedAspectRatio =
     if (contentScale == ContentScale.Fit && hasLoadedPhoto) {
       val drawable = (painterState as AsyncImagePainter.State.Success).result.drawable
@@ -181,10 +213,10 @@ fun BookCoverArtwork(
             rightCornerPx, rightCornerPx,
             leftCornerPx, leftCornerPx,
           )
-        val ambientDy = 4.dp.toPx()
-        val contactDy = 1.dp.toPx()
-        val ambientBlurPx = 10.dp.toPx()
-        val contactBlurPx = 3.dp.toPx()
+        val ambientDy = (if (compact) 2.dp else 4.dp).toPx()
+        val contactDy = (if (compact) 0.5.dp else 1.dp).toPx()
+        val ambientBlurPx = (if (compact) 4.dp else 10.dp).toPx()
+        val contactBlurPx = (if (compact) 1.5.dp else 3.dp).toPx()
         val ambientPath =
           android.graphics.Path().apply {
             addRoundRect(
@@ -251,7 +283,6 @@ fun BookCoverArtwork(
       Modifier
     }
 
-  val showClothFrame = !hasLoadedPhoto
   Box(
     modifier =
       modifier
@@ -259,75 +290,94 @@ fun BookCoverArtwork(
           ratio = resolvedAspectRatio,
           matchHeightConstraintsFirst = contentScale == ContentScale.Fit,
         )
-        .then(shadowModifier)
-        .clip(BookCoverShape)
-        .then(
-          if (showClothFrame) {
-            Modifier.background(palette.clothColor)
-              .border(0.75.dp, borderColor, BookCoverShape)
-          } else {
-            Modifier
-          }
-        )
         .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {
-    if (painter != null) {
-      Image(
-        painter = painter,
-        contentDescription = null,
-        contentScale = contentScale,
-        modifier = Modifier.fillMaxSize(),
-      )
-      if (hasLoadedPhoto) {
-        Spacer(
-          modifier =
-            Modifier.fillMaxSize().drawWithCache {
-              val spineGradient =
-                Brush.horizontalGradient(
-                  0.0f to Color(0x42000000),
-                  0.05f to Color(0x1EFFFFFF),
-                  0.09f to Color.Transparent,
-                  startX = 0f,
-                  endX = size.width,
-                )
-              val ribbonPath =
-                if (isFavorite) {
-                  val isTiny = compact || size.width < 92.dp.toPx()
-                  val rWidth = (if (isTiny) 5.dp else 8.dp).toPx()
-                  val rHeight = (if (isTiny) 14.dp else 23.dp).toPx()
-                  val rEnd = (if (isTiny) 6.dp else 13.dp).toPx()
-                  val rRight = size.width - rEnd
-                  val rLeft = rRight - rWidth
-                  val rMid = (rLeft + rRight) * 0.5f
-                  val notch = (if (isTiny) 2.5.dp else 3.5.dp).toPx()
-                  Path().apply {
-                    moveTo(rLeft, 0f)
-                    lineTo(rRight, 0f)
-                    lineTo(rRight, rHeight)
-                    lineTo(rMid, rHeight - notch)
-                    lineTo(rLeft, rHeight)
-                    close()
-                  }
-                } else {
-                  null
-                }
-              onDrawBehind {
-                drawRect(brush = spineGradient)
-                if (ribbonPath != null) {
-                  drawPath(path = ribbonPath, color = coverTokens.favoriteRibbon)
-                }
-              }
-            },
-        )
-      }
-    }
-
-    if (!hasLoadedPhoto) {
-      val coverWidth = effectiveWidthDp
+    if (elevated) {
       Box(
         modifier =
-          Modifier.fillMaxSize().drawWithCache {
+          Modifier.matchParentSize()
+            .graphicsLayer { alpha = (shadowAlpha?.invoke() ?: 1f).coerceIn(0f, 1f) }
+            .then(shadowModifier),
+      )
+    }
+
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .clip(BookCoverShape)
+          .then(
+            when {
+              showTypographicCloth ->
+                Modifier.background(palette.clothColor)
+                  .border(0.75.dp, borderColor, BookCoverShape)
+              isPhotoLoading || (hasLoadedPhoto && photoAlpha.value < 1f) ->
+                Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
+              else -> Modifier
+            }
+          ),
+      contentAlignment = Alignment.Center,
+    ) {
+      if (painter != null && activeUri != null) {
+        Image(
+          painter = painter,
+          contentDescription = null,
+          contentScale = contentScale,
+          modifier =
+            Modifier.fillMaxSize().graphicsLayer {
+              alpha =
+                if (reduceMotion || (hasLoadedPhoto && !sawAsyncLoading)) 1f else photoAlpha.value
+            },
+        )
+        if (hasLoadedPhoto) {
+          Spacer(
+            modifier =
+              Modifier.fillMaxSize().drawWithCache {
+                val spineGradient =
+                  Brush.horizontalGradient(
+                    0.0f to Color(0x42000000),
+                    0.05f to Color(0x1EFFFFFF),
+                    0.09f to Color.Transparent,
+                    startX = 0f,
+                    endX = size.width,
+                  )
+                val ribbonPath =
+                  if (isFavorite) {
+                    val isTiny = compact || size.width < 92.dp.toPx()
+                    val rWidth = (if (isTiny) 5.dp else 8.dp).toPx()
+                    val rHeight = (if (isTiny) 14.dp else 23.dp).toPx()
+                    val rEnd = (if (isTiny) 6.dp else 13.dp).toPx()
+                    val rRight = size.width - rEnd
+                    val rLeft = rRight - rWidth
+                    val rMid = (rLeft + rRight) * 0.5f
+                    val notch = (if (isTiny) 2.5.dp else 3.5.dp).toPx()
+                    Path().apply {
+                      moveTo(rLeft, 0f)
+                      lineTo(rRight, 0f)
+                      lineTo(rRight, rHeight)
+                      lineTo(rMid, rHeight - notch)
+                      lineTo(rLeft, rHeight)
+                      close()
+                    }
+                  } else {
+                    null
+                  }
+                onDrawBehind {
+                  drawRect(brush = spineGradient)
+                  if (ribbonPath != null) {
+                    drawPath(path = ribbonPath, color = coverTokens.favoriteRibbon)
+                  }
+                }
+              },
+          )
+        }
+      }
+
+      if (showTypographicCloth) {
+        val coverWidth = effectiveWidthDp
+        Box(
+          modifier =
+            Modifier.fillMaxSize().drawWithCache {
             val spineX = size.width * 0.085f
             val spineGradient =
               Brush.horizontalGradient(
@@ -494,6 +544,7 @@ fun BookCoverArtwork(
     }
   }
 }
+}
 
 @Composable
 fun BookSpineTile(
@@ -504,6 +555,8 @@ fun BookSpineTile(
   modifier: Modifier = Modifier,
   hasActiveReading: Boolean = false,
   hasMultipleCopies: Boolean = false,
+  elevated: Boolean = false,
+  shadowAlpha: (() -> Float)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
@@ -512,91 +565,178 @@ fun BookSpineTile(
   val palette =
     remember(title, author, coverTokens) { coverTokens.paletteFor(title = title, author = author) }
 
+  val spineShadowModifier =
+    if (elevated) {
+      Modifier.drawWithCache {
+        val cornerPx = DipeRadii.sharp.toPx()
+        val radii = FloatArray(8) { cornerPx }
+        val ambientDy = 2.dp.toPx()
+        val contactDy = 0.5.dp.toPx()
+        val ambientBlurPx = 4.dp.toPx()
+        val contactBlurPx = 1.5.dp.toPx()
+        val ambientPath =
+          android.graphics.Path().apply {
+            addRoundRect(
+              0f,
+              ambientDy,
+              size.width,
+              size.height + ambientDy,
+              radii,
+              android.graphics.Path.Direction.CW,
+            )
+          }
+        val contactPath =
+          android.graphics.Path().apply {
+            addRoundRect(
+              0f,
+              contactDy,
+              size.width,
+              size.height + contactDy,
+              radii,
+              android.graphics.Path.Direction.CW,
+            )
+          }
+        val ambientPaint =
+          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.Black.copy(alpha = 0.22f).toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+              maskFilter = BlurMaskFilter(ambientBlurPx, BlurMaskFilter.Blur.NORMAL)
+            }
+          }
+        val contactPaint =
+          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.Black.copy(alpha = 0.14f).toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+              maskFilter = BlurMaskFilter(contactBlurPx, BlurMaskFilter.Blur.NORMAL)
+            }
+          }
+        val fallbackPath =
+          Path().apply {
+            addRoundRect(
+              RoundRect(
+                left = 0f,
+                top = contactDy,
+                right = size.width,
+                bottom = size.height + contactDy,
+                cornerRadius = CornerRadius(cornerPx),
+              )
+            )
+          }
+        onDrawBehind {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            drawIntoCanvas { canvas ->
+              canvas.nativeCanvas.drawPath(ambientPath, ambientPaint)
+              canvas.nativeCanvas.drawPath(contactPath, contactPaint)
+            }
+          } else {
+            drawPath(path = fallbackPath, color = Color.Black.copy(alpha = 0.08f))
+          }
+        }
+      }
+    } else {
+      Modifier
+    }
+
   Box(
     modifier =
       modifier
         .height(height)
         .width(48.dp)
-        .clip(BookSpineShape)
-        .background(palette.clothColor)
-        .border(0.75.dp, borderColor, BookSpineShape)
-        .semantics { contentDescription = coverCd }
-        .drawWithCache {
-          val spineShade =
-            Brush.horizontalGradient(
-              0.0f to palette.clothHighlight,
-              0.22f to Color.Transparent,
-              0.82f to Color.Transparent,
-              1.0f to palette.clothShade,
-              startX = 0f,
-              endX = size.width,
-            )
-          onDrawBehind { drawRect(brush = spineShade) }
-        }
-        .padding(vertical = DipeSpacing.sm, horizontal = DipeSpacing.xs),
+        .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {
-    Column(
-      modifier = Modifier.fillMaxHeight().fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-      horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-      if (isFavorite) {
-        Box(modifier = Modifier.width(14.dp).height(3.dp).background(coverTokens.favoriteRibbon))
-      } else if (hasActiveReading) {
-        Box(
-          modifier =
-            Modifier.width(6.dp)
-              .height(6.dp)
-              .clip(RoundedCornerShape(50))
-              .background(MaterialTheme.colorScheme.secondary),
-        )
-      } else {
-        Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
-      }
-
+    if (elevated) {
       Box(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = title,
-          style = typography.bookSpineTitle,
-          color = palette.onCloth,
-          maxLines = 1,
-          softWrap = false,
-          overflow = TextOverflow.Ellipsis,
-          modifier =
-            Modifier.layout { measurable, constraints ->
-                val rotatedConstraints =
-                  constraints.copy(
-                    minWidth = 0,
-                    maxWidth = constraints.maxHeight,
-                    minHeight = 0,
-                    maxHeight = constraints.maxWidth,
-                  )
-                val placeable = measurable.measure(rotatedConstraints)
-                layout(placeable.height, placeable.width) {
-                  placeable.place(
-                    x = -(placeable.width - placeable.height) / 2,
-                    y = (placeable.width - placeable.height) / 2,
-                  )
-                }
-              }
-              .graphicsLayer { rotationZ = -90f },
-        )
-      }
+        modifier =
+          Modifier.matchParentSize()
+            .graphicsLayer { alpha = (shadowAlpha?.invoke() ?: 1f).coerceIn(0f, 1f) }
+            .then(spineShadowModifier),
+      )
+    }
 
-      if (hasMultipleCopies) {
-        Column(
-          verticalArrangement = Arrangement.spacedBy(2.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .clip(BookSpineShape)
+          .background(palette.clothColor)
+          .border(0.75.dp, borderColor, BookSpineShape)
+          .drawWithCache {
+            val spineShade =
+              Brush.horizontalGradient(
+                0.0f to palette.clothHighlight,
+                0.22f to Color.Transparent,
+                0.82f to Color.Transparent,
+                1.0f to palette.clothShade,
+                startX = 0f,
+                endX = size.width,
+              )
+            onDrawBehind { drawRect(brush = spineShade) }
+          }
+          .padding(vertical = DipeSpacing.sm, horizontal = DipeSpacing.xs),
+      contentAlignment = Alignment.Center,
+    ) {
+      Column(
+        modifier = Modifier.fillMaxHeight().fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        if (isFavorite) {
+          Box(modifier = Modifier.width(14.dp).height(3.dp).background(coverTokens.favoriteRibbon))
+        } else if (hasActiveReading) {
+          Box(
+            modifier =
+              Modifier.width(6.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.secondary),
+          )
+        } else {
           Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
         }
-      } else {
-        Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
+
+        Box(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = title,
+            style = typography.bookSpineTitle,
+            color = palette.onCloth,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier =
+              Modifier.layout { measurable, constraints ->
+                  val rotatedConstraints =
+                    constraints.copy(
+                      minWidth = 0,
+                      maxWidth = constraints.maxHeight,
+                      minHeight = 0,
+                      maxHeight = constraints.maxWidth,
+                    )
+                  val placeable = measurable.measure(rotatedConstraints)
+                  layout(placeable.height, placeable.width) {
+                    placeable.place(
+                      x = -(placeable.width - placeable.height) / 2,
+                      y = (placeable.width - placeable.height) / 2,
+                    )
+                  }
+                }
+                .graphicsLayer { rotationZ = -90f },
+          )
+        }
+
+        if (hasMultipleCopies) {
+          Column(
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
+            Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
+          }
+        } else {
+          Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
+        }
       }
     }
   }

@@ -15,14 +15,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.core.designsystem.components.EditorialModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +32,6 @@ import androidx.compose.ui.res.stringResource
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProfileSheet(
   initialName: String,
@@ -42,7 +39,6 @@ fun EditProfileSheet(
   onDismiss: () -> Unit,
   onSave: (name: String, bio: String) -> Unit,
 ) {
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var name by remember { mutableStateOf(initialName) }
   var bio by remember { mutableStateOf(initialBio) }
 
@@ -54,12 +50,10 @@ fun EditProfileSheet(
       focusedBorderColor = MaterialTheme.colorScheme.secondary,
     )
 
-  ModalBottomSheet(
+  EditorialModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
-    containerColor = MaterialTheme.colorScheme.surface,
-  ) {
+    dismissOnBackPress = false,
+  ) { requestDismiss ->
     Column(
       modifier =
         Modifier.fillMaxWidth()
@@ -97,7 +91,7 @@ fun EditProfileSheet(
 
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton(
-          onClick = onDismiss,
+          onClick = requestDismiss,
           modifier = Modifier.minimumInteractiveComponentSize(),
         ) {
           Text(stringResource(R.string.book_cancel_action))

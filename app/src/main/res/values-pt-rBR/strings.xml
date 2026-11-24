@@ -513,5 +513,22 @@
     <string name="search_cache_short">Cache local</string>
     <string name="search_offline_short">Offline · biblioteca e cache</string>
     <string name="cd_language_badge">Idioma: %1$s</string>
+    <string name="library_filters_clear_short">Limpar</string>
+    <plurals name="library_filters_show_books">
+        <item quantity="one">Mostrar %1$d livro</item>
+        <item quantity="other">Mostrar %1$d livros</item>
+    </plurals>
+    <string name="library_sort_progress">Progresso</string>
+    <string name="library_sort_pages">Páginas</string>
+    <string name="library_sort_year">Ano</string>
+    <string name="library_empty_filtered_new_title">Nada por aqui</string>
+    <string name="library_empty_filtered_show_all">Ver todos</string>
+    <string name="library_view_mode_pill_gallery">Cartões</string>
+    <string name="library_subtitle_with_reading">%1$s · %2$d em leitura</string>
+    <string name="cd_book_actions">Ações do livro</string>
+    <string name="library_row_action_status">Mudar status</string>
+    <string name="library_row_action_details">Ver detalhes</string>
+    <string name="library_row_action_remove">Remover</string>
+    <string name="library_status_dialog_title">Mudar status</string>
     <string name="search_clear_query">Limpar busca</string>
 </resources>

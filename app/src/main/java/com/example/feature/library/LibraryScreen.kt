@@ -1,9 +1,23 @@
 package com.example.feature.library
 
+import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,28 +33,32 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.ViewList
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.ViewColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -51,6 +70,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,21 +79,31 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.designsystem.components.BookCoverArtwork
@@ -95,6 +125,11 @@ import com.example.core.model.CatalogBook
 import com.example.core.model.LibrarySortOrder
 import com.example.core.model.LibraryViewMode
 import com.example.core.model.ReadingStatus
+import kotlinx.coroutines.delay
+
+private val EditorialCollapseEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private const val HEADER_COLLAPSE_ANIM_MS = 220
+private const val VIEW_MODE_PILL_DURATION_MS = 1200L
 
 @Composable
 fun LibraryScreen(
@@ -106,22 +141,122 @@ fun LibraryScreen(
   onViewModeChange: (LibraryViewMode) -> Unit,
   onOpenAddBook: () -> Unit,
   onOpenBook: (Long) -> Unit,
-  onToggleFavorite: (CatalogBook) -> Unit,
+  onToggleFavorite: (CatalogBook) -> Unit = {},
   modifier: Modifier = Modifier,
   onGenreFilterChange: (Long?) -> Unit = {},
-  onCheckUpdates: () -> Unit = {},
+  onUpdateBookStatus: (Long, ReadingStatus) -> Unit = { _, _ -> },
+  onDeleteBook: (Long) -> Unit = {},
 ) {
   val language = LocalAppLanguage.current
   val density = LocalDensity.current
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val configuration = LocalConfiguration.current
   val gridState = rememberLazyGridState()
   val listState = rememberLazyListState()
+
   var showFiltersSheet by remember { mutableStateOf(false) }
   var containerWidthPx by remember { mutableIntStateOf(0) }
+  var isHeaderCollapsed by remember { mutableStateOf(false) }
 
-  val countForPlural = if (uiState.books.size == 1) 1 else 2
+  var statusDialogBook by remember { mutableStateOf<CatalogBook?>(null) }
+  var deleteConfirmBook by remember { mutableStateOf<CatalogBook?>(null) }
+
+  var modePillMode by remember { mutableStateOf<LibraryViewMode?>(null) }
+  var modePillTrigger by remember { mutableIntStateOf(0) }
+
+  LaunchedEffect(modePillTrigger) {
+    if (modePillTrigger > 0) {
+      delay(VIEW_MODE_PILL_DURATION_MS)
+      modePillMode = null
+    }
+  }
+
+  val screenShadowAlpha = remember(reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  if (!reduceMotion) {
+    LaunchedEffect(Unit) {
+      delay(120L)
+      screenShadowAlpha.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 400, easing = EaseOut),
+      )
+    }
+  }
+  val shadowAlphaProvider: () -> Float = { screenShadowAlpha.value }
+
+  val isGridActive = uiState.viewMode == LibraryViewMode.GRID && uiState.books.isNotEmpty()
+  val collapseStepPx = remember(density) { with(density) { 12.dp.roundToPx() } }
+  val topSnapThresholdPx = remember(density) { with(density) { 16.dp.roundToPx() } }
+
+  LaunchedEffect(
+    isGridActive,
+    uiState.books.isEmpty(),
+    uiState.statusFilter,
+    uiState.genreFilter,
+    uiState.searchQuery,
+  ) {
+    if (uiState.books.isEmpty()) {
+      isHeaderCollapsed = false
+      return@LaunchedEffect
+    }
+    var prevIndex =
+      if (isGridActive) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
+    var prevOffset =
+      if (isGridActive) gridState.firstVisibleItemScrollOffset
+      else listState.firstVisibleItemScrollOffset
+    snapshotFlow {
+        if (isGridActive) {
+          gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+        } else {
+          listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+      }
+      .collect { (index, offset) ->
+        if (index == 0 && offset <= topSnapThresholdPx) {
+          isHeaderCollapsed = false
+        } else if (
+          index > prevIndex || (index == prevIndex && offset - prevOffset > collapseStepPx)
+        ) {
+          isHeaderCollapsed = true
+        } else if (
+          index < prevIndex || (index == prevIndex && prevOffset - offset > collapseStepPx)
+        ) {
+          isHeaderCollapsed = false
+        }
+        prevIndex = index
+        prevOffset = offset
+      }
+  }
+
+  val collapseFraction by
+    animateFloatAsState(
+      targetValue = if (isHeaderCollapsed) 1f else 0f,
+      animationSpec =
+        if (reduceMotion) snap()
+        else tween(durationMillis = HEADER_COLLAPSE_ANIM_MS, easing = EditorialCollapseEasing),
+      label = "library_header_collapse",
+    )
+
+  val activeReadingCount =
+    remember(uiState.readingCount, uiState.books, uiState.totalCatalogCount) {
+      if (uiState.readingCount > 0) {
+        uiState.readingCount
+      } else if (uiState.statusFilter == null && uiState.genreFilter == null && uiState.searchQuery.isBlank()) {
+        uiState.books.count { it.status == ReadingStatus.READING }
+      } else {
+        0
+      }
+    }
+
   val subtitle =
     if (uiState.totalCatalogCount > 0) {
-      pluralStringResource(R.plurals.volumes_count, countForPlural, uiState.books.size)
+      val volumesCount = uiState.totalCatalogCount
+      val volumesPlural = if (volumesCount == 1) 1 else 2
+      val volumesText = pluralStringResource(R.plurals.volumes_count, volumesPlural, volumesCount)
+      if (activeReadingCount > 0) {
+        stringResource(R.string.library_subtitle_with_reading, volumesText, activeReadingCount)
+      } else {
+        volumesText
+      }
     } else {
       stringResource(R.string.library_empty_body)
     }
@@ -131,10 +266,9 @@ fun LibraryScreen(
       uiState.availableGenres.firstOrNull { it.id == uiState.genreFilter }
     }
   val hasActiveSheetBadge =
-    uiState.genreFilter != null ||
-      uiState.sortOrder != LibrarySortOrder.RECENTLY_ADDED ||
-      uiState.totalPendingSuggestionsCount > 0
+    uiState.genreFilter != null || uiState.sortOrder != LibrarySortOrder.RECENTLY_ADDED
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
+
   val spinesPerShelf =
     remember(containerWidthPx, horizontalPadding, density) {
       if (containerWidthPx <= 0) {
@@ -147,149 +281,251 @@ fun LibraryScreen(
       }
     }
 
-  Box(
+  val handleCycleViewMode: () -> Unit = {
+    val nextMode = nextViewMode(uiState.viewMode)
+    onViewModeChange(nextMode)
+    modePillMode = nextMode
+    modePillTrigger++
+  }
+
+  val handleClearAllFilters: () -> Unit = {
+    onSearchChange("")
+    onStatusFilterChange(null)
+    onGenreFilterChange(null)
+  }
+
+  BoxWithConstraints(
     modifier = modifier.fillMaxSize().onSizeChanged { containerWidthPx = it.width },
     contentAlignment = Alignment.TopCenter,
   ) {
-    Column(modifier = Modifier.widthIn(max = 960.dp).fillMaxSize()) {
-      // Fixed sticky search + compact icon tools + single status chip row
-      LibraryStickyHeader(
-        horizontalPadding = horizontalPadding,
-        searchQuery = uiState.searchQuery,
-        statusFilter = uiState.statusFilter,
-        activeGenreName = activeGenre?.localizedName(language),
-        viewMode = uiState.viewMode,
-        hasActiveSheetBadge = hasActiveSheetBadge,
-        onSearchChange = onSearchChange,
-        onStatusFilterChange = onStatusFilterChange,
-        onClearGenreFilter = { onGenreFilterChange(null) },
-        onViewModeChange = onViewModeChange,
-        onOpenFiltersSheet = { showFiltersSheet = true },
+    val isLandscape =
+      (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && maxWidth >= 380.dp) ||
+        (maxWidth > maxHeight && maxWidth >= 440.dp)
+
+    Box(modifier = Modifier.widthIn(max = 960.dp).fillMaxSize()) {
+      LibraryHeaderReserveScaffold(
+        header = {
+          if (isLandscape) {
+            LibraryLandscapeHeader(
+              horizontalPadding = horizontalPadding,
+              searchQuery = uiState.searchQuery,
+              statusFilter = uiState.statusFilter,
+              activeGenreName = activeGenre?.localizedName(language),
+              viewMode = uiState.viewMode,
+              hasActiveSheetBadge = hasActiveSheetBadge,
+              collapseFraction = collapseFraction,
+              onSearchChange = onSearchChange,
+              onStatusFilterChange = onStatusFilterChange,
+              onClearGenreFilter = { onGenreFilterChange(null) },
+              onCycleViewMode = handleCycleViewMode,
+              onOpenFiltersSheet = { showFiltersSheet = true },
+              onOpenAddBook = onOpenAddBook,
+            )
+          } else {
+            LibraryPortraitHeader(
+              horizontalPadding = horizontalPadding,
+              subtitle = subtitle,
+              searchQuery = uiState.searchQuery,
+              statusFilter = uiState.statusFilter,
+              activeGenreName = activeGenre?.localizedName(language),
+              viewMode = uiState.viewMode,
+              hasActiveSheetBadge = hasActiveSheetBadge,
+              collapseFraction = collapseFraction,
+              onSearchChange = onSearchChange,
+              onStatusFilterChange = onStatusFilterChange,
+              onClearGenreFilter = { onGenreFilterChange(null) },
+              onCycleViewMode = handleCycleViewMode,
+              onOpenFiltersSheet = { showFiltersSheet = true },
+              onOpenAddBook = onOpenAddBook,
+            )
+          }
+        },
+        body = { reservedTopHeight ->
+          val listTopPadding = reservedTopHeight + DipeSpacing.sm
+          when {
+            uiState.totalCatalogCount == 0 -> {
+              Box(
+                modifier =
+                  Modifier.fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                      start = horizontalPadding,
+                      end = horizontalPadding,
+                      top = listTopPadding,
+                      bottom = DipeSpacing.xxl,
+                    ),
+                contentAlignment = Alignment.Center,
+              ) {
+                EditorialEmptyState(
+                  icon = Icons.AutoMirrored.Outlined.LibraryBooks,
+                  title = stringResource(R.string.library_empty_title),
+                  body = stringResource(R.string.library_empty_body),
+                  actionLabel = stringResource(R.string.library_add_book),
+                  actionTestTag = "library_empty_add_button",
+                  onAction = onOpenAddBook,
+                )
+              }
+            }
+
+            uiState.books.isEmpty() -> {
+              LibraryFilteredEmptyStage(
+                isLandscape = isLandscape,
+                topReservedPadding = reservedTopHeight,
+                horizontalPadding = horizontalPadding,
+                onShowAll = handleClearAllFilters,
+              )
+            }
+
+            uiState.viewMode == LibraryViewMode.GRID -> {
+              val columns =
+                when (widthClass) {
+                  WindowWidthClass.COMPACT -> 2
+                  WindowWidthClass.MEDIUM -> 3
+                  WindowWidthClass.EXPANDED -> 4
+                }
+
+              LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxSize().testTag("library_grid"),
+                contentPadding =
+                  PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = listTopPadding,
+                    bottom = DipeSpacing.xxl,
+                  ),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+              ) {
+                items(
+                  items = uiState.books,
+                  key = { it.id },
+                  contentType = { "grid_book" },
+                ) { book ->
+                  val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
+                  LibraryGridCard(
+                    book = book,
+                    shadowAlpha = shadowAlphaProvider,
+                    onClick = onBookClick,
+                  )
+                }
+              }
+            }
+
+            else -> {
+              val shelfRows =
+                remember(uiState.books, spinesPerShelf, uiState.viewMode) {
+                  if (uiState.viewMode == LibraryViewMode.SHELF) uiState.books.chunked(spinesPerShelf)
+                  else emptyList()
+                }
+
+              LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().testTag("library_lazy_column"),
+                contentPadding =
+                  PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = listTopPadding,
+                    bottom = DipeSpacing.xxl,
+                  ),
+                verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+              ) {
+                when (uiState.viewMode) {
+                  LibraryViewMode.GRID -> Unit
+                  LibraryViewMode.LIST -> {
+                    items(
+                      items = uiState.books,
+                      key = { it.id },
+                      contentType = { "list_book" },
+                    ) { book ->
+                      val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
+                      LibraryListRow(
+                        book = book,
+                        shadowAlpha = shadowAlphaProvider,
+                        onClick = onBookClick,
+                        onChangeStatus = { statusDialogBook = book },
+                        onViewDetails = onBookClick,
+                        onRemove = { deleteConfirmBook = book },
+                      )
+                    }
+                  }
+
+                  LibraryViewMode.SHELF -> {
+                    items(
+                      items = shelfRows,
+                      key = { row -> row.first().id },
+                      contentType = { "shelf_row" },
+                    ) { shelfBooks ->
+                      LibraryShelfRow(
+                        shelfBooks = shelfBooks,
+                        shadowAlpha = shadowAlphaProvider,
+                        onOpenBook = onOpenBook,
+                      )
+                    }
+                  }
+
+                  LibraryViewMode.GALLERY -> {
+                    items(
+                      items = uiState.books,
+                      key = { it.id },
+                      contentType = { "gallery_book" },
+                    ) { book ->
+                      val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
+                      LibraryGalleryItem(
+                        book = book,
+                        shadowAlpha = shadowAlphaProvider,
+                        onClick = onBookClick,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
       )
 
-      if (uiState.viewMode == LibraryViewMode.GRID && uiState.books.isNotEmpty()) {
-        val columns =
-          when (widthClass) {
-            WindowWidthClass.COMPACT -> 2
-            WindowWidthClass.MEDIUM -> 3
-            WindowWidthClass.EXPANDED -> 4
-          }
-
-        LazyVerticalGrid(
-          state = gridState,
-          columns = GridCells.Fixed(columns),
-          modifier = Modifier.weight(1f).fillMaxWidth().testTag("library_grid"),
-          contentPadding =
-            PaddingValues(
-              start = horizontalPadding,
-              end = horizontalPadding,
-              top = DipeSpacing.sm,
-              bottom = DipeSpacing.xxl,
-            ),
-          horizontalArrangement = Arrangement.spacedBy(20.dp),
-          verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-          item(
-            key = "library_masthead",
-            span = { GridItemSpan(maxLineSpan) },
-            contentType = "masthead",
+      AnimatedVisibility(
+        visible = modePillMode != null,
+        enter =
+          if (reduceMotion) fadeIn(snap())
+          else fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+            slideInVertically(tween(180, easing = FastOutSlowInEasing)) { it / 3 },
+        exit =
+          if (reduceMotion) fadeOut(snap())
+          else fadeOut(tween(180, easing = FastOutSlowInEasing)),
+        modifier =
+          Modifier.align(Alignment.BottomCenter)
+            .padding(bottom = DipeSpacing.md),
+      ) {
+        modePillMode?.let { activeMode ->
+          Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            shadowElevation = 2.dp,
+            modifier =
+              Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                .testTag("library_view_mode_pill"),
           ) {
-            LibraryMastheadItem(subtitle = subtitle, onOpenAddBook = onOpenAddBook)
-          }
-
-          items(
-            items = uiState.books,
-            key = { it.id },
-            contentType = { "grid_book" },
-          ) { book ->
-            val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
-            LibraryGridCard(book = book, onClick = onBookClick)
-          }
-        }
-      } else {
-        val shelfRows =
-          remember(uiState.books, spinesPerShelf, uiState.viewMode) {
-            if (uiState.viewMode == LibraryViewMode.SHELF) uiState.books.chunked(spinesPerShelf)
-            else emptyList()
-          }
-
-        LazyColumn(
-          state = listState,
-          modifier = Modifier.weight(1f).fillMaxWidth().testTag("library_lazy_column"),
-          contentPadding =
-            PaddingValues(
-              start = horizontalPadding,
-              end = horizontalPadding,
-              top = DipeSpacing.sm,
-              bottom = DipeSpacing.xxl,
-            ),
-          verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
-        ) {
-          item(key = "library_masthead", contentType = "masthead") {
-            LibraryMastheadItem(subtitle = subtitle, onOpenAddBook = onOpenAddBook)
-          }
-
-          if (uiState.totalCatalogCount == 0) {
-            item(key = "library_empty", contentType = "empty_state") {
-              EditorialEmptyState(
-                icon = Icons.AutoMirrored.Outlined.LibraryBooks,
-                title = stringResource(R.string.library_empty_title),
-                body = stringResource(R.string.library_empty_body),
-                actionLabel = stringResource(R.string.library_add_book),
-                actionTestTag = "library_empty_add_button",
-                onAction = onOpenAddBook,
+            Row(
+              modifier = Modifier.padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.sm),
+              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = viewModeIcon(activeMode),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
               )
-            }
-          } else if (uiState.books.isEmpty()) {
-            item(key = "library_filtered_empty", contentType = "empty_state") {
-              EditorialEmptyState(
-                icon = Icons.Outlined.Search,
-                title = stringResource(R.string.library_empty_filtered_title),
-                body = stringResource(R.string.library_empty_filtered_body),
+              Text(
+                text = viewModePillLabel(activeMode),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                softWrap = false,
               )
-            }
-          } else {
-            when (uiState.viewMode) {
-              LibraryViewMode.GRID -> Unit
-              LibraryViewMode.LIST -> {
-                items(
-                  items = uiState.books,
-                  key = { it.id },
-                  contentType = { "list_book" },
-                ) { book ->
-                  val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
-                  val onFavClick = remember(book, onToggleFavorite) { { onToggleFavorite(book) } }
-                  LibraryListRow(
-                    book = book,
-                    onClick = onBookClick,
-                    onToggleFavorite = onFavClick,
-                  )
-                }
-              }
-
-              LibraryViewMode.SHELF -> {
-                items(
-                  items = shelfRows,
-                  key = { row -> row.first().id },
-                  contentType = { "shelf_row" },
-                ) { shelfBooks ->
-                  LibraryShelfRow(
-                    shelfBooks = shelfBooks,
-                    onOpenBook = onOpenBook,
-                  )
-                }
-              }
-
-              LibraryViewMode.GALLERY -> {
-                items(
-                  items = uiState.books,
-                  key = { it.id },
-                  contentType = { "gallery_book" },
-                ) { book ->
-                  val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
-                  LibraryGalleryItem(book = book, onClick = onBookClick)
-                }
-              }
             }
           }
         }
@@ -299,15 +535,12 @@ fun LibraryScreen(
 
   if (showFiltersSheet) {
     LibraryFiltersSheet(
-      totalCatalogCount = uiState.totalCatalogCount,
+      filteredCount = uiState.books.size,
       genreFilter = uiState.genreFilter,
       availableGenres = uiState.availableGenres,
       sortOrder = uiState.sortOrder,
-      isCheckingUpdates = uiState.isCheckingUpdates,
-      totalPendingSuggestionsCount = uiState.totalPendingSuggestionsCount,
       onGenreFilterChange = onGenreFilterChange,
       onSortOrderChange = onSortOrderChange,
-      onCheckUpdates = onCheckUpdates,
       onClearFilters = {
         onGenreFilterChange(null)
         onSortOrderChange(LibrarySortOrder.RECENTLY_ADDED)
@@ -315,57 +548,415 @@ fun LibraryScreen(
       onDismiss = { showFiltersSheet = false },
     )
   }
-}
 
-@Composable
-private fun LibraryMastheadItem(
-  subtitle: String,
-  onOpenAddBook: () -> Unit,
-) {
-  EditorialMasthead(
-    title = stringResource(R.string.nav_library),
-    subtitle = subtitle,
-    trailingContent = {
-      Button(
-        onClick = onOpenAddBook,
-        shape = CircleShape,
-        colors =
-          ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondary,
-            contentColor = MaterialTheme.colorScheme.onSecondary,
-          ),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
-      ) {
-        Icon(
-          imageVector = Icons.Outlined.Add,
-          contentDescription = null,
-          modifier = Modifier.size(16.dp),
-        )
-        Spacer(modifier = Modifier.width(DipeSpacing.xs))
+  statusDialogBook?.let { target ->
+    AlertDialog(
+      onDismissRequest = { statusDialogBook = null },
+      shape = MaterialTheme.shapes.large,
+      containerColor = DipeTheme.colors.surfaceElevated,
+      title = {
         Text(
-          text = stringResource(R.string.library_add_book),
-          style = MaterialTheme.typography.labelLarge,
-          maxLines = 1,
+          text = stringResource(R.string.library_status_dialog_title),
+          style = MaterialTheme.typography.headlineSmall,
+          color = MaterialTheme.colorScheme.onBackground,
         )
-      }
-    },
-  )
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs)) {
+          ReadingStatus.entries.forEach { status ->
+            val selected = target.status == status
+            Row(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(MaterialTheme.shapes.small)
+                  .clickable {
+                    onUpdateBookStatus(target.id, status)
+                    statusDialogBook = null
+                  }
+                  .minimumInteractiveComponentSize()
+                  .padding(horizontal = DipeSpacing.sm, vertical = DipeSpacing.xs)
+                  .testTag("library_status_choice_${status.name.lowercase()}"),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.size(8.dp)
+                      .clip(CircleShape)
+                      .background(readingStatusAccentColor(status)),
+                )
+                Text(
+                  text = readingStatusLabel(status),
+                  style = MaterialTheme.typography.bodyLarge,
+                  color =
+                    if (selected) MaterialTheme.colorScheme.secondary
+                    else MaterialTheme.colorScheme.onSurface,
+                )
+              }
+              if (selected) {
+                Icon(
+                  imageVector = Icons.Outlined.Check,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.secondary,
+                  modifier = Modifier.size(18.dp),
+                )
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { statusDialogBook = null }) {
+          Text(stringResource(R.string.book_cancel_action))
+        }
+      },
+      modifier = Modifier.testTag("library_status_dialog"),
+    )
+  }
+
+  deleteConfirmBook?.let { target ->
+    AlertDialog(
+      onDismissRequest = { deleteConfirmBook = null },
+      shape = MaterialTheme.shapes.large,
+      containerColor = DipeTheme.colors.surfaceElevated,
+      title = {
+        Text(
+          text = stringResource(R.string.book_delete_confirm_title),
+          style = MaterialTheme.typography.headlineSmall,
+          color = MaterialTheme.colorScheme.onBackground,
+        )
+      },
+      text = {
+        Text(
+          text = stringResource(R.string.book_delete_confirm_message),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            onDeleteBook(target.id)
+            deleteConfirmBook = null
+          },
+          shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.error,
+              contentColor = MaterialTheme.colorScheme.onError,
+            ),
+          modifier = Modifier.heightIn(min = 48.dp).testTag("library_delete_confirm_button"),
+        ) {
+          Text(stringResource(R.string.book_delete_confirm_action))
+        }
+      },
+      dismissButton = {
+        TextButton(
+          onClick = { deleteConfirmBook = null },
+          modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+          Text(stringResource(R.string.book_cancel_action))
+        }
+      },
+      modifier = Modifier.testTag("library_delete_confirm_dialog"),
+    )
+  }
 }
 
 @Composable
-private fun LibraryStickyHeader(
-  horizontalPadding: androidx.compose.ui.unit.Dp,
+private fun LibraryHeaderReserveScaffold(
+  header: @Composable () -> Unit,
+  body: @Composable (reservedHeaderHeight: Dp) -> Unit,
+) {
+  val density = LocalDensity.current
+  SubcomposeLayout(modifier = Modifier.fillMaxSize()) { constraints ->
+    val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+    val headerPlaceables = subcompose("header", header).map { it.measure(looseConstraints) }
+    val headerHeightPx = headerPlaceables.maxOfOrNull { it.height } ?: 0
+    val headerHeightDp = with(density) { headerHeightPx.toDp() }
+    val bodyPlaceables =
+      subcompose("body") { body(headerHeightDp) }.map { it.measure(constraints) }
+
+    layout(constraints.maxWidth, constraints.maxHeight) {
+      bodyPlaceables.forEach { it.placeRelative(0, 0) }
+      headerPlaceables.forEach { it.placeRelative(0, 0) }
+    }
+  }
+}
+
+@Composable
+private fun LibraryPortraitHeader(
+  horizontalPadding: Dp,
+  subtitle: String,
   searchQuery: String,
   statusFilter: ReadingStatus?,
   activeGenreName: String?,
   viewMode: LibraryViewMode,
   hasActiveSheetBadge: Boolean,
+  collapseFraction: Float,
   onSearchChange: (String) -> Unit,
   onStatusFilterChange: (ReadingStatus?) -> Unit,
   onClearGenreFilter: () -> Unit,
-  onViewModeChange: (LibraryViewMode) -> Unit,
+  onCycleViewMode: () -> Unit,
   onOpenFiltersSheet: () -> Unit,
+  onOpenAddBook: () -> Unit,
+) {
+  val density = LocalDensity.current
+  var topSectionHeightPx by remember { mutableIntStateOf(0) }
+  val topOffsetPx = collapseFraction * topSectionHeightPx.toFloat()
+  val topFadeAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
+
+  val buttonSizePx = remember(density) { with(density) { 44.dp.toPx() } }
+  val buttonGapPx = remember(density) { with(density) { DipeSpacing.sm.toPx() } }
+  val addSlotPx = buttonSizePx + buttonGapPx
+  val twoButtonsSlotPx = (buttonSizePx * 2f) + (buttonGapPx * 2f)
+
+  Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+    // Backdrop surface whose visual bounds move cleanly up with Sticky section (zero height reflow)
+    Column(
+      modifier =
+        Modifier.matchParentSize()
+          .graphicsLayer { translationY = -topOffsetPx }
+          .background(MaterialTheme.colorScheme.background),
+      verticalArrangement = Arrangement.Bottom,
+    ) {
+      HairlineDivider()
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+      // Rows 1 & 2: Title + "+ Catalogar livro" button, and "N livros · M em leitura"
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .onSizeChanged { topSectionHeightPx = it.height }
+            .graphicsLayer {
+              translationY = -topOffsetPx
+              alpha = topFadeAlpha
+            }
+            .padding(horizontal = horizontalPadding)
+            .padding(bottom = DipeSpacing.xs),
+      ) {
+        EditorialMasthead(
+          title = stringResource(R.string.nav_library),
+          subtitle = subtitle,
+          trailingContent = {
+            Button(
+              onClick = {
+                if (collapseFraction < 0.85f) onOpenAddBook()
+              },
+              shape = CircleShape,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.secondary,
+                  contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+              modifier = Modifier.minimumInteractiveComponentSize().testTag("library_add_book_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+              )
+              Spacer(modifier = Modifier.width(DipeSpacing.xs))
+              Text(
+                text = stringResource(R.string.library_add_book),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                softWrap = false,
+              )
+            }
+          },
+        )
+      }
+
+      // Sticky Rows 3 & 4 (total height <= 112.dp when pinned at top)
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .graphicsLayer { translationY = -topOffsetPx }
+            .padding(top = DipeSpacing.xs, bottom = DipeSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+      ) {
+        // Row 3: Search pill + [Mode] + [Filters] (+ circular [+] appearing on collapse)
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .padding(horizontal = horizontalPadding),
+          contentAlignment = Alignment.CenterStart,
+        ) {
+          CompactEditorialSearchPill(
+            query = searchQuery,
+            onQueryChange = onSearchChange,
+            placeholder = stringResource(R.string.library_search_placeholder),
+            clearContentDescription = stringResource(R.string.library_clear_search),
+            inputTestTag = "library_search_input",
+            imeAction = ImeAction.Done,
+            trailingInsetPx = { twoButtonsSlotPx + (collapseFraction * addSlotPx) },
+            modifier = Modifier.fillMaxWidth(),
+          )
+
+          Row(
+            modifier =
+              Modifier.align(Alignment.CenterEnd)
+                .graphicsLayer {
+                  translationX = (1f - collapseFraction) * addSlotPx
+                },
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            LibraryViewModeTrigger(
+              viewMode = viewMode,
+              onCycleViewMode = onCycleViewMode,
+            )
+            LibraryFiltersTrigger(
+              hasActiveSheetBadge = hasActiveSheetBadge,
+              onOpenFiltersSheet = onOpenFiltersSheet,
+            )
+            Spacer(modifier = Modifier.size(44.dp))
+          }
+
+          Box(
+            modifier =
+              Modifier.align(Alignment.CenterEnd)
+                .graphicsLayer {
+                  alpha = collapseFraction
+                  val s = 0.72f + (0.28f * collapseFraction)
+                  scaleX = s
+                  scaleY = s
+                },
+          ) {
+            LibraryCompactAddButton(
+              onClick = {
+                if (collapseFraction >= 0.15f) onOpenAddBook()
+              },
+              testTag = "library_compact_add_book_button",
+            )
+          }
+        }
+
+        // Row 4: Horizontal status filter chips
+        LibraryStatusChipsRow(
+          horizontalPadding = horizontalPadding,
+          statusFilter = statusFilter,
+          activeGenreName = activeGenreName,
+          onStatusFilterChange = onStatusFilterChange,
+          onClearGenreFilter = onClearGenreFilter,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun LibraryLandscapeHeader(
+  horizontalPadding: Dp,
+  searchQuery: String,
+  statusFilter: ReadingStatus?,
+  activeGenreName: String?,
+  viewMode: LibraryViewMode,
+  hasActiveSheetBadge: Boolean,
+  collapseFraction: Float,
+  onSearchChange: (String) -> Unit,
+  onStatusFilterChange: (ReadingStatus?) -> Unit,
+  onClearGenreFilter: () -> Unit,
+  onCycleViewMode: () -> Unit,
+  onOpenFiltersSheet: () -> Unit,
+  onOpenAddBook: () -> Unit,
+) {
+  val density = LocalDensity.current
+  val titleGapPx = remember(density) { with(density) { DipeSpacing.md.toPx() } }
+  var titleSlotWidthPx by remember { mutableIntStateOf(0) }
+  val titleAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
+
+  Surface(color = MaterialTheme.colorScheme.background) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Column(
+        modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xs, bottom = DipeSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
+      ) {
+        // Row 1: Smaller serif "Biblioteca" left (hides on scroll), flexible search center, [Mode][Filters][+] right
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            Text(
+              text = stringResource(R.string.nav_library),
+              style = MaterialTheme.typography.headlineMedium,
+              color = MaterialTheme.colorScheme.onBackground,
+              maxLines = 1,
+              softWrap = false,
+              modifier =
+                Modifier.onSizeChanged { titleSlotWidthPx = it.width + titleGapPx.toInt() }
+                  .graphicsLayer {
+                    alpha = titleAlpha
+                    translationX = -collapseFraction * (titleSlotWidthPx * 0.28f)
+                  },
+            )
+
+            CompactEditorialSearchPill(
+              query = searchQuery,
+              onQueryChange = onSearchChange,
+              placeholder = stringResource(R.string.library_search_placeholder),
+              clearContentDescription = stringResource(R.string.library_clear_search),
+              inputTestTag = "library_search_input",
+              imeAction = ImeAction.Done,
+              leadingInsetPx = { (1f - collapseFraction) * titleSlotWidthPx.toFloat() },
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            LibraryViewModeTrigger(
+              viewMode = viewMode,
+              onCycleViewMode = onCycleViewMode,
+            )
+            LibraryFiltersTrigger(
+              hasActiveSheetBadge = hasActiveSheetBadge,
+              onOpenFiltersSheet = onOpenFiltersSheet,
+            )
+            LibraryCompactAddButton(
+              onClick = onOpenAddBook,
+              testTag = "library_add_book_button",
+            )
+          }
+        }
+
+        // Row 2: Horizontal status chips with generous trailing contentPadding so last chip never clips
+        LibraryStatusChipsRow(
+          horizontalPadding = horizontalPadding,
+          trailingExtraPadding = DipeSpacing.md,
+          statusFilter = statusFilter,
+          activeGenreName = activeGenreName,
+          onStatusFilterChange = onStatusFilterChange,
+          onClearGenreFilter = onClearGenreFilter,
+        )
+      }
+      HairlineDivider()
+    }
+  }
+}
+
+@Composable
+private fun LibraryStatusChipsRow(
+  horizontalPadding: Dp,
+  statusFilter: ReadingStatus?,
+  activeGenreName: String?,
+  onStatusFilterChange: (ReadingStatus?) -> Unit,
+  onClearGenreFilter: () -> Unit,
+  trailingExtraPadding: Dp = 0.dp,
 ) {
   val chipColors =
     FilterChipDefaults.filterChipColors(
@@ -375,135 +966,72 @@ private fun LibraryStickyHeader(
       labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-  Surface(color = MaterialTheme.colorScheme.background) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = DipeSpacing.sm),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-      ) {
-        // Compact search pill + View Mode icon + Filters/Tools icon
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          CompactEditorialSearchPill(
-            query = searchQuery,
-            onQueryChange = onSearchChange,
-            placeholder = stringResource(R.string.library_search_placeholder),
-            clearContentDescription = stringResource(R.string.library_clear_search),
-            inputTestTag = "library_search_input",
-            imeAction = ImeAction.Done,
-            modifier = Modifier.weight(1f),
-          )
+  val statusRowState = rememberLazyListState()
+  LaunchedEffect(activeGenreName) {
+    if (activeGenreName != null) {
+      statusRowState.scrollToItem(0)
+    }
+  }
 
-          LibraryViewModeTrigger(
-            viewMode = viewMode,
-            onViewModeChange = onViewModeChange,
-          )
-
-          Box(contentAlignment = Alignment.TopEnd) {
-            Surface(
-              onClick = onOpenFiltersSheet,
-              shape = CircleShape,
-              color =
-                if (hasActiveSheetBadge) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerLow,
-              contentColor =
-                if (hasActiveSheetBadge) MaterialTheme.colorScheme.secondary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .size(44.dp)
-                  .testTag("library_sort_button"),
-            ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.Outlined.Tune,
-                  contentDescription = stringResource(R.string.library_filters_cd),
-                  modifier = Modifier.size(20.dp),
-                )
-              }
-            }
-            if (hasActiveSheetBadge) {
-              Box(
-                modifier =
-                  Modifier.padding(top = 6.dp, end = 6.dp)
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondary),
-              )
-            }
-          }
-        }
-
-        // Single clean horizontal status row (+ dismissible genre pill if active)
-        val statusRowState = rememberLazyListState()
-        LaunchedEffect(activeGenreName) {
-          if (activeGenreName != null) {
-            statusRowState.scrollToItem(0)
-          }
-        }
-        LazyRow(
-          state = statusRowState,
-          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          if (activeGenreName != null) {
-            item(key = "active_genre_chip", contentType = "genre_active") {
-              FilterChip(
-                selected = true,
-                onClick = onClearGenreFilter,
-                label = { Text(activeGenreName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                trailingIcon = {
-                  Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = stringResource(R.string.library_filters_clear),
-                    modifier = Modifier.size(14.dp),
-                  )
-                },
-                shape = CircleShape,
-                colors =
-                  FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.secondary,
-                    selectedTrailingIconColor = MaterialTheme.colorScheme.secondary,
-                  ),
-                border = null,
-                modifier = Modifier.testTag("library_active_genre_chip"),
-              )
-            }
-          }
-
-          item(key = "filter_all", contentType = "status_filter") {
-            FilterChip(
-              selected = statusFilter == null,
-              onClick = { onStatusFilterChange(null) },
-              label = { Text(stringResource(R.string.library_filter_all)) },
-              shape = CircleShape,
-              colors = chipColors,
-              border = null,
-              modifier = Modifier.testTag("library_filter_all"),
+  LazyRow(
+    state = statusRowState,
+    contentPadding =
+      PaddingValues(
+        start = horizontalPadding,
+        end = horizontalPadding + trailingExtraPadding,
+      ),
+    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    if (activeGenreName != null) {
+      item(key = "active_genre_chip", contentType = "genre_active") {
+        FilterChip(
+          selected = true,
+          onClick = onClearGenreFilter,
+          label = { Text(activeGenreName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+          trailingIcon = {
+            Icon(
+              imageVector = Icons.Outlined.Close,
+              contentDescription = stringResource(R.string.library_filters_clear),
+              modifier = Modifier.size(14.dp),
             )
-          }
-
-          items(ReadingStatus.entries, key = { it.name }, contentType = { "status_filter" }) { status ->
-            val selected = statusFilter == status
-            FilterChip(
-              selected = selected,
-              onClick = { onStatusFilterChange(if (selected) null else status) },
-              label = { Text(readingStatusLabel(status)) },
-              shape = CircleShape,
-              colors = chipColors,
-              border = null,
-              modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
-            )
-          }
-        }
+          },
+          shape = CircleShape,
+          colors =
+            FilterChipDefaults.filterChipColors(
+              selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+              selectedLabelColor = MaterialTheme.colorScheme.secondary,
+              selectedTrailingIconColor = MaterialTheme.colorScheme.secondary,
+            ),
+          border = null,
+          modifier = Modifier.testTag("library_active_genre_chip"),
+        )
       }
-      HairlineDivider()
+    }
+
+    item(key = "filter_all", contentType = "status_filter") {
+      FilterChip(
+        selected = statusFilter == null,
+        onClick = { onStatusFilterChange(null) },
+        label = { Text(stringResource(R.string.library_filter_all), maxLines = 1, softWrap = false) },
+        shape = CircleShape,
+        colors = chipColors,
+        border = null,
+        modifier = Modifier.testTag("library_filter_all"),
+      )
+    }
+
+    items(ReadingStatus.entries, key = { it.name }, contentType = { "status_filter" }) { status ->
+      val selected = statusFilter == status
+      FilterChip(
+        selected = selected,
+        onClick = { onStatusFilterChange(if (selected) null else status) },
+        label = { Text(readingStatusLabel(status), maxLines = 1, softWrap = false) },
+        shape = CircleShape,
+        colors = chipColors,
+        border = null,
+        modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
+      )
     }
   }
 }
@@ -511,78 +1039,218 @@ private fun LibraryStickyHeader(
 @Composable
 private fun LibraryViewModeTrigger(
   viewMode: LibraryViewMode,
-  onViewModeChange: (LibraryViewMode) -> Unit,
+  onCycleViewMode: () -> Unit,
 ) {
-  var menuExpanded by remember { mutableStateOf(false) }
+  val nextMode = nextViewMode(viewMode)
+  Surface(
+    onClick = onCycleViewMode,
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .size(44.dp)
+        .testTag("library_view_mode_trigger"),
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      Icon(
+        imageVector = viewModeIcon(nextMode),
+        contentDescription = stringResource(R.string.library_view_mode_cd),
+        modifier = Modifier.size(20.dp),
+      )
+    }
+  }
+}
 
-  Box {
+@Composable
+private fun LibraryFiltersTrigger(
+  hasActiveSheetBadge: Boolean,
+  onOpenFiltersSheet: () -> Unit,
+) {
+  Box(contentAlignment = Alignment.TopEnd) {
     Surface(
-      onClick = { menuExpanded = true },
+      onClick = onOpenFiltersSheet,
       shape = CircleShape,
-      color = MaterialTheme.colorScheme.surfaceContainerLow,
-      contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+      color =
+        if (hasActiveSheetBadge) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerLow,
+      contentColor =
+        if (hasActiveSheetBadge) MaterialTheme.colorScheme.secondary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
       modifier =
         Modifier.minimumInteractiveComponentSize()
           .size(44.dp)
-          .testTag("library_view_mode_trigger"),
+          .testTag("library_sort_button"),
     ) {
       Box(contentAlignment = Alignment.Center) {
         Icon(
-          imageVector = viewModeIcon(viewMode),
-          contentDescription = stringResource(R.string.library_view_mode_cd),
+          imageVector = Icons.Outlined.Tune,
+          contentDescription = stringResource(R.string.library_filters_cd),
           modifier = Modifier.size(20.dp),
         )
       }
     }
+    if (hasActiveSheetBadge) {
+      Box(
+        modifier =
+          Modifier.padding(top = 6.dp, end = 6.dp)
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondary),
+      )
+    }
+  }
+}
 
-    DropdownMenu(
-      expanded = menuExpanded,
-      onDismissRequest = { menuExpanded = false },
-    ) {
-      LibraryViewMode.entries.forEach { mode ->
-        val selected = viewMode == mode
-        DropdownMenuItem(
-          leadingIcon = {
-            Icon(
-              imageVector = viewModeIcon(mode),
-              contentDescription = null,
-              tint =
-                if (selected) MaterialTheme.colorScheme.secondary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(18.dp),
-            )
-          },
-          text = {
-            Text(
-              text = viewModeLabel(mode),
-              color =
-                if (selected) MaterialTheme.colorScheme.secondary
-                else MaterialTheme.colorScheme.onSurface,
-            )
-          },
-          trailingIcon =
-            if (selected) {
-              {
-                Icon(
-                  imageVector = Icons.Outlined.Check,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                  modifier = Modifier.size(16.dp),
-                )
-              }
-            } else {
-              null
-            },
-          onClick = {
-            onViewModeChange(mode)
-            menuExpanded = false
-          },
-          modifier = Modifier.testTag("library_view_mode_${mode.name.lowercase()}"),
+@Composable
+private fun LibraryCompactAddButton(
+  onClick: () -> Unit,
+  testTag: String,
+) {
+  Surface(
+    onClick = onClick,
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.secondary,
+    contentColor = MaterialTheme.colorScheme.onSecondary,
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .size(44.dp)
+        .testTag(testTag),
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      Icon(
+        imageVector = Icons.Outlined.Add,
+        contentDescription = stringResource(R.string.library_add_book),
+        modifier = Modifier.size(20.dp),
+      )
+    }
+  }
+}
+
+@Composable
+private fun LibraryFilteredEmptyStage(
+  isLandscape: Boolean,
+  topReservedPadding: Dp,
+  horizontalPadding: Dp,
+  onShowAll: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .verticalScroll(rememberScrollState())
+        .padding(
+          start = horizontalPadding,
+          end = horizontalPadding,
+          top = topReservedPadding + DipeSpacing.md,
+          bottom = DipeSpacing.xl,
         )
+        .testTag("library_filtered_empty_stage"),
+    contentAlignment = Alignment.Center,
+  ) {
+    if (isLandscape) {
+      Row(
+        modifier = Modifier.widthIn(max = 520.dp),
+        horizontalArrangement = Arrangement.spacedBy(DipeSpacing.lg, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Box(
+          modifier =
+            Modifier.size(72.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.secondaryContainer),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(30.dp),
+          )
+        }
+        Column(
+          horizontalAlignment = Alignment.Start,
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+        ) {
+          Text(
+            text = stringResource(R.string.library_empty_filtered_new_title),
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Start,
+          )
+          Button(
+            onClick = onShowAll,
+            shape = CircleShape,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+              ),
+            contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+            modifier = Modifier.heightIn(min = 48.dp).testTag("library_empty_show_all_button"),
+          ) {
+            Text(
+              text = stringResource(R.string.library_empty_filtered_show_all),
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+            )
+          }
+        }
+      }
+    } else {
+      Column(
+        modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+      ) {
+        Box(
+          modifier =
+            Modifier.size(76.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.secondaryContainer),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.Outlined.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(32.dp),
+          )
+        }
+        Text(
+          text = stringResource(R.string.library_empty_filtered_new_title),
+          style = MaterialTheme.typography.headlineSmall,
+          color = MaterialTheme.colorScheme.onBackground,
+          textAlign = TextAlign.Center,
+        )
+        Button(
+          onClick = onShowAll,
+          shape = CircleShape,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary,
+              contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
+          contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+          modifier = Modifier.heightIn(min = 48.dp).testTag("library_empty_show_all_button"),
+        ) {
+          Text(
+            text = stringResource(R.string.library_empty_filtered_show_all),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+          )
+        }
       }
     }
   }
 }
+
+private fun nextViewMode(current: LibraryViewMode): LibraryViewMode =
+  when (current) {
+    LibraryViewMode.GRID -> LibraryViewMode.LIST
+    LibraryViewMode.LIST -> LibraryViewMode.SHELF
+    LibraryViewMode.SHELF -> LibraryViewMode.GALLERY
+    LibraryViewMode.GALLERY -> LibraryViewMode.GRID
+  }
 
 @Composable
 private fun viewModeIcon(mode: LibraryViewMode) =
@@ -594,17 +1262,18 @@ private fun viewModeIcon(mode: LibraryViewMode) =
   }
 
 @Composable
-private fun viewModeLabel(mode: LibraryViewMode): String =
+private fun viewModePillLabel(mode: LibraryViewMode): String =
   when (mode) {
     LibraryViewMode.GRID -> stringResource(R.string.library_view_grid)
     LibraryViewMode.LIST -> stringResource(R.string.library_view_list)
     LibraryViewMode.SHELF -> stringResource(R.string.library_view_shelf)
-    LibraryViewMode.GALLERY -> stringResource(R.string.library_view_gallery)
+    LibraryViewMode.GALLERY -> stringResource(R.string.library_view_mode_pill_gallery)
   }
 
 @Composable
 private fun LibraryGridCard(
   book: CatalogBook,
+  shadowAlpha: () -> Float,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -617,7 +1286,6 @@ private fun LibraryGridCard(
   Column(
     modifier =
       modifier
-        .clip(MaterialTheme.shapes.medium)
         .clickable(onClick = onClick)
         .testTag("library_grid_book_${book.id}"),
     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -628,6 +1296,7 @@ private fun LibraryGridCard(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
+      shadowAlpha = shadowAlpha,
       widthHintDp = 160.dp,
       modifier = Modifier.fillMaxWidth(),
     )
@@ -706,14 +1375,18 @@ private fun LibraryGridCard(
 @Composable
 private fun LibraryListRow(
   book: CatalogBook,
+  shadowAlpha: () -> Float,
   onClick: () -> Unit,
-  onToggleFavorite: () -> Unit,
+  onChangeStatus: () -> Unit,
+  onViewDetails: () -> Unit,
+  onRemove: () -> Unit,
 ) {
   val language = LocalAppLanguage.current
   val statusColor = readingStatusAccentColor(book.status)
   val showActiveProgress =
     (book.status == ReadingStatus.READING || book.status == ReadingStatus.PAUSED) &&
       book.activeProgressPercent != null
+  var menuExpanded by remember { mutableStateOf(false) }
 
   EditorialSurfaceCard(
     modifier = Modifier.testTag("library_list_book_${book.id}"),
@@ -735,6 +1408,7 @@ private fun LibraryListRow(
           coverUri = book.coverUri,
           compact = true,
           elevated = true,
+          shadowAlpha = shadowAlpha,
           widthHintDp = 50.dp,
           modifier = Modifier.width(50.dp),
         )
@@ -804,19 +1478,76 @@ private fun LibraryListRow(
             }
           }
         }
-        IconButton(
-          onClick = onToggleFavorite,
-          modifier =
-            Modifier.minimumInteractiveComponentSize().testTag("library_favorite_${book.id}"),
-        ) {
-          Icon(
-            imageVector =
-              if (book.isFavorite) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-            contentDescription = stringResource(R.string.cd_toggle_favorite),
-            tint =
-              if (book.isFavorite) MaterialTheme.colorScheme.secondary
-              else MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+        Box {
+          IconButton(
+            onClick = { menuExpanded = true },
+            modifier =
+              Modifier.minimumInteractiveComponentSize().testTag("library_list_more_${book.id}"),
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.MoreVert,
+              contentDescription = stringResource(R.string.cd_book_actions),
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+
+          DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            containerColor = DipeTheme.colors.surfaceElevated,
+          ) {
+            DropdownMenuItem(
+              leadingIcon = {
+                Icon(
+                  imageVector = Icons.Outlined.SwapHoriz,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+              },
+              text = { Text(stringResource(R.string.library_row_action_status)) },
+              onClick = {
+                menuExpanded = false
+                onChangeStatus()
+              },
+              modifier = Modifier.testTag("library_list_action_status_${book.id}"),
+            )
+            DropdownMenuItem(
+              leadingIcon = {
+                Icon(
+                  imageVector = Icons.Outlined.Info,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+              },
+              text = { Text(stringResource(R.string.library_row_action_details)) },
+              onClick = {
+                menuExpanded = false
+                onViewDetails()
+              },
+              modifier = Modifier.testTag("library_list_action_details_${book.id}"),
+            )
+            DropdownMenuItem(
+              leadingIcon = {
+                Icon(
+                  imageVector = Icons.Outlined.DeleteOutline,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.error,
+                  modifier = Modifier.size(18.dp),
+                )
+              },
+              text = {
+                Text(
+                  text = stringResource(R.string.library_row_action_remove),
+                  color = MaterialTheme.colorScheme.error,
+                )
+              },
+              onClick = {
+                menuExpanded = false
+                onRemove()
+              },
+              modifier = Modifier.testTag("library_list_action_remove_${book.id}"),
+            )
+          }
         }
       }
 
@@ -830,6 +1561,7 @@ private fun LibraryListRow(
 @Composable
 private fun LibraryShelfRow(
   shelfBooks: List<CatalogBook>,
+  shadowAlpha: () -> Float,
   onOpenBook: (Long) -> Unit,
 ) {
   Column(
@@ -851,6 +1583,8 @@ private fun LibraryShelfRow(
           height = spineHeight,
           hasActiveReading = book.status == ReadingStatus.READING,
           hasMultipleCopies = book.copyCount > 1,
+          elevated = true,
+          shadowAlpha = shadowAlpha,
           modifier =
             Modifier.clickable(onClick = onBookClick)
               .testTag("library_shelf_book_${book.id}"),
@@ -875,6 +1609,7 @@ private fun LibraryShelfRow(
 @Composable
 private fun LibraryGalleryItem(
   book: CatalogBook,
+  shadowAlpha: () -> Float,
   onClick: () -> Unit,
 ) {
   val language = LocalAppLanguage.current
@@ -904,6 +1639,7 @@ private fun LibraryGalleryItem(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
+        shadowAlpha = shadowAlpha,
         widthHintDp = 196.dp,
         modifier = Modifier.width(196.dp),
       )

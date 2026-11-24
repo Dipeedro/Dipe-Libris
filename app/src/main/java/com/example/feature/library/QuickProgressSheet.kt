@@ -241,22 +241,19 @@ fun QuickProgressSheet(
   val initialEnterOffsetPx = remember(reduceMotion, density) {
     if (reduceMotion) 0f else with(density) { 180.dp.toPx() }
   }
-  val offsetY = remember { Animatable(initialEnterOffsetPx) }
+  val enterProgress = remember(reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  val dragOffsetY = remember { Animatable(0f) }
   var sheetHeightPx by remember { mutableFloatStateOf(1f) }
   var isClosing by remember { mutableStateOf(false) }
   var lastNestedDragDeltaY by remember { mutableFloatStateOf(0f) }
 
   LaunchedEffect(reduceMotion) {
     if (reduceMotion) {
-      offsetY.snapTo(0f)
+      enterProgress.snapTo(1f)
     } else {
-      offsetY.animateTo(
-        targetValue = 0f,
-        animationSpec =
-          spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-          ),
+      enterProgress.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
       )
     }
   }
@@ -267,11 +264,11 @@ fun QuickProgressSheet(
       scope.launch {
         try {
           if (reduceMotion) {
-            offsetY.snapTo(sheetHeightPx)
+            dragOffsetY.snapTo(sheetHeightPx)
           } else {
-            offsetY.animateTo(
+            dragOffsetY.animateTo(
               targetValue = sheetHeightPx,
-              animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+              animationSpec = tween(durationMillis = PROGRESS_ANIM_DURATION_MS, easing = ProgressAnimEasing),
             )
           }
           onDismiss()
@@ -286,9 +283,9 @@ fun QuickProgressSheet(
     isClosing = false
     scope.launch {
       if (reduceMotion) {
-        offsetY.snapTo(0f)
+        dragOffsetY.snapTo(0f)
       } else {
-        offsetY.animateTo(
+        dragOffsetY.animateTo(
           targetValue = 0f,
           animationSpec =
             spring(
@@ -307,7 +304,7 @@ fun QuickProgressSheet(
     val lastMoveWasUpward = lastDeltaY < 0f || velocityY < flingUpThresholdPx
     val shouldClose =
       !lastMoveWasUpward &&
-        (offsetY.value > distanceThresholdPx || velocityY > flingDownThresholdPx)
+        (dragOffsetY.value > distanceThresholdPx || velocityY > flingDownThresholdPx)
     if (shouldClose) {
       startClosingAnimation()
     } else {
@@ -322,11 +319,11 @@ fun QuickProgressSheet(
         if (abs(available.y) > 0.5f) {
           lastNestedDragDeltaY = available.y
         }
-        val current = offsetY.value
+        val current = dragOffsetY.value
         if (available.y < 0f && current > 0f) {
           val next = (current + available.y).coerceAtLeast(0f)
           val consumedY = next - current
-          scope.launch { offsetY.snapTo(next) }
+          scope.launch { dragOffsetY.snapTo(next) }
           return Offset(0f, consumedY)
         }
         return Offset.Zero
@@ -342,15 +339,15 @@ fun QuickProgressSheet(
           lastNestedDragDeltaY = available.y
         }
         if (available.y > 0f) {
-          val next = (offsetY.value + available.y).coerceAtLeast(0f)
-          scope.launch { offsetY.snapTo(next) }
+          val next = (dragOffsetY.value + available.y).coerceAtLeast(0f)
+          scope.launch { dragOffsetY.snapTo(next) }
           return Offset(0f, available.y)
         }
         return Offset.Zero
       }
 
       override suspend fun onPreFling(available: Velocity): Velocity {
-        if (offsetY.value > 0f) {
+        if (dragOffsetY.value > 0f) {
           evaluateRelease(available.y, lastNestedDragDeltaY)
           lastNestedDragDeltaY = 0f
           return available
@@ -426,8 +423,8 @@ fun QuickProgressSheet(
     }
 
     val dragFraction =
-      if (sheetHeightPx > 1f) (offsetY.value / sheetHeightPx).coerceIn(0f, 1f) else 0f
-    val scrimOpacity = (1f - dragFraction).coerceIn(0f, 1f)
+      if (sheetHeightPx > 1f) (dragOffsetY.value / sheetHeightPx).coerceIn(0f, 1f) else 0f
+    val scrimOpacity = (enterProgress.value * (1f - dragFraction)).coerceIn(0f, 1f)
     val warmScrimColor = Color(0xFF211A14).copy(alpha = 0.33f)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -454,14 +451,17 @@ fun QuickProgressSheet(
               .fillMaxWidth()
               .heightIn(max = sheetMaxHeight)
               .onSizeChanged { sheetHeightPx = it.height.toFloat().coerceAtLeast(1f) }
-              .graphicsLayer { translationY = offsetY.value.coerceAtLeast(0f) }
+              .graphicsLayer {
+                val enterOffset = (1f - enterProgress.value) * initialEnterOffsetPx
+                translationY = (enterOffset + dragOffsetY.value).coerceAtLeast(0f)
+              }
               .pointerInput(Unit) {
                 awaitPointerEventScope {
                   while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     if (event.type == PointerEventType.Press && isClosing) {
                       isClosing = false
-                      scope.launch { offsetY.stop() }
+                      scope.launch { dragOffsetY.stop() }
                     }
                   }
                 }
@@ -482,8 +482,8 @@ fun QuickProgressSheet(
                     awaitEachGesture {
                       val down = awaitFirstDown(requireUnconsumed = false)
                       isClosing = false
-                      scope.launch { offsetY.stop() }
-                      var dragY = offsetY.value
+                      scope.launch { dragOffsetY.stop() }
+                      var dragY = dragOffsetY.value
                       var lastDeltaY = 0f
                       val velocityTracker = VelocityTracker()
                       velocityTracker.addPosition(down.uptimeMillis, down.position)
@@ -507,7 +507,7 @@ fun QuickProgressSheet(
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         change.consume()
                         dragY = (dragY + dy).coerceAtLeast(0f)
-                        scope.launch { offsetY.snapTo(dragY) }
+                        scope.launch { dragOffsetY.snapTo(dragY) }
                       }
 
                       val velocityY = velocityTracker.calculateVelocity().y

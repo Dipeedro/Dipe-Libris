@@ -28,9 +28,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -161,81 +169,171 @@ fun CompactEditorialSearchPill(
   modifier: Modifier = Modifier,
   imeAction: ImeAction = ImeAction.Search,
   onSearchSubmit: (() -> Unit)? = null,
+  leadingInsetPx: (() -> Float)? = null,
+  trailingInsetPx: (() -> Float)? = null,
 ) {
   var isFocused by remember { mutableStateOf(false) }
+  val fillColor =
+    if (isFocused) MaterialTheme.colorScheme.surfaceContainerLowest
+    else MaterialTheme.colorScheme.surfaceContainerLow
+  val borderColor =
+    if (isFocused) MaterialTheme.colorScheme.secondary
+    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+  val borderStrokeWidth = if (isFocused) 1.dp else 0.5.dp
 
-  Surface(
-    shape = CircleShape,
-    color =
-      if (isFocused) MaterialTheme.colorScheme.surfaceContainerLowest
-      else MaterialTheme.colorScheme.surfaceContainerLow,
-    border =
-      BorderStroke(
-        width = if (isFocused) 1.dp else 0.5.dp,
-        color =
-          if (isFocused) MaterialTheme.colorScheme.secondary
-          else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-      ),
-    modifier = modifier.heightIn(min = 48.dp),
-  ) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+  if (leadingInsetPx == null && trailingInsetPx == null) {
+    Surface(
+      shape = CircleShape,
+      color = fillColor,
+      border = BorderStroke(width = borderStrokeWidth, color = borderColor),
+      modifier = modifier.heightIn(min = 48.dp),
     ) {
-      Icon(
-        imageVector = Icons.Outlined.Search,
-        contentDescription = null,
-        tint =
-          if (isFocused) MaterialTheme.colorScheme.secondary
-          else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(18.dp),
+      CompactEditorialSearchPillContent(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = placeholder,
+        clearContentDescription = clearContentDescription,
+        inputTestTag = inputTestTag,
+        isFocused = isFocused,
+        onFocusChange = { isFocused = it },
+        imeAction = imeAction,
+        onSearchSubmit = onSearchSubmit,
+        leadingInsetPx = null,
+        trailingInsetPx = null,
       )
-      Box(
-        modifier = Modifier.weight(1f).padding(vertical = 10.dp),
-        contentAlignment = Alignment.CenterStart,
-      ) {
-        if (query.isEmpty()) {
-          Text(
-            text = placeholder,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-        BasicTextField(
-          value = query,
-          onValueChange = onQueryChange,
-          singleLine = true,
-          textStyle =
-            MaterialTheme.typography.bodyMedium.copy(
-              color = MaterialTheme.colorScheme.onSurface,
-            ),
-          cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
-          keyboardOptions = KeyboardOptions(imeAction = imeAction),
-          keyboardActions =
-            KeyboardActions(
-              onSearch = { onSearchSubmit?.invoke() },
-            ),
-          modifier =
-            Modifier.fillMaxWidth()
-              .onFocusChanged { isFocused = it.isFocused }
-              .testTag(inputTestTag),
+    }
+  } else {
+    Box(
+      modifier =
+        modifier
+          .heightIn(min = 48.dp)
+          .drawBehind {
+            val leftInset = (leadingInsetPx?.invoke() ?: 0f).coerceIn(0f, size.width)
+            val rightInset = (trailingInsetPx?.invoke() ?: 0f).coerceIn(0f, size.width - leftInset)
+            val pillWidth = (size.width - leftInset - rightInset).coerceAtLeast(size.height)
+            val radius = CornerRadius(size.height * 0.5f, size.height * 0.5f)
+            drawRoundRect(
+              color = fillColor,
+              topLeft = Offset(leftInset, 0f),
+              size = Size(pillWidth, size.height),
+              cornerRadius = radius,
+            )
+            drawRoundRect(
+              color = borderColor,
+              topLeft = Offset(leftInset, 0f),
+              size = Size(pillWidth, size.height),
+              cornerRadius = radius,
+              style = Stroke(width = borderStrokeWidth.toPx()),
+            )
+          }
+          .drawWithContent {
+            val leftInset = (leadingInsetPx?.invoke() ?: 0f).coerceIn(0f, size.width)
+            val rightBound = (size.width - (trailingInsetPx?.invoke() ?: 0f)).coerceIn(leftInset, size.width)
+            clipRect(left = leftInset, top = 0f, right = rightBound, bottom = size.height) {
+              this@drawWithContent.drawContent()
+            }
+          },
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      CompactEditorialSearchPillContent(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = placeholder,
+        clearContentDescription = clearContentDescription,
+        inputTestTag = inputTestTag,
+        isFocused = isFocused,
+        onFocusChange = { isFocused = it },
+        imeAction = imeAction,
+        onSearchSubmit = onSearchSubmit,
+        leadingInsetPx = leadingInsetPx,
+        trailingInsetPx = trailingInsetPx,
+      )
+    }
+  }
+}
+
+@Composable
+private fun CompactEditorialSearchPillContent(
+  query: String,
+  onQueryChange: (String) -> Unit,
+  placeholder: String,
+  clearContentDescription: String,
+  inputTestTag: String,
+  isFocused: Boolean,
+  onFocusChange: (Boolean) -> Unit,
+  imeAction: ImeAction,
+  onSearchSubmit: (() -> Unit)?,
+  leadingInsetPx: (() -> Float)?,
+  trailingInsetPx: (() -> Float)?,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+  ) {
+    Icon(
+      imageVector = Icons.Outlined.Search,
+      contentDescription = null,
+      tint =
+        if (isFocused) MaterialTheme.colorScheme.secondary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier =
+        Modifier.size(18.dp).graphicsLayer {
+          translationX = leadingInsetPx?.invoke() ?: 0f
+        },
+    )
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .padding(vertical = 10.dp)
+          .graphicsLayer {
+            translationX = leadingInsetPx?.invoke() ?: 0f
+          },
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      if (query.isEmpty()) {
+        Text(
+          text = placeholder,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
-      if (query.isNotEmpty()) {
-        IconButton(
-          onClick = { onQueryChange("") },
-          modifier = Modifier.size(48.dp).testTag("${inputTestTag}_clear"),
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Clear,
-            contentDescription = clearContentDescription,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-          )
-        }
+      BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle =
+          MaterialTheme.typography.bodyMedium.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+          ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
+        keyboardOptions = KeyboardOptions(imeAction = imeAction),
+        keyboardActions =
+          KeyboardActions(
+            onSearch = { onSearchSubmit?.invoke() },
+          ),
+        modifier =
+          Modifier.fillMaxWidth()
+            .onFocusChanged { onFocusChange(it.isFocused) }
+            .testTag(inputTestTag),
+      )
+    }
+    if (query.isNotEmpty()) {
+      IconButton(
+        onClick = { onQueryChange("") },
+        modifier =
+          Modifier.size(48.dp)
+            .graphicsLayer { translationX = -(trailingInsetPx?.invoke() ?: 0f) }
+            .testTag("${inputTestTag}_clear"),
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Clear,
+          contentDescription = clearContentDescription,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(18.dp),
+        )
       }
     }
   }

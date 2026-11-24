@@ -2,6 +2,7 @@ package com.example.feature.home
 
 import android.content.res.Configuration
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -146,7 +147,7 @@ fun HomeScreen(
     }
 
   if (uiState.isLoading) {
-    Box(modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas))
+    Box(modifier = modifier.fillMaxSize())
     return
   }
 
@@ -156,7 +157,7 @@ fun HomeScreen(
   var measuredMastheadHeightPx by remember { mutableIntStateOf(0) }
 
   BoxWithConstraints(
-    modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas),
+    modifier = modifier.fillMaxSize(),
     contentAlignment = Alignment.TopCenter,
   ) {
     val viewportMaxHeight = maxHeight
@@ -333,6 +334,7 @@ private fun FeaturedReadingShowcase(
   val density = LocalDensity.current
   val coverReady = remember(book.id, reduceMotion) { mutableStateOf(reduceMotion || book.coverUri.isNullOrBlank()) }
   val coverProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
+  val coverShadowProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val titleMetaProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val progressStageProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val buttonsProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
@@ -376,6 +378,10 @@ private fun FeaturedReadingShowcase(
       if (!coverReady.value) return@LaunchedEffect
       launch {
         coverProgress.animateTo(1f, tween(durationMillis = 360, easing = FastOutSlowInEasing))
+      }
+      launch {
+        delay(250L)
+        coverShadowProgress.animateTo(1f, tween(durationMillis = 400, easing = EaseOut))
       }
       launch {
         delay(70L)
@@ -450,6 +456,7 @@ private fun FeaturedReadingShowcase(
           isFavorite = book.isFavorite,
           coverUri = book.coverUri,
           elevated = true,
+          shadowAlpha = { coverShadowProgress.value },
           widthHintDp = maxCoverWidthHint,
           contentScale = ContentScale.Fit,
           modifier = Modifier.heightIn(max = maxCoverHeight).widthIn(max = 260.dp),
@@ -492,6 +499,7 @@ private fun FeaturedReadingShowcase(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
+        shadowAlpha = { coverShadowProgress.value },
         widthHintDp = featuredWidth,
         modifier = coverCascadeModifier.width(featuredWidth),
       )
@@ -876,7 +884,6 @@ private fun CurrentlyReadingPlate(
   Column(
     modifier =
       Modifier.width(120.dp)
-        .clip(MaterialTheme.shapes.medium)
         .clickable(onClick = onClick)
         .padding(DipeSpacing.xs)
         .testTag("home_reading_book_${book.id}"),

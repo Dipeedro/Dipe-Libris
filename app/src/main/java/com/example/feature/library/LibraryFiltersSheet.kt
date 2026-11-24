@@ -1,115 +1,149 @@
 package com.example.feature.library
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
-import com.example.core.designsystem.LocalDipeTypography
+import com.example.core.designsystem.DipeTheme
+import com.example.core.designsystem.components.EditorialModalBottomSheet
 import com.example.core.designsystem.components.EditorialSectionHeader
-import com.example.core.designsystem.components.EditorialSurfaceCard
 import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.model.Genre
 import com.example.core.model.LibrarySortOrder
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun LibraryFiltersSheet(
-  totalCatalogCount: Int,
+  filteredCount: Int,
   genreFilter: Long?,
   availableGenres: List<Genre>,
   sortOrder: LibrarySortOrder,
-  isCheckingUpdates: Boolean,
-  totalPendingSuggestionsCount: Int,
   onGenreFilterChange: (Long?) -> Unit,
   onSortOrderChange: (LibrarySortOrder) -> Unit,
-  onCheckUpdates: () -> Unit,
   onClearFilters: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val language = LocalAppLanguage.current
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-  val hasCustomFilterOrSort = genreFilter != null || sortOrder != LibrarySortOrder.RECENTLY_ADDED
+  val selectedIconTint =
+    if (MaterialTheme.colorScheme.primary.luminance() < 0.45f) Color.White
+    else MaterialTheme.colorScheme.onPrimary
 
   val chipColors =
     FilterChipDefaults.filterChipColors(
       selectedContainerColor = MaterialTheme.colorScheme.primary,
       selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+      selectedLeadingIconColor = selectedIconTint,
       containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
       labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-  ModalBottomSheet(
+  EditorialModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-    modifier = Modifier.testTag("library_filters_sheet"),
-  ) {
-    Column(
-      modifier =
-        Modifier.fillMaxWidth()
-          .verticalScroll(rememberScrollState())
-          .navigationBarsPadding()
-          .padding(horizontal = DipeSpacing.lg)
-          .padding(bottom = DipeSpacing.lg),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
-    ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = stringResource(R.string.library_filters_sheet_title),
-          style = MaterialTheme.typography.headlineMedium,
-          color = MaterialTheme.colorScheme.onBackground,
-        )
-        if (hasCustomFilterOrSort) {
-          TextButton(
+    sheetTestTag = "library_filters_sheet",
+    scrollableContent = true,
+    footer = { requestDismiss ->
+      Column(modifier = Modifier.fillMaxWidth()) {
+        HairlineDivider()
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.md),
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          OutlinedButton(
             onClick = onClearFilters,
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("library_filters_clear_button"),
+            shape = CircleShape,
+            border = BorderStroke(1.dp, DipeTheme.colors.controlBorder),
+            colors =
+              ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = DipeTheme.colors.textPrimary,
+              ),
+            contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+            modifier =
+              Modifier.heightIn(min = 48.dp).testTag("library_filters_clear_button"),
           ) {
             Text(
-              text = stringResource(R.string.library_filters_clear),
-              color = MaterialTheme.colorScheme.secondary,
+              text = stringResource(R.string.library_filters_clear_short),
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+            )
+          }
+
+          Button(
+            onClick = requestDismiss,
+            shape = CircleShape,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+              ),
+            contentPadding = PaddingValues(horizontal = DipeSpacing.lg, vertical = DipeSpacing.compact),
+            modifier =
+              Modifier.weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("library_filters_show_button"),
+          ) {
+            Text(
+              text =
+                pluralStringResource(
+                  R.plurals.library_filters_show_books,
+                  if (filteredCount == 1) 1 else 2,
+                  filteredCount,
+                ),
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
       }
+    },
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .padding(horizontal = DipeSpacing.lg)
+          .padding(bottom = DipeSpacing.lg),
+      verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
+    ) {
+      Text(
+        text = stringResource(R.string.library_filters_sheet_title),
+        style = MaterialTheme.typography.headlineMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+      )
 
       if (availableGenres.isNotEmpty()) {
         EditorialSectionHeader(title = stringResource(R.string.library_filters_genre_section))
@@ -154,6 +188,9 @@ internal fun LibraryFiltersSheet(
               LibrarySortOrder.RECENTLY_ADDED -> stringResource(R.string.library_sort_recent)
               LibrarySortOrder.TITLE_ASC -> stringResource(R.string.library_sort_title)
               LibrarySortOrder.AUTHOR_ASC -> stringResource(R.string.library_sort_author)
+              LibrarySortOrder.PROGRESS_DESC -> stringResource(R.string.library_sort_progress)
+              LibrarySortOrder.PAGES_DESC -> stringResource(R.string.library_sort_pages)
+              LibrarySortOrder.YEAR_DESC -> stringResource(R.string.library_sort_year)
             }
           FilterChip(
             selected = selected,
@@ -164,6 +201,7 @@ internal fun LibraryFiltersSheet(
                   Icon(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
+                    tint = selectedIconTint,
                     modifier = Modifier.size(16.dp),
                   )
                 }
@@ -178,64 +216,6 @@ internal fun LibraryFiltersSheet(
           )
         }
       }
-
-      if (totalCatalogCount > 0) {
-        HairlineDivider()
-        EditorialSectionHeader(title = stringResource(R.string.library_filters_tools_section))
-        EditorialSurfaceCard(
-          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          shape = MaterialTheme.shapes.medium,
-          contentPadding = PaddingValues(horizontal = DipeSpacing.md, vertical = DipeSpacing.compact),
-          onClick = if (isCheckingUpdates) null else onCheckUpdates,
-          modifier = Modifier.minimumInteractiveComponentSize().testTag("library_check_updates_button"),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              if (isCheckingUpdates) {
-                CircularProgressIndicator(
-                  strokeWidth = 2.dp,
-                  color = MaterialTheme.colorScheme.secondary,
-                  modifier = Modifier.size(18.dp),
-                )
-              } else {
-                Icon(
-                  imageVector = Icons.Outlined.Sync,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                  modifier = Modifier.size(18.dp),
-                )
-              }
-              Text(
-                text = stringResource(R.string.library_check_updates),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-              )
-            }
-            if (totalPendingSuggestionsCount > 0) {
-              Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-              ) {
-                Text(
-                  text = "+$totalPendingSuggestionsCount",
-                  style = LocalDipeTypography.current.monoMetadata,
-                  color = MaterialTheme.colorScheme.secondary,
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-              }
-            }
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.height(DipeSpacing.xs))
     }
   }
 }

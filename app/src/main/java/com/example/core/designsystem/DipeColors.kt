@@ -236,9 +236,7 @@ fun resolveSemanticColors(scheme: ColorScheme): DipeSemanticColors {
   val isSepia = scheme.background == SepiaColorScheme.background
   return DipeSemanticColors(
     canvas = scheme.background,
-    homeCanvas =
-      if (scheme.background == PaperColorScheme.background) Color(0xFFF3EEE2)
-      else scheme.background,
+    homeCanvas = scheme.background,
     surfaceElevated = scheme.surfaceContainerLowest,
     surfaceTonal = scheme.surfaceContainerLow,
     textPrimary = scheme.onBackground,

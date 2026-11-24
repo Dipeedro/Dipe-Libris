@@ -513,5 +513,22 @@
     <string name="search_cache_short">Local cache</string>
     <string name="search_offline_short">Offline · local library &amp; cache</string>
     <string name="cd_language_badge">Language: %1$s</string>
+    <string name="library_filters_clear_short">Clear</string>
+    <plurals name="library_filters_show_books">
+        <item quantity="one">Show %1$d book</item>
+        <item quantity="other">Show %1$d books</item>
+    </plurals>
+    <string name="library_sort_progress">Progress</string>
+    <string name="library_sort_pages">Pages</string>
+    <string name="library_sort_year">Year</string>
+    <string name="library_empty_filtered_new_title">Nothing here</string>
+    <string name="library_empty_filtered_show_all">Show all</string>
+    <string name="library_view_mode_pill_gallery">Cards</string>
+    <string name="library_subtitle_with_reading">%1$s · %2$d reading</string>
+    <string name="cd_book_actions">Book actions</string>
+    <string name="library_row_action_status">Change status</string>
+    <string name="library_row_action_details">View details</string>
+    <string name="library_row_action_remove">Remove</string>
+    <string name="library_status_dialog_title">Change status</string>
     <string name="search_clear_query">Clear search</string>
 </resources>

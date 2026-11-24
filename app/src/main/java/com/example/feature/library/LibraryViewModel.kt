@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 data class LibraryUiState(
   val books: List<CatalogBook> = emptyList(),
   val totalCatalogCount: Int = 0,
+  val readingCount: Int = 0,
   val searchQuery: String = "",
   val statusFilter: ReadingStatus? = null,
   val genreFilter: Long? = null,
@@ -188,6 +189,35 @@ class LibraryViewModel(
                 if (byAuthor != 0) byAuthor else collator.compare(a.title.trim(), b.title.trim())
               }
             }
+            LibrarySortOrder.PROGRESS_DESC -> {
+              val collator = collatorFor(language)
+              filtered.sortedWith { a, b ->
+                val progressA =
+                  a.activeProgressPercent ?: if (a.status == ReadingStatus.FINISHED) 100f else -1f
+                val progressB =
+                  b.activeProgressPercent ?: if (b.status == ReadingStatus.FINISHED) 100f else -1f
+                val byProgress = progressB.compareTo(progressA)
+                if (byProgress != 0) byProgress else collator.compare(a.title.trim(), b.title.trim())
+              }
+            }
+            LibrarySortOrder.PAGES_DESC -> {
+              val collator = collatorFor(language)
+              filtered.sortedWith { a, b ->
+                val pagesA = a.totalPages ?: -1
+                val pagesB = b.totalPages ?: -1
+                val byPages = pagesB.compareTo(pagesA)
+                if (byPages != 0) byPages else collator.compare(a.title.trim(), b.title.trim())
+              }
+            }
+            LibrarySortOrder.YEAR_DESC -> {
+              val collator = collatorFor(language)
+              filtered.sortedWith { a, b ->
+                val yearA = a.publicationYear ?: Int.MIN_VALUE
+                val yearB = b.publicationYear ?: Int.MIN_VALUE
+                val byYear = yearB.compareTo(yearA)
+                if (byYear != 0) byYear else collator.compare(a.title.trim(), b.title.trim())
+              }
+            }
           }
 
         val usedGenreIds = allBooks.mapNotNull { it.work.primaryGenreId }.toSet()
@@ -196,6 +226,7 @@ class LibraryViewModel(
         LibraryUiState(
           books = sorted,
           totalCatalogCount = allBooks.size,
+          readingCount = allBooks.count { it.status == ReadingStatus.READING },
           searchQuery = query,
           statusFilter = filter,
           genreFilter = selectedGenreId,

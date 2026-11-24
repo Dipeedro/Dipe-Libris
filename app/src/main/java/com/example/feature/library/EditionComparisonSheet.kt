@@ -12,13 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.core.designsystem.components.EditorialModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +35,6 @@ import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.model.EditionWithBookCopies
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditionComparisonSheet(
   workTitle: String,
@@ -46,19 +43,15 @@ fun EditionComparisonSheet(
   onSelectEdition: (Long) -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val language = LocalAppLanguage.current
   val unspecified = stringResource(R.string.book_detail_unspecified)
 
-  ModalBottomSheet(
+  EditorialModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-  ) {
+  ) { requestDismiss ->
     Column(
       modifier =
         Modifier.fillMaxWidth()
-          .verticalScroll(rememberScrollState())
           .padding(vertical = DipeSpacing.sm)
           .testTag("edition_comparison_sheet"),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
@@ -74,7 +67,7 @@ fun EditionComparisonSheet(
           color = MaterialTheme.colorScheme.onSurface,
         )
         TextButton(
-          onClick = onDismiss,
+          onClick = requestDismiss,
           modifier = Modifier.minimumInteractiveComponentSize().testTag("compare_close_button"),
         ) {
           Text(stringResource(R.string.book_cancel_action))

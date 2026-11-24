@@ -181,7 +181,6 @@ fun ProfileScreen(
                 Column(
                   modifier =
                     Modifier.width(118.dp)
-                      .clip(MaterialTheme.shapes.medium)
                       .clickable(onClick = onBookClick)
                       .padding(DipeSpacing.xs),
                   verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),

@@ -15,8 +15,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.localization.LocalAppLanguage
@@ -170,7 +168,7 @@ class LibraryAndSearchRedesignTest {
   }
 
   @Test
-  fun libraryScreen_viewModeDropdownAndFiltersSheetWorkCohesively() {
+  fun libraryScreen_viewModeToggleFiltersSheetAndListMenuWorkCohesively() {
     val fantasy =
       Genre(
         id = 10L,
@@ -199,7 +197,9 @@ class LibraryAndSearchRedesignTest {
     var viewMode by mutableStateOf(LibraryViewMode.GRID)
     var sortOrder by mutableStateOf(LibrarySortOrder.RECENTLY_ADDED)
     var genreFilter by mutableStateOf<Long?>(null)
-    var updatesChecked = false
+    var statusFilter by mutableStateOf<ReadingStatus?>(null)
+    var updatedStatus: ReadingStatus? = null
+    var deletedBookId: Long? = null
 
     composeTestRule.setContent {
       CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
@@ -207,9 +207,12 @@ class LibraryAndSearchRedesignTest {
           LibraryScreen(
             uiState =
               LibraryUiState(
-                books = listOf(book),
+                books =
+                  if (statusFilter == ReadingStatus.ABANDONED) emptyList() else listOf(book),
                 totalCatalogCount = 1,
+                readingCount = 1,
                 availableGenres = listOf(fantasy),
+                statusFilter = statusFilter,
                 genreFilter = genreFilter,
                 sortOrder = sortOrder,
                 viewMode = viewMode,
@@ -217,38 +220,50 @@ class LibraryAndSearchRedesignTest {
               ),
             widthClass = WindowWidthClass.COMPACT,
             onSearchChange = {},
-            onStatusFilterChange = {},
+            onStatusFilterChange = { statusFilter = it },
             onSortOrderChange = { sortOrder = it },
             onViewModeChange = { viewMode = it },
             onOpenAddBook = {},
             onOpenBook = {},
-            onToggleFavorite = {},
             onGenreFilterChange = { genreFilter = it },
-            onCheckUpdates = { updatesChecked = true },
+            onUpdateBookStatus = { _, status -> updatedStatus = status },
+            onDeleteBook = { deletedBookId = it },
           )
         }
       }
     }
 
-    // View mode selector opens dropdown menu and switches to List mode
+    // View mode toggle cycles directly GRID -> LIST and displays transient pill
     composeTestRule.onNodeWithTag("library_view_mode_trigger").assertIsDisplayed().performClick()
-    composeTestRule.onNodeWithTag("library_view_mode_list").assertIsDisplayed().performClick()
     assertEquals(LibraryViewMode.LIST, viewMode)
     composeTestRule.onNodeWithTag("library_list_book_1").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_view_mode_pill").assertIsDisplayed()
 
-    // Filters/Tools sheet consolidates Genre, Sort, and Check Updates
+    // List row 3-dot menu exposes Mudar status, Ver detalhes, Remover
+    composeTestRule.onNodeWithTag("library_list_more_1").assertIsDisplayed().performClick()
+    composeTestRule.onNodeWithTag("library_list_action_status_1").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_list_action_details_1").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_list_action_remove_1").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_list_action_status_1").performClick()
+    composeTestRule.onNodeWithTag("library_status_dialog").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_status_choice_finished").performClick()
+    assertEquals(ReadingStatus.FINISHED, updatedStatus)
+
+    // Filters sheet consolidates Genre, Sort (including Progress/Pages/Year), and fixed footer without Maintenance
     composeTestRule.onNodeWithTag("library_sort_button").assertIsDisplayed().performClick()
     composeTestRule.onNodeWithTag("library_filters_sheet").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_check_updates_button").assertDoesNotExist()
     composeTestRule.onNodeWithTag("library_genre_filter_fantasy").performClick()
     assertEquals(10L, genreFilter)
+    composeTestRule.onNodeWithTag("library_sort_option_progress_desc").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_sort_option_pages_desc").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_sort_option_year_desc").assertIsDisplayed()
     composeTestRule.onNodeWithTag("library_sort_option_title_asc").performClick()
     assertEquals(LibrarySortOrder.TITLE_ASC, sortOrder)
-    composeTestRule.onNodeWithTag("library_check_updates_button").performClick()
-    assertTrue(updatesChecked)
 
-    // Dismiss bottom sheet via swipeDown, then verify active genre chip displays & clears filter
+    // Fixed footer shows Limpar + Mostrar N livros and closes sheet on tap
     composeTestRule.onNodeWithTag("library_filters_clear_button").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("library_filters_sheet").performTouchInput { swipeDown() }
+    composeTestRule.onNodeWithTag("library_filters_show_button").assertIsDisplayed().performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
       composeTestRule.onAllNodes(hasTestTag("library_filters_sheet")).fetchSemanticsNodes().isEmpty()
     }
@@ -257,5 +272,12 @@ class LibraryAndSearchRedesignTest {
       .assertIsDisplayed()
       .performClick()
     assertEquals(null, genreFilter)
+
+    // Filtered empty state shows "Nada por aqui" + "Ver todos" clearing filters
+    composeTestRule.onNodeWithTag("library_filter_abandoned").performClick()
+    composeTestRule.onNodeWithTag("library_filtered_empty_stage").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("library_empty_show_all_button").assertIsDisplayed().performClick()
+    assertEquals(null, statusFilter)
+    assertEquals(null, deletedBookId)
   }
 }

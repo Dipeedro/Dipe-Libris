@@ -2,6 +2,7 @@ package com.example.core.designsystem
 
 import android.content.Context
 import android.provider.Settings
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
@@ -60,8 +61,9 @@ val DipeShapes =
 
 @Immutable
 data class DipeMotionConfig(val reduceMotion: Boolean = false) {
-  fun <T> standardTween(durationMillis: Int = 200): FiniteAnimationSpec<T> =
-    if (reduceMotion) snap() else tween(durationMillis = durationMillis)
+  fun <T> standardTween(durationMillis: Int = 220): FiniteAnimationSpec<T> =
+    if (reduceMotion) snap()
+    else tween(durationMillis = durationMillis, easing = FastOutSlowInEasing)
 
   fun <T> editorialSpring(): FiniteAnimationSpec<T> =
     if (reduceMotion) snap()

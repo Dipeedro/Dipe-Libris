@@ -211,13 +211,12 @@ fun DipeNavigationShell(
       }
     }
 
-  val enterSpec = remember(motion) { motion.standardTween<Float>(160) }
-  val exitSpec = remember(motion) { motion.standardTween<Float>(140) }
+  val enterSpec = remember(motion) { motion.standardTween<Float>(220) }
+  val exitSpec = remember(motion) { motion.standardTween<Float>(220) }
 
   BoxWithConstraints(modifier = modifier.fillMaxSize()) {
     val widthClass = WindowWidthClass.fromWidth(maxWidth)
     val useRail = widthClass != WindowWidthClass.COMPACT
-    val isHomeRoute = currentDestination?.hasRoute(HomeRoute::class) ?: true
     val hasTerracottaBottomBar = isTopLevel && !useRail
     val view = LocalView.current
     val navBarContainerColor = DipeTheme.colors.navBarContainer
@@ -250,7 +249,7 @@ fun DipeNavigationShell(
     }
 
     Scaffold(
-      containerColor = if (isHomeRoute) DipeTheme.colors.homeCanvas else DipeTheme.colors.canvas,
+      containerColor = DipeTheme.colors.canvas,
       contentWindowInsets = WindowInsets.safeDrawing,
       snackbarHost = {
         SnackbarHost(hostState = snackbarHostState) { data ->
@@ -361,29 +360,8 @@ fun DipeNavigationShell(
                 onOpenAddBook = { navController.navigate(BookSearchRoute()) },
                 onOpenBook = { workId -> navController.navigate(BookDetailRoute(workId)) },
                 onToggleFavorite = libraryViewModel::toggleFavorite,
-                onCheckUpdates = {
-                  libraryViewModel.checkLibraryMetadataUpdates { summary ->
-                    val message =
-                      if (summary.newSuggestionsCount > 0) {
-                        context.resources.getString(
-                          R.string.library_updates_found,
-                          summary.newSuggestionsCount,
-                        )
-                      } else {
-                        context.resources.getString(
-                          R.string.library_updates_checked_none,
-                          summary.booksChecked,
-                        )
-                      }
-                    scope.launch {
-                      snackbarHostState.currentSnackbarData?.dismiss()
-                      snackbarHostState.showSnackbar(
-                        message = message,
-                        duration = SnackbarDuration.Short,
-                      )
-                    }
-                  }
-                },
+                onUpdateBookStatus = libraryViewModel::updateStatus,
+                onDeleteBook = { workId -> libraryViewModel.deleteBook(workId) },
               )
             }
 

@@ -62,6 +62,9 @@ enum class LibrarySortOrder {
   RECENTLY_ADDED,
   TITLE_ASC,
   AUTHOR_ASC,
+  PROGRESS_DESC,
+  PAGES_DESC,
+  YEAR_DESC,
 }
 
 enum class ReadingStatus {

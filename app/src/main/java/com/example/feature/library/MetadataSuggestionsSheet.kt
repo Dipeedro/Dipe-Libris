@@ -15,13 +15,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.core.designsystem.components.EditorialModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -36,7 +34,6 @@ import com.example.core.designsystem.components.suggestionFieldLabel
 import com.example.core.designsystem.components.suggestionReasonLabel
 import com.example.core.model.MetadataSuggestion
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MetadataSuggestionsSheet(
   suggestions: List<MetadataSuggestion>,
@@ -44,17 +41,13 @@ fun MetadataSuggestionsSheet(
   onReject: (Long) -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-  ModalBottomSheet(
+  EditorialModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-  ) {
+    scrollableContent = false,
+  ) { _ ->
     Column(
       modifier =
         Modifier.fillMaxWidth()
-          .imePadding()
           .padding(horizontal = DipeSpacing.lg, vertical = DipeSpacing.sm)
           .testTag("metadata_suggestions_sheet"),
       verticalArrangement = Arrangement.spacedBy(DipeSpacing.md),
