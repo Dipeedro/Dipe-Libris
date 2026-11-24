@@ -1,7 +1,9 @@
 package com.example.core.designsystem.components
 
 import android.graphics.BlurMaskFilter
-import android.os.Build
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.util.LruCache
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -28,21 +30,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -54,6 +56,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,12 +72,149 @@ import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeCoverTokens
 import com.example.core.designsystem.LocalDipeTypography
 import java.io.File
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 private val BookCoverShape =
   RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
 
 private val BookSpineShape = RoundedCornerShape(DipeRadii.sharp)
 private val WHITESPACE_SPLIT_REGEX = Regex("\\s+")
+private const val COVER_ENTRANCE_DURATION_MS = 600
+
+private data class ShadowBitmapKey(
+  val widthPx: Int,
+  val heightPx: Int,
+  val padPx: Int,
+  val leftCornerPx: Int,
+  val rightCornerPx: Int,
+  val compact: Boolean,
+)
+
+private data class CachedShadowBitmap(
+  val bitmap: ImageBitmap,
+  val padPx: Int,
+)
+
+private object CoverShadowBitmapCache {
+  private val cache = LruCache<ShadowBitmapKey, CachedShadowBitmap>(24)
+
+  fun getOrCreate(
+    widthPx: Int,
+    heightPx: Int,
+    leftCornerPx: Float,
+    rightCornerPx: Float,
+    ambientDyPx: Float,
+    contactDyPx: Float,
+    ambientBlurPx: Float,
+    contactBlurPx: Float,
+    compact: Boolean,
+  ): CachedShadowBitmap {
+    val safeW = widthPx.coerceAtLeast(1)
+    val safeH = heightPx.coerceAtLeast(1)
+    val padPx = ceil(ambientBlurPx + ambientDyPx + 4f).toInt().coerceAtLeast(4)
+    val key =
+      ShadowBitmapKey(
+        widthPx = safeW,
+        heightPx = safeH,
+        padPx = padPx,
+        leftCornerPx = leftCornerPx.roundToInt(),
+        rightCornerPx = rightCornerPx.roundToInt(),
+        compact = compact,
+      )
+    synchronized(cache) {
+      cache.get(key)?.let { return it }
+    }
+
+    val bmpW = safeW + padPx * 2
+    val bmpH = safeH + padPx * 2
+    val androidBitmap =
+      android.graphics.Bitmap.createBitmap(bmpW, bmpH, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(androidBitmap)
+    val radii =
+      floatArrayOf(
+        leftCornerPx, leftCornerPx,
+        rightCornerPx, rightCornerPx,
+        rightCornerPx, rightCornerPx,
+        leftCornerPx, leftCornerPx,
+      )
+
+    val ambientPath =
+      android.graphics.Path().apply {
+        addRoundRect(
+          padPx.toFloat(),
+          padPx + ambientDyPx,
+          (padPx + safeW).toFloat(),
+          padPx + safeH + ambientDyPx,
+          radii,
+          android.graphics.Path.Direction.CW,
+        )
+      }
+    val contactPath =
+      android.graphics.Path().apply {
+        addRoundRect(
+          padPx.toFloat(),
+          padPx + contactDyPx,
+          (padPx + safeW).toFloat(),
+          padPx + safeH + contactDyPx,
+          radii,
+          android.graphics.Path.Direction.CW,
+        )
+      }
+    val ambientPaint =
+      android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.Black.copy(alpha = 0.22f).toArgb()
+        maskFilter = BlurMaskFilter(ambientBlurPx.coerceAtLeast(0.5f), BlurMaskFilter.Blur.NORMAL)
+      }
+    val contactPaint =
+      android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.Black.copy(alpha = 0.14f).toArgb()
+        maskFilter = BlurMaskFilter(contactBlurPx.coerceAtLeast(0.5f), BlurMaskFilter.Blur.NORMAL)
+      }
+
+    canvas.drawPath(ambientPath, ambientPaint)
+    canvas.drawPath(contactPath, contactPaint)
+
+    val inset = 1.5f
+    if (safeW > inset * 2f && safeH > inset * 2f) {
+      val clearRadii =
+        floatArrayOf(
+          (leftCornerPx - inset).coerceAtLeast(0f), (leftCornerPx - inset).coerceAtLeast(0f),
+          (rightCornerPx - inset).coerceAtLeast(0f), (rightCornerPx - inset).coerceAtLeast(0f),
+          (rightCornerPx - inset).coerceAtLeast(0f), (rightCornerPx - inset).coerceAtLeast(0f),
+          (leftCornerPx - inset).coerceAtLeast(0f), (leftCornerPx - inset).coerceAtLeast(0f),
+        )
+      val clearPath =
+        android.graphics.Path().apply {
+          addRoundRect(
+            padPx + inset,
+            padPx + inset,
+            padPx + safeW - inset,
+            padPx + safeH - inset,
+            clearRadii,
+            android.graphics.Path.Direction.CW,
+          )
+        }
+      val clearPaint =
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+          xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+        }
+      canvas.drawPath(clearPath, clearPaint)
+    }
+
+    val entry = CachedShadowBitmap(bitmap = androidBitmap.asImageBitmap(), padPx = padPx)
+    synchronized(cache) {
+      cache.put(key, entry)
+    }
+    return entry
+  }
+}
+
+internal fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+  if (edge1 <= edge0) return if (x >= edge1) 1f else 0f
+  val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+  return t * t * (3f - 2f * t)
+}
 
 @Composable
 fun BookCoverArtwork(
@@ -85,7 +226,10 @@ fun BookCoverArtwork(
   fallbackCoverUris: List<String> = emptyList(),
   compact: Boolean = false,
   elevated: Boolean = false,
-  shadowAlpha: (() -> Float)? = null,
+  animateEntrance: Boolean = false,
+  entranceKey: Any? = null,
+  entranceProgress: (() -> Float)? = null,
+  bottomProgressPercent: Float? = null,
   widthHintDp: Dp? = null,
   contentScale: ContentScale = ContentScale.Crop,
   onImageLoadError: (() -> Unit)? = null,
@@ -189,6 +333,34 @@ fun BookCoverArtwork(
     }
   }
 
+  val itemKey = entranceKey ?: "${title}_${author}"
+  var hasPlayedEntrance by rememberSaveable(itemKey) {
+    mutableStateOf(reduceMotion || !animateEntrance)
+  }
+  val localEntrance =
+    remember(itemKey, reduceMotion, animateEntrance) {
+      Animatable(if (reduceMotion || !animateEntrance || hasPlayedEntrance) 1f else 0f)
+    }
+  if (entranceProgress == null && animateEntrance) {
+    LaunchedEffect(itemKey, reduceMotion) {
+      if (reduceMotion || hasPlayedEntrance) {
+        localEntrance.snapTo(1f)
+        hasPlayedEntrance = true
+      } else {
+        hasPlayedEntrance = true
+        localEntrance.animateTo(
+          targetValue = 1f,
+          animationSpec = tween(durationMillis = COVER_ENTRANCE_DURATION_MS, easing = FastOutSlowInEasing),
+        )
+      }
+    }
+  }
+
+  val progressProvider: () -> Float =
+    entranceProgress ?: if (animateEntrance) ({ localEntrance.value }) else ({ 1f })
+  val shouldTransformEntrance = entranceProgress != null || animateEntrance
+  val risePx = remember(density, compact) { with(density) { (if (compact) 8.dp else 14.dp).toPx() } }
+
   val resolvedAspectRatio =
     if (contentScale == ContentScale.Fit && hasLoadedPhoto) {
       val drawable = (painterState as AsyncImagePainter.State.Success).result.drawable
@@ -206,82 +378,46 @@ fun BookCoverArtwork(
         val endCornerPx = 6.dp.toPx()
         val leftCornerPx = if (layoutDirection == LayoutDirection.Rtl) endCornerPx else startCornerPx
         val rightCornerPx = if (layoutDirection == LayoutDirection.Rtl) startCornerPx else endCornerPx
-        val radii =
-          floatArrayOf(
-            leftCornerPx, leftCornerPx,
-            rightCornerPx, rightCornerPx,
-            rightCornerPx, rightCornerPx,
-            leftCornerPx, leftCornerPx,
-          )
         val ambientDy = (if (compact) 2.dp else 4.dp).toPx()
         val contactDy = (if (compact) 0.5.dp else 1.dp).toPx()
         val ambientBlurPx = (if (compact) 4.dp else 10.dp).toPx()
         val contactBlurPx = (if (compact) 1.5.dp else 3.dp).toPx()
-        val ambientPath =
-          android.graphics.Path().apply {
-            addRoundRect(
-              0f,
-              ambientDy,
-              size.width,
-              size.height + ambientDy,
-              radii,
-              android.graphics.Path.Direction.CW,
+        val cachedShadow =
+          if (size.width >= 1f && size.height >= 1f) {
+            CoverShadowBitmapCache.getOrCreate(
+              widthPx = size.width.roundToInt(),
+              heightPx = size.height.roundToInt(),
+              leftCornerPx = leftCornerPx,
+              rightCornerPx = rightCornerPx,
+              ambientDyPx = ambientDy,
+              contactDyPx = contactDy,
+              ambientBlurPx = ambientBlurPx,
+              contactBlurPx = contactBlurPx,
+              compact = compact,
             )
-          }
-        val contactPath =
-          android.graphics.Path().apply {
-            addRoundRect(
-              0f,
-              contactDy,
-              size.width,
-              size.height + contactDy,
-              radii,
-              android.graphics.Path.Direction.CW,
-            )
-          }
-        val ambientPaint =
-          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.Black.copy(alpha = 0.22f).toArgb()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-              maskFilter = BlurMaskFilter(ambientBlurPx, BlurMaskFilter.Blur.NORMAL)
-            }
-          }
-        val contactPaint =
-          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.Black.copy(alpha = 0.14f).toArgb()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-              maskFilter = BlurMaskFilter(contactBlurPx, BlurMaskFilter.Blur.NORMAL)
-            }
-          }
-        val fallbackPath =
-          Path().apply {
-            addRoundRect(
-              RoundRect(
-                left = 0f,
-                top = contactDy,
-                right = size.width,
-                bottom = size.height + contactDy,
-                topLeftCornerRadius = CornerRadius(leftCornerPx),
-                topRightCornerRadius = CornerRadius(rightCornerPx),
-                bottomRightCornerRadius = CornerRadius(rightCornerPx),
-                bottomLeftCornerRadius = CornerRadius(leftCornerPx),
-              )
-            )
+          } else {
+            null
           }
         onDrawBehind {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            drawIntoCanvas { canvas ->
-              canvas.nativeCanvas.drawPath(ambientPath, ambientPaint)
-              canvas.nativeCanvas.drawPath(contactPath, contactPaint)
-            }
-          } else {
-            drawPath(path = fallbackPath, color = Color.Black.copy(alpha = 0.08f))
+          cachedShadow?.let { entry ->
+            drawImage(
+              image = entry.bitmap,
+              dstOffset = IntOffset(-entry.padPx, -entry.padPx),
+              dstSize =
+                IntSize(
+                  width = size.width.roundToInt() + entry.padPx * 2,
+                  height = size.height.roundToInt() + entry.padPx * 2,
+                ),
+            )
           }
         }
       }
     } else {
       Modifier
     }
+
+  val progressFillColor = DipeTheme.colors.readingProgress
+  val progressTrackColor = DipeTheme.colors.readingProgressTrack
 
   Box(
     modifier =
@@ -290,21 +426,55 @@ fun BookCoverArtwork(
           ratio = resolvedAspectRatio,
           matchHeightConstraintsFirst = contentScale == ContentScale.Fit,
         )
+        .then(
+          if (shouldTransformEntrance) {
+            Modifier.graphicsLayer {
+              val p = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
+              val scale = 0.94f + (0.06f * p)
+              translationY = (1f - p) * risePx
+              scaleX = scale
+              scaleY = scale
+            }
+          } else {
+            Modifier
+          }
+        )
         .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {
-    if (elevated) {
-      Box(
-        modifier =
-          Modifier.matchParentSize()
-            .graphicsLayer { alpha = (shadowAlpha?.invoke() ?: 1f).coerceIn(0f, 1f) }
-            .then(shadowModifier),
-      )
-    }
+    // Sibling shadow layer always kept in composition to avoid render-node jumps
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .graphicsLayer {
+            compositingStrategy = CompositingStrategy.Offscreen
+            alpha =
+              if (!elevated) {
+                0f
+              } else if (reduceMotion) {
+                1f
+              } else {
+                val p = progressProvider().coerceIn(0f, 1f)
+                val coverAlpha = p
+                val shadowCurve = smoothstep(0.35f, 1f, p)
+                minOf(shadowCurve, coverAlpha)
+              }
+          }
+          .then(shadowModifier),
+    )
 
     Box(
       modifier =
         Modifier.matchParentSize()
+          .then(
+            if (shouldTransformEntrance) {
+              Modifier.graphicsLayer {
+                alpha = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
+              }
+            } else {
+              Modifier
+            }
+          )
           .clip(BookCoverShape)
           .then(
             when {
@@ -541,9 +711,29 @@ fun BookCoverArtwork(
           }
         }
       }
+      }
+
+      if (bottomProgressPercent != null) {
+        val fraction = (bottomProgressPercent / 100f).coerceIn(0f, 1f)
+        Box(
+          modifier =
+            Modifier.align(Alignment.BottomStart)
+              .fillMaxWidth()
+              .height(3.dp)
+              .background(progressTrackColor.copy(alpha = 0.92f)),
+        ) {
+          if (fraction > 0f) {
+            Box(
+              modifier =
+                Modifier.fillMaxWidth(fraction)
+                  .fillMaxHeight()
+                  .background(progressFillColor),
+            )
+          }
+        }
+      }
     }
   }
-}
 }
 
 @Composable
@@ -556,80 +746,82 @@ fun BookSpineTile(
   hasActiveReading: Boolean = false,
   hasMultipleCopies: Boolean = false,
   elevated: Boolean = false,
-  shadowAlpha: (() -> Float)? = null,
+  animateEntrance: Boolean = false,
+  entranceKey: Any? = null,
+  entranceProgress: (() -> Float)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val density = LocalDensity.current
   val coverCd = stringResource(R.string.cd_book_cover, title)
   val borderColor = MaterialTheme.colorScheme.outlineVariant
   val palette =
     remember(title, author, coverTokens) { coverTokens.paletteFor(title = title, author = author) }
 
+  val itemKey = entranceKey ?: "${title}_${author}"
+  var hasPlayedEntrance by rememberSaveable(itemKey) {
+    mutableStateOf(reduceMotion || !animateEntrance)
+  }
+  val localEntrance =
+    remember(itemKey, reduceMotion, animateEntrance) {
+      Animatable(if (reduceMotion || !animateEntrance || hasPlayedEntrance) 1f else 0f)
+    }
+  if (entranceProgress == null && animateEntrance) {
+    LaunchedEffect(itemKey, reduceMotion) {
+      if (reduceMotion || hasPlayedEntrance) {
+        localEntrance.snapTo(1f)
+        hasPlayedEntrance = true
+      } else {
+        hasPlayedEntrance = true
+        localEntrance.animateTo(
+          targetValue = 1f,
+          animationSpec = tween(durationMillis = COVER_ENTRANCE_DURATION_MS, easing = FastOutSlowInEasing),
+        )
+      }
+    }
+  }
+
+  val progressProvider: () -> Float =
+    entranceProgress ?: if (animateEntrance) ({ localEntrance.value }) else ({ 1f })
+  val shouldTransformEntrance = entranceProgress != null || animateEntrance
+  val risePx = remember(density) { with(density) { 8.dp.toPx() } }
+
   val spineShadowModifier =
     if (elevated) {
       Modifier.drawWithCache {
         val cornerPx = DipeRadii.sharp.toPx()
-        val radii = FloatArray(8) { cornerPx }
         val ambientDy = 2.dp.toPx()
         val contactDy = 0.5.dp.toPx()
         val ambientBlurPx = 4.dp.toPx()
         val contactBlurPx = 1.5.dp.toPx()
-        val ambientPath =
-          android.graphics.Path().apply {
-            addRoundRect(
-              0f,
-              ambientDy,
-              size.width,
-              size.height + ambientDy,
-              radii,
-              android.graphics.Path.Direction.CW,
+        val cachedShadow =
+          if (size.width >= 1f && size.height >= 1f) {
+            CoverShadowBitmapCache.getOrCreate(
+              widthPx = size.width.roundToInt(),
+              heightPx = size.height.roundToInt(),
+              leftCornerPx = cornerPx,
+              rightCornerPx = cornerPx,
+              ambientDyPx = ambientDy,
+              contactDyPx = contactDy,
+              ambientBlurPx = ambientBlurPx,
+              contactBlurPx = contactBlurPx,
+              compact = true,
             )
-          }
-        val contactPath =
-          android.graphics.Path().apply {
-            addRoundRect(
-              0f,
-              contactDy,
-              size.width,
-              size.height + contactDy,
-              radii,
-              android.graphics.Path.Direction.CW,
-            )
-          }
-        val ambientPaint =
-          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.Black.copy(alpha = 0.22f).toArgb()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-              maskFilter = BlurMaskFilter(ambientBlurPx, BlurMaskFilter.Blur.NORMAL)
-            }
-          }
-        val contactPaint =
-          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.Black.copy(alpha = 0.14f).toArgb()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-              maskFilter = BlurMaskFilter(contactBlurPx, BlurMaskFilter.Blur.NORMAL)
-            }
-          }
-        val fallbackPath =
-          Path().apply {
-            addRoundRect(
-              RoundRect(
-                left = 0f,
-                top = contactDy,
-                right = size.width,
-                bottom = size.height + contactDy,
-                cornerRadius = CornerRadius(cornerPx),
-              )
-            )
+          } else {
+            null
           }
         onDrawBehind {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            drawIntoCanvas { canvas ->
-              canvas.nativeCanvas.drawPath(ambientPath, ambientPaint)
-              canvas.nativeCanvas.drawPath(contactPath, contactPaint)
-            }
-          } else {
-            drawPath(path = fallbackPath, color = Color.Black.copy(alpha = 0.08f))
+          cachedShadow?.let { entry ->
+            drawImage(
+              image = entry.bitmap,
+              dstOffset = IntOffset(-entry.padPx, -entry.padPx),
+              dstSize =
+                IntSize(
+                  width = size.width.roundToInt() + entry.padPx * 2,
+                  height = size.height.roundToInt() + entry.padPx * 2,
+                ),
+            )
           }
         }
       }
@@ -642,21 +834,54 @@ fun BookSpineTile(
       modifier
         .height(height)
         .width(48.dp)
+        .then(
+          if (shouldTransformEntrance) {
+            Modifier.graphicsLayer {
+              val p = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
+              val scale = 0.94f + (0.06f * p)
+              translationY = (1f - p) * risePx
+              scaleX = scale
+              scaleY = scale
+            }
+          } else {
+            Modifier
+          }
+        )
         .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {
-    if (elevated) {
-      Box(
-        modifier =
-          Modifier.matchParentSize()
-            .graphicsLayer { alpha = (shadowAlpha?.invoke() ?: 1f).coerceIn(0f, 1f) }
-            .then(spineShadowModifier),
-      )
-    }
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .graphicsLayer {
+            compositingStrategy = CompositingStrategy.Offscreen
+            alpha =
+              if (!elevated) {
+                0f
+              } else if (reduceMotion) {
+                1f
+              } else {
+                val p = progressProvider().coerceIn(0f, 1f)
+                val coverAlpha = p
+                val shadowCurve = smoothstep(0.35f, 1f, p)
+                minOf(shadowCurve, coverAlpha)
+              }
+          }
+          .then(spineShadowModifier),
+    )
 
     Box(
       modifier =
         Modifier.matchParentSize()
+          .then(
+            if (shouldTransformEntrance) {
+              Modifier.graphicsLayer {
+                alpha = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
+              }
+            } else {
+              Modifier
+            }
+          )
           .clip(BookSpineShape)
           .background(palette.clothColor)
           .border(0.75.dp, borderColor, BookSpineShape)

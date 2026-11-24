@@ -2,9 +2,7 @@ package com.example.feature.library
 
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -19,6 +17,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -98,6 +98,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,18 +172,6 @@ fun LibraryScreen(
     }
   }
 
-  val screenShadowAlpha = remember(reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
-  if (!reduceMotion) {
-    LaunchedEffect(Unit) {
-      delay(120L)
-      screenShadowAlpha.animateTo(
-        targetValue = 1f,
-        animationSpec = tween(durationMillis = 400, easing = EaseOut),
-      )
-    }
-  }
-  val shadowAlphaProvider: () -> Float = { screenShadowAlpha.value }
-
   val isGridActive = uiState.viewMode == LibraryViewMode.GRID && uiState.books.isNotEmpty()
   val collapseStepPx = remember(density) { with(density) { 12.dp.roundToPx() } }
   val topSnapThresholdPx = remember(density) { with(density) { 16.dp.roundToPx() } }
@@ -198,11 +187,15 @@ fun LibraryScreen(
       isHeaderCollapsed = false
       return@LaunchedEffect
     }
-    var prevIndex =
+    var lastIndex =
       if (isGridActive) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
-    var prevOffset =
+    var lastOffset =
       if (isGridActive) gridState.firstVisibleItemScrollOffset
       else listState.firstVisibleItemScrollOffset
+    var anchorIndex = lastIndex
+    var anchorOffset = lastOffset
+    var lastDirection = 0
+
     snapshotFlow {
         if (isGridActive) {
           gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
@@ -213,17 +206,39 @@ fun LibraryScreen(
       .collect { (index, offset) ->
         if (index == 0 && offset <= topSnapThresholdPx) {
           isHeaderCollapsed = false
-        } else if (
-          index > prevIndex || (index == prevIndex && offset - prevOffset > collapseStepPx)
-        ) {
-          isHeaderCollapsed = true
-        } else if (
-          index < prevIndex || (index == prevIndex && prevOffset - offset > collapseStepPx)
-        ) {
-          isHeaderCollapsed = false
+          anchorIndex = index
+          anchorOffset = offset
+          lastDirection = 0
+        } else {
+          val deltaDir =
+            when {
+              index > lastIndex || (index == lastIndex && offset > lastOffset) -> 1
+              index < lastIndex || (index == lastIndex && offset < lastOffset) -> -1
+              else -> 0
+            }
+          if (deltaDir != 0) {
+            if (deltaDir != lastDirection) {
+              anchorIndex = lastIndex
+              anchorOffset = lastOffset
+              lastDirection = deltaDir
+            }
+            if (deltaDir == 1) {
+              if (index > anchorIndex || (index == anchorIndex && offset - anchorOffset >= collapseStepPx)) {
+                isHeaderCollapsed = true
+                anchorIndex = index
+                anchorOffset = offset
+              }
+            } else {
+              if (index < anchorIndex || (index == anchorIndex && anchorOffset - offset >= collapseStepPx)) {
+                isHeaderCollapsed = false
+                anchorIndex = index
+                anchorOffset = offset
+              }
+            }
+          }
         }
-        prevIndex = index
-        prevOffset = offset
+        lastIndex = index
+        lastOffset = offset
       }
   }
 
@@ -406,7 +421,6 @@ fun LibraryScreen(
                   val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                   LibraryGridCard(
                     book = book,
-                    shadowAlpha = shadowAlphaProvider,
                     onClick = onBookClick,
                   )
                 }
@@ -443,7 +457,6 @@ fun LibraryScreen(
                       val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                       LibraryListRow(
                         book = book,
-                        shadowAlpha = shadowAlphaProvider,
                         onClick = onBookClick,
                         onChangeStatus = { statusDialogBook = book },
                         onViewDetails = onBookClick,
@@ -460,7 +473,6 @@ fun LibraryScreen(
                     ) { shelfBooks ->
                       LibraryShelfRow(
                         shelfBooks = shelfBooks,
-                        shadowAlpha = shadowAlphaProvider,
                         onOpenBook = onOpenBook,
                       )
                     }
@@ -475,7 +487,6 @@ fun LibraryScreen(
                       val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
                       LibraryGalleryItem(
                         book = book,
-                        shadowAlpha = shadowAlphaProvider,
                         onClick = onBookClick,
                       )
                     }
@@ -710,8 +721,8 @@ private fun LibraryPortraitHeader(
   val topOffsetPx = collapseFraction * topSectionHeightPx.toFloat()
   val topFadeAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
 
-  val buttonSizePx = remember(density) { with(density) { 44.dp.toPx() } }
-  val buttonGapPx = remember(density) { with(density) { DipeSpacing.sm.toPx() } }
+  val buttonSizePx = remember(density) { with(density) { 48.dp.toPx() } }
+  val buttonGapPx = remember(density) { with(density) { DipeSpacing.compact.toPx() } }
   val addSlotPx = buttonSizePx + buttonGapPx
   val twoButtonsSlotPx = (buttonSizePx * 2f) + (buttonGapPx * 2f)
 
@@ -806,7 +817,7 @@ private fun LibraryPortraitHeader(
                 .graphicsLayer {
                   translationX = (1f - collapseFraction) * addSlotPx
                 },
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             LibraryViewModeTrigger(
@@ -817,7 +828,7 @@ private fun LibraryPortraitHeader(
               hasActiveSheetBadge = hasActiveSheetBadge,
               onOpenFiltersSheet = onOpenFiltersSheet,
             )
-            Spacer(modifier = Modifier.size(44.dp))
+            Spacer(modifier = Modifier.size(48.dp))
           }
 
           Box(
@@ -869,20 +880,17 @@ private fun LibraryLandscapeHeader(
   onOpenAddBook: () -> Unit,
 ) {
   val density = LocalDensity.current
-  val titleGapPx = remember(density) { with(density) { DipeSpacing.md.toPx() } }
+  val titleGapPx = remember(density) { with(density) { DipeSpacing.compact.toPx() } }
   var titleSlotWidthPx by remember { mutableIntStateOf(0) }
   val titleAlpha = (1f - (collapseFraction * 1.45f)).coerceIn(0f, 1f)
 
   Surface(color = MaterialTheme.colorScheme.background) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      Column(
-        modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xs, bottom = DipeSpacing.xs),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
-      ) {
-        // Row 1: Smaller serif "Biblioteca" left (hides on scroll), flexible search center, [Mode][Filters][+] right
+    Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+      Column(modifier = Modifier.fillMaxWidth()) {
+        // Row 1 (48dp): Smaller serif "Biblioteca" left (hides on scroll), flexible search center, [Mode][Filters][+] right with uniform 12dp spacing
         Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
-          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Box(
@@ -899,7 +907,7 @@ private fun LibraryLandscapeHeader(
                 Modifier.onSizeChanged { titleSlotWidthPx = it.width + titleGapPx.toInt() }
                   .graphicsLayer {
                     alpha = titleAlpha
-                    translationX = -collapseFraction * (titleSlotWidthPx * 0.28f)
+                    translationX = -collapseFraction * (titleSlotWidthPx * 0.55f)
                   },
             )
 
@@ -916,7 +924,7 @@ private fun LibraryLandscapeHeader(
           }
 
           Row(
-            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.compact),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             LibraryViewModeTrigger(
@@ -934,7 +942,7 @@ private fun LibraryLandscapeHeader(
           }
         }
 
-        // Row 2: Horizontal status chips with generous trailing contentPadding so last chip never clips
+        // Row 2 (48dp): Horizontal status chips with trailing contentPadding (total sticky height = 96dp <= 96dp)
         LibraryStatusChipsRow(
           horizontalPadding = horizontalPadding,
           trailingExtraPadding = DipeSpacing.md,
@@ -944,7 +952,7 @@ private fun LibraryLandscapeHeader(
           onClearGenreFilter = onClearGenreFilter,
         )
       }
-      HairlineDivider()
+      HairlineDivider(modifier = Modifier.align(Alignment.BottomCenter))
     }
   }
 }
@@ -1048,8 +1056,7 @@ private fun LibraryViewModeTrigger(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     modifier =
-      Modifier.minimumInteractiveComponentSize()
-        .size(44.dp)
+      Modifier.size(48.dp)
         .testTag("library_view_mode_trigger"),
   ) {
     Box(contentAlignment = Alignment.Center) {
@@ -1078,8 +1085,7 @@ private fun LibraryFiltersTrigger(
         if (hasActiveSheetBadge) MaterialTheme.colorScheme.secondary
         else MaterialTheme.colorScheme.onSurfaceVariant,
       modifier =
-        Modifier.minimumInteractiveComponentSize()
-          .size(44.dp)
+        Modifier.size(48.dp)
           .testTag("library_sort_button"),
     ) {
       Box(contentAlignment = Alignment.Center) {
@@ -1093,7 +1099,7 @@ private fun LibraryFiltersTrigger(
     if (hasActiveSheetBadge) {
       Box(
         modifier =
-          Modifier.padding(top = 6.dp, end = 6.dp)
+          Modifier.padding(top = 8.dp, end = 8.dp)
             .size(7.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.secondary),
@@ -1113,8 +1119,7 @@ private fun LibraryCompactAddButton(
     color = MaterialTheme.colorScheme.secondary,
     contentColor = MaterialTheme.colorScheme.onSecondary,
     modifier =
-      Modifier.minimumInteractiveComponentSize()
-        .size(44.dp)
+      Modifier.size(48.dp)
         .testTag(testTag),
   ) {
     Box(contentAlignment = Alignment.Center) {
@@ -1273,7 +1278,6 @@ private fun viewModePillLabel(mode: LibraryViewMode): String =
 @Composable
 private fun LibraryGridCard(
   book: CatalogBook,
-  shadowAlpha: () -> Float,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -1296,13 +1300,12 @@ private fun LibraryGridCard(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
-      shadowAlpha = shadowAlpha,
+      animateEntrance = true,
+      entranceKey = "lib_grid_${book.id}",
+      bottomProgressPercent = if (showActiveProgress) book.activeProgressPercent else null,
       widthHintDp = 160.dp,
       modifier = Modifier.fillMaxWidth(),
     )
-    if (showActiveProgress) {
-      EditorialProgressBar(progressPercent = book.activeProgressPercent!!, height = 2.dp)
-    }
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
       Text(
         text = book.title,
@@ -1320,33 +1323,17 @@ private fun LibraryGridCard(
       )
       Spacer(modifier = Modifier.height(DipeSpacing.xxs))
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Row(
-          modifier = Modifier.weight(1f),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-          Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
-          val statusText =
-            if (showActiveProgress) {
-              "${readingStatusLabel(book.status)} · ${LocaleManager.formatPercent(book.activeProgressPercent!!, language)}"
-            } else {
-              readingStatusLabel(book.status)
-            }
-          Text(
-            text = statusText,
-            style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+      val statusText =
+        if (showActiveProgress) {
+          "${readingStatusLabel(book.status)} · ${LocaleManager.formatPercent(book.activeProgressPercent!!, language)}"
+        } else {
+          readingStatusLabel(book.status)
         }
-        MinimalLanguageBadge(languageTag = book.primaryEdition?.language)
-      }
+      LibraryGridStatusAndLanguageRow(
+        statusText = statusText,
+        statusColor = statusColor,
+        languageTag = book.primaryEdition?.language,
+      )
 
       if (book.editionCount > 1 || book.pendingSuggestionsCount > 0) {
         Row(
@@ -1373,9 +1360,81 @@ private fun LibraryGridCard(
 }
 
 @Composable
+private fun LibraryGridStatusAndLanguageRow(
+  statusText: String,
+  statusColor: androidx.compose.ui.graphics.Color,
+  languageTag: String?,
+) {
+  val density = LocalDensity.current
+  val gapPx = remember(density) { with(density) { 6.dp.roundToPx() } }
+
+  SubcomposeLayout(modifier = Modifier.fillMaxWidth()) { constraints ->
+    val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+    val unboundedConstraints = Constraints(minWidth = 0, maxWidth = Constraints.Infinity)
+
+    val statusUnbounded =
+      subcompose("status_full") {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
+          Text(
+            text = statusText,
+            style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+          )
+        }
+      }.first().measure(unboundedConstraints)
+
+    val badgePlaceable =
+      subcompose("badge") {
+        MinimalLanguageBadge(languageTag = languageTag)
+      }.firstOrNull()?.measure(looseConstraints)
+
+    val fitsWithBadge =
+      badgePlaceable != null &&
+        statusUnbounded.width + gapPx + badgePlaceable.width <= constraints.maxWidth
+
+    if (fitsWithBadge) {
+      val rowHeight = maxOf(statusUnbounded.height, badgePlaceable!!.height)
+      layout(constraints.maxWidth, rowHeight) {
+        statusUnbounded.placeRelative(0, (rowHeight - statusUnbounded.height) / 2)
+        badgePlaceable.placeRelative(
+          x = constraints.maxWidth - badgePlaceable.width,
+          y = (rowHeight - badgePlaceable.height) / 2,
+        )
+      }
+    } else {
+      val wrappedStatus =
+        subcompose("status_wrapped") {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusColor))
+            Text(
+              text = statusText,
+              style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 2,
+            )
+          }
+        }.first().measure(looseConstraints)
+
+      layout(constraints.maxWidth, wrappedStatus.height) {
+        wrappedStatus.placeRelative(0, 0)
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun LibraryListRow(
   book: CatalogBook,
-  shadowAlpha: () -> Float,
   onClick: () -> Unit,
   onChangeStatus: () -> Unit,
   onViewDetails: () -> Unit,
@@ -1408,7 +1467,8 @@ private fun LibraryListRow(
           coverUri = book.coverUri,
           compact = true,
           elevated = true,
-          shadowAlpha = shadowAlpha,
+          animateEntrance = true,
+          entranceKey = "lib_list_${book.id}",
           widthHintDp = 50.dp,
           modifier = Modifier.width(50.dp),
         )
@@ -1439,9 +1499,9 @@ private fun LibraryListRow(
             overflow = TextOverflow.Ellipsis,
           )
 
-          Row(
+          FlowRow(
             horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(DipeSpacing.xxs),
           ) {
             Row(
               horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1458,8 +1518,7 @@ private fun LibraryListRow(
                 text = statusStr,
                 style = LocalDipeTypography.current.monoMetadata.copy(fontSize = 11.5.sp),
                 color = statusColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
               )
             }
 
@@ -1561,7 +1620,6 @@ private fun LibraryListRow(
 @Composable
 private fun LibraryShelfRow(
   shelfBooks: List<CatalogBook>,
-  shadowAlpha: () -> Float,
   onOpenBook: (Long) -> Unit,
 ) {
   Column(
@@ -1584,7 +1642,8 @@ private fun LibraryShelfRow(
           hasActiveReading = book.status == ReadingStatus.READING,
           hasMultipleCopies = book.copyCount > 1,
           elevated = true,
-          shadowAlpha = shadowAlpha,
+          animateEntrance = true,
+          entranceKey = "lib_shelf_${book.id}",
           modifier =
             Modifier.clickable(onClick = onBookClick)
               .testTag("library_shelf_book_${book.id}"),
@@ -1609,7 +1668,6 @@ private fun LibraryShelfRow(
 @Composable
 private fun LibraryGalleryItem(
   book: CatalogBook,
-  shadowAlpha: () -> Float,
   onClick: () -> Unit,
 ) {
   val language = LocalAppLanguage.current
@@ -1639,7 +1697,8 @@ private fun LibraryGalleryItem(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
-        shadowAlpha = shadowAlpha,
+        animateEntrance = true,
+        entranceKey = "lib_gallery_${book.id}",
         widthHintDp = 196.dp,
         modifier = Modifier.width(196.dp),
       )

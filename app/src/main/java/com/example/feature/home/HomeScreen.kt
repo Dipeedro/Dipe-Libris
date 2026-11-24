@@ -2,7 +2,6 @@ package com.example.feature.home
 
 import android.content.res.Configuration
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -63,7 +62,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -73,9 +71,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.size.Precision
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
@@ -89,10 +84,8 @@ import com.example.core.localization.LocaleManager
 import com.example.core.model.AppLanguage
 import com.example.core.model.CatalogBook
 import com.example.feature.library.QuickProgressSheet
-import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun HomeScreen(
@@ -330,58 +323,16 @@ private fun FeaturedReadingShowcase(
     }
 
   val reduceMotion = DipeTheme.motion.reduceMotion
-  val context = LocalContext.current
   val density = LocalDensity.current
-  val coverReady = remember(book.id, reduceMotion) { mutableStateOf(reduceMotion || book.coverUri.isNullOrBlank()) }
   val coverProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
-  val coverShadowProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val titleMetaProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val progressStageProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
   val buttonsProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
 
   if (!reduceMotion) {
-    LaunchedEffect(book.id, book.coverUri) {
-      val rawUri = book.coverUri?.takeIf { it.isNotBlank() }
-      if (rawUri != null && !coverReady.value) {
-        val data: Any =
-          when {
-            rawUri.startsWith("http://") || rawUri.startsWith("https://") -> rawUri
-            rawUri.startsWith("content://") || rawUri.startsWith("file://") ->
-              android.net.Uri.parse(rawUri)
-            rawUri.startsWith("/") -> File(rawUri)
-            else -> rawUri
-          }
-        val coverWidthHint =
-          if (isSideBySide) {
-            ((viewportMaxHeight * 0.64f).coerceAtLeast(140.dp) * 0.72f).coerceIn(132.dp, 236.dp)
-          } else {
-            if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp
-          }
-        val preloadWidthPx = with(density) { coverWidthHint.roundToPx() }.coerceIn(64, 1600)
-        val preloadHeightPx = (preloadWidthPx * 3) / 2
-        withTimeoutOrNull(350L) {
-          runCatching {
-            context.imageLoader.execute(
-              ImageRequest.Builder(context)
-                .data(data)
-                .size(preloadWidthPx, preloadHeightPx)
-                .precision(Precision.INEXACT)
-                .build()
-            )
-          }
-        }
-      }
-      coverReady.value = true
-    }
-
-    LaunchedEffect(book.id, coverReady.value) {
-      if (!coverReady.value) return@LaunchedEffect
+    LaunchedEffect(book.id) {
       launch {
-        coverProgress.animateTo(1f, tween(durationMillis = 360, easing = FastOutSlowInEasing))
-      }
-      launch {
-        delay(250L)
-        coverShadowProgress.animateTo(1f, tween(durationMillis = 400, easing = EaseOut))
+        coverProgress.animateTo(1f, tween(durationMillis = 600, easing = FastOutSlowInEasing))
       }
       launch {
         delay(70L)
@@ -399,12 +350,7 @@ private fun FeaturedReadingShowcase(
   }
 
   val risePx = with(density) { 14.dp.toPx() }
-  val coverCascadeModifier =
-    Modifier.graphicsLayer {
-      val p = coverProgress.value
-      alpha = p
-      translationY = (1f - p) * risePx
-    }
+  val coverProgressProvider: () -> Float = { coverProgress.value }
   val titleMetaCascadeModifier =
     Modifier.graphicsLayer {
       val p = titleMetaProgress.value
@@ -447,7 +393,7 @@ private fun FeaturedReadingShowcase(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
-        modifier = coverCascadeModifier.padding(14.dp),
+        modifier = Modifier.padding(14.dp),
         contentAlignment = Alignment.Center,
       ) {
         BookCoverArtwork(
@@ -456,7 +402,8 @@ private fun FeaturedReadingShowcase(
           isFavorite = book.isFavorite,
           coverUri = book.coverUri,
           elevated = true,
-          shadowAlpha = { coverShadowProgress.value },
+          entranceKey = "home_featured_${book.id}",
+          entranceProgress = coverProgressProvider,
           widthHintDp = maxCoverWidthHint,
           contentScale = ContentScale.Fit,
           modifier = Modifier.heightIn(max = maxCoverHeight).widthIn(max = 260.dp),
@@ -499,9 +446,10 @@ private fun FeaturedReadingShowcase(
         isFavorite = book.isFavorite,
         coverUri = book.coverUri,
         elevated = true,
-        shadowAlpha = { coverShadowProgress.value },
+        entranceKey = "home_featured_${book.id}",
+        entranceProgress = coverProgressProvider,
         widthHintDp = featuredWidth,
-        modifier = coverCascadeModifier.width(featuredWidth),
+        modifier = Modifier.width(featuredWidth),
       )
 
       Spacer(modifier = Modifier.height(DipeSpacing.lg))
@@ -895,6 +843,8 @@ private fun CurrentlyReadingPlate(
       isFavorite = book.isFavorite,
       coverUri = book.coverUri,
       elevated = true,
+      animateEntrance = true,
+      entranceKey = "home_plate_${book.id}",
       widthHintDp = 120.dp,
       modifier = Modifier.fillMaxWidth(),
     )
