@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -47,13 +48,17 @@ import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
@@ -86,8 +91,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -1150,6 +1160,15 @@ private fun LibraryLandscapeHeader(
   }
 }
 
+private fun readingStatusFilterIcon(status: ReadingStatus): ImageVector =
+  when (status) {
+    ReadingStatus.UNREAD -> Icons.Outlined.BookmarkBorder
+    ReadingStatus.READING -> Icons.AutoMirrored.Outlined.MenuBook
+    ReadingStatus.PAUSED -> Icons.Outlined.PauseCircle
+    ReadingStatus.FINISHED -> Icons.Outlined.CheckCircle
+    ReadingStatus.ABANDONED -> Icons.Outlined.Cancel
+  }
+
 @Composable
 private fun LibraryStatusChipsRow(
   horizontalPadding: Dp,
@@ -1159,12 +1178,16 @@ private fun LibraryStatusChipsRow(
   onClearGenreFilter: () -> Unit,
   trailingExtraPadding: Dp = 0.dp,
 ) {
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val fadeBackgroundColor = MaterialTheme.colorScheme.background
   val chipColors =
     FilterChipDefaults.filterChipColors(
       selectedContainerColor = MaterialTheme.colorScheme.primary,
       selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+      selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
       containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
       labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+      iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
   val statusRowState = rememberLazyListState()
@@ -1173,67 +1196,116 @@ private fun LibraryStatusChipsRow(
       statusRowState.scrollToItem(0)
     }
   }
+  val rightFadeAlpha by
+    animateFloatAsState(
+      targetValue = if (statusRowState.canScrollForward) 1f else 0f,
+      animationSpec =
+        if (reduceMotion) snap()
+        else tween(durationMillis = 180, easing = FastOutSlowInEasing),
+      label = "library_chips_right_fade",
+    )
 
-  LazyRow(
-    state = statusRowState,
-    contentPadding =
-      PaddingValues(
-        start = horizontalPadding,
-        end = horizontalPadding + trailingExtraPadding,
-      ),
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    if (activeGenreName != null) {
-      item(key = "active_genre_chip", contentType = "genre_active") {
+  Box(modifier = Modifier.fillMaxWidth()) {
+    LazyRow(
+      state = statusRowState,
+      contentPadding =
+        PaddingValues(
+          start = horizontalPadding,
+          end = horizontalPadding + trailingExtraPadding,
+        ),
+      horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      if (activeGenreName != null) {
+        item(key = "active_genre_chip", contentType = "genre_active") {
+          FilterChip(
+            selected = true,
+            onClick = onClearGenreFilter,
+            label = { Text(activeGenreName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            trailingIcon = {
+              Icon(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = stringResource(R.string.library_filters_clear),
+                modifier = Modifier.size(14.dp),
+              )
+            },
+            shape = CircleShape,
+            colors =
+              FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.secondary,
+                selectedTrailingIconColor = MaterialTheme.colorScheme.secondary,
+              ),
+            border = null,
+            modifier = Modifier.testTag("library_active_genre_chip"),
+          )
+        }
+      }
+
+      item(key = "filter_all", contentType = "status_filter") {
         FilterChip(
-          selected = true,
-          onClick = onClearGenreFilter,
-          label = { Text(activeGenreName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-          trailingIcon = {
+          selected = statusFilter == null,
+          onClick = { onStatusFilterChange(null) },
+          leadingIcon = {
             Icon(
-              imageVector = Icons.Outlined.Close,
-              contentDescription = stringResource(R.string.library_filters_clear),
-              modifier = Modifier.size(14.dp),
+              imageVector = Icons.AutoMirrored.Outlined.LibraryBooks,
+              contentDescription = null,
+              modifier = Modifier.size(16.dp),
             )
           },
+          label = { Text(stringResource(R.string.library_filter_all), maxLines = 1, softWrap = false) },
           shape = CircleShape,
-          colors =
-            FilterChipDefaults.filterChipColors(
-              selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-              selectedLabelColor = MaterialTheme.colorScheme.secondary,
-              selectedTrailingIconColor = MaterialTheme.colorScheme.secondary,
-            ),
+          colors = chipColors,
           border = null,
-          modifier = Modifier.testTag("library_active_genre_chip"),
+          modifier = Modifier.testTag("library_filter_all"),
+        )
+      }
+
+      items(ReadingStatus.entries, key = { it.name }, contentType = { "status_filter" }) { status ->
+        val selected = statusFilter == status
+        FilterChip(
+          selected = selected,
+          onClick = { onStatusFilterChange(if (selected) null else status) },
+          leadingIcon = {
+            Icon(
+              imageVector = readingStatusFilterIcon(status),
+              contentDescription = null,
+              modifier = Modifier.size(16.dp),
+            )
+          },
+          label = { Text(readingStatusLabel(status), maxLines = 1, softWrap = false) },
+          shape = CircleShape,
+          colors = chipColors,
+          border = null,
+          modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
         )
       }
     }
 
-    item(key = "filter_all", contentType = "status_filter") {
-      FilterChip(
-        selected = statusFilter == null,
-        onClick = { onStatusFilterChange(null) },
-        label = { Text(stringResource(R.string.library_filter_all), maxLines = 1, softWrap = false) },
-        shape = CircleShape,
-        colors = chipColors,
-        border = null,
-        modifier = Modifier.testTag("library_filter_all"),
-      )
-    }
-
-    items(ReadingStatus.entries, key = { it.name }, contentType = { "status_filter" }) { status ->
-      val selected = statusFilter == status
-      FilterChip(
-        selected = selected,
-        onClick = { onStatusFilterChange(if (selected) null else status) },
-        label = { Text(readingStatusLabel(status), maxLines = 1, softWrap = false) },
-        shape = CircleShape,
-        colors = chipColors,
-        border = null,
-        modifier = Modifier.testTag("library_filter_${status.name.lowercase()}"),
-      )
-    }
+    Spacer(
+      modifier =
+        Modifier.matchParentSize()
+          .graphicsLayer { alpha = rightFadeAlpha }
+          .drawWithCache {
+            val fadeWidthPx = 32.dp.toPx().coerceAtMost(size.width)
+            val startX = (size.width - fadeWidthPx).coerceAtLeast(0f)
+            val brush =
+              Brush.horizontalGradient(
+                colors = listOf(Color.Transparent, fadeBackgroundColor),
+                startX = startX,
+                endX = size.width,
+              )
+            onDrawBehind {
+              if (fadeWidthPx > 0f && size.height > 0f) {
+                drawRect(
+                  brush = brush,
+                  topLeft = Offset(startX, 0f),
+                  size = Size(fadeWidthPx, size.height),
+                )
+              }
+            }
+          },
+    )
   }
 }
 

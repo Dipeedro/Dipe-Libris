@@ -48,7 +48,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -146,22 +145,102 @@ fun HomeScreen(
   }
 
   val reduceMotion = DipeTheme.motion.reduceMotion
-  var homeInitialEntranceDone by rememberSaveable { mutableStateOf(reduceMotion) }
-  val screenCoverProgress =
-    remember(reduceMotion) { Animatable(if (reduceMotion || homeInitialEntranceDone) 1f else 0f) }
-  LaunchedEffect(reduceMotion, featuredReading != null || secondaryReading.isNotEmpty()) {
-    if (reduceMotion || homeInitialEntranceDone) {
-      screenCoverProgress.snapTo(1f)
-      homeInitialEntranceDone = true
-    } else if (featuredReading != null || secondaryReading.isNotEmpty()) {
-      screenCoverProgress.animateTo(
+  val featuredBookId = featuredReading?.id
+  val hasAnyReadingBooks = featuredReading != null || secondaryReading.isNotEmpty()
+  val coverCascadeProgress =
+    remember(featuredBookId, hasAnyReadingBooks, reduceMotion) {
+      Animatable(if (reduceMotion || !hasAnyReadingBooks) 1f else 0f)
+    }
+  val titleMetaProgress =
+    remember(featuredBookId, reduceMotion) {
+      Animatable(if (reduceMotion || featuredBookId == null) 1f else 0f)
+    }
+  val progressStageProgress =
+    remember(featuredBookId, reduceMotion) {
+      Animatable(if (reduceMotion || featuredBookId == null) 1f else 0f)
+    }
+  val buttonsProgress =
+    remember(featuredBookId, reduceMotion) {
+      Animatable(if (reduceMotion || featuredBookId == null) 1f else 0f)
+    }
+  val homeShadowProgress =
+    remember(featuredBookId, hasAnyReadingBooks, reduceMotion) {
+      Animatable(if (reduceMotion || !hasAnyReadingBooks) 1f else 0f)
+    }
+
+  LaunchedEffect(featuredBookId, hasAnyReadingBooks, reduceMotion) {
+    if (reduceMotion || !hasAnyReadingBooks) {
+      coverCascadeProgress.snapTo(1f)
+      titleMetaProgress.snapTo(1f)
+      progressStageProgress.snapTo(1f)
+      buttonsProgress.snapTo(1f)
+      homeShadowProgress.snapTo(1f)
+    } else {
+      coverCascadeProgress.snapTo(0f)
+      homeShadowProgress.snapTo(0f)
+      if (featuredBookId != null) {
+        titleMetaProgress.snapTo(0f)
+        progressStageProgress.snapTo(0f)
+        buttonsProgress.snapTo(0f)
+      }
+
+      val coverJob =
+        launch {
+          coverCascadeProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+          )
+        }
+      val titleJob =
+        if (featuredBookId != null) {
+          launch {
+            delay(80L)
+            titleMetaProgress.animateTo(
+              targetValue = 1f,
+              animationSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing),
+            )
+          }
+        } else {
+          null
+        }
+      val progressJob =
+        if (featuredBookId != null) {
+          launch {
+            delay(150L)
+            progressStageProgress.animateTo(
+              targetValue = 1f,
+              animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            )
+          }
+        } else {
+          null
+        }
+      val buttonsJob =
+        if (featuredBookId != null) {
+          launch {
+            delay(220L)
+            buttonsProgress.animateTo(
+              targetValue = 1f,
+              animationSpec = tween(durationMillis = 310, easing = FastOutSlowInEasing),
+            )
+          }
+        } else {
+          null
+        }
+
+      coverJob.join()
+      titleJob?.join()
+      progressJob?.join()
+      buttonsJob?.join()
+
+      homeShadowProgress.animateTo(
         targetValue = 1f,
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
       )
-      homeInitialEntranceDone = true
     }
   }
-  val screenCoverProgressProvider: () -> Float = { screenCoverProgress.value }
+  val screenCoverProgressProvider: () -> Float = { coverCascadeProgress.value }
+  val homeShadowProgressProvider: () -> Float = { homeShadowProgress.value }
 
   val centerPrimaryStage = secondaryReading.isEmpty()
   val configuration = LocalConfiguration.current
@@ -246,6 +325,10 @@ fun HomeScreen(
               stageAvailableHeight = minStageHeight,
               language = language,
               coverProgressProvider = screenCoverProgressProvider,
+              shadowProgressProvider = homeShadowProgressProvider,
+              titleMetaProgressProvider = { titleMetaProgress.value },
+              progressStageProgressProvider = { progressStageProgress.value },
+              buttonsProgressProvider = { buttonsProgress.value },
               onClick = onFeaturedClick,
               onUpdateProgress = {
                 progressSheetFocusTotal = false
@@ -278,6 +361,7 @@ fun HomeScreen(
                   book = book,
                   language = language,
                   entranceProgress = screenCoverProgressProvider,
+                  shadowProgress = homeShadowProgressProvider,
                   onClick = onBookClick,
                 )
               }
@@ -331,6 +415,10 @@ private fun FeaturedReadingShowcase(
   stageAvailableHeight: Dp,
   language: AppLanguage,
   coverProgressProvider: () -> Float,
+  shadowProgressProvider: () -> Float,
+  titleMetaProgressProvider: () -> Float,
+  progressStageProgressProvider: () -> Float,
+  buttonsProgressProvider: () -> Float,
   onClick: () -> Unit,
   onUpdateProgress: () -> Unit,
   onDefineTotal: () -> Unit,
@@ -351,45 +439,23 @@ private fun FeaturedReadingShowcase(
       }
     }
 
-  val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
-  val titleMetaProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
-  val progressStageProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
-  val buttonsProgress = remember(book.id, reduceMotion) { Animatable(if (reduceMotion) 1f else 0f) }
-
-  if (!reduceMotion) {
-    LaunchedEffect(book.id) {
-      launch {
-        delay(70L)
-        titleMetaProgress.animateTo(1f, tween(durationMillis = 340, easing = FastOutSlowInEasing))
-      }
-      launch {
-        delay(140L)
-        progressStageProgress.animateTo(1f, tween(durationMillis = 320, easing = FastOutSlowInEasing))
-      }
-      launch {
-        delay(210L)
-        buttonsProgress.animateTo(1f, tween(durationMillis = 320, easing = FastOutSlowInEasing))
-      }
-    }
-  }
-
   val risePx = with(density) { 14.dp.toPx() }
   val titleMetaCascadeModifier =
     Modifier.graphicsLayer {
-      val p = titleMetaProgress.value
+      val p = titleMetaProgressProvider()
       alpha = p
       translationY = (1f - p) * risePx
     }
   val progressCascadeModifier =
     Modifier.graphicsLayer {
-      val p = progressStageProgress.value
+      val p = progressStageProgressProvider()
       alpha = p
       translationY = (1f - p) * risePx
     }
   val buttonsCascadeModifier =
     Modifier.graphicsLayer {
-      val p = buttonsProgress.value
+      val p = buttonsProgressProvider()
       alpha = p
       translationY = (1f - p) * risePx
     }
@@ -429,6 +495,8 @@ private fun FeaturedReadingShowcase(
           shadowElevation = 12.dp,
           entranceKey = "home_featured_${book.id}",
           entranceProgress = coverProgressProvider,
+          applyEntranceScale = false,
+          shadowProgress = shadowProgressProvider,
           widthHintDp = maxCoverWidthHint,
           contentScale = ContentScale.Fit,
           modifier = Modifier.heightIn(max = maxCoverHeight).widthIn(max = 260.dp),
@@ -478,6 +546,8 @@ private fun FeaturedReadingShowcase(
           shadowElevation = 12.dp,
           entranceKey = "home_featured_${book.id}",
           entranceProgress = coverProgressProvider,
+          applyEntranceScale = false,
+          shadowProgress = shadowProgressProvider,
           widthHintDp = featuredWidth,
           modifier = Modifier.width(featuredWidth),
         )
@@ -859,6 +929,7 @@ private fun CurrentlyReadingPlate(
   book: CatalogBook,
   language: AppLanguage,
   entranceProgress: () -> Float,
+  shadowProgress: () -> Float,
   onClick: () -> Unit,
 ) {
   Column(
@@ -877,6 +948,8 @@ private fun CurrentlyReadingPlate(
       shadowElevation = 12.dp,
       entranceKey = "home_plate_${book.id}",
       entranceProgress = entranceProgress,
+      applyEntranceScale = false,
+      shadowProgress = shadowProgress,
       widthHintDp = 120.dp,
       modifier = Modifier.fillMaxWidth(),
     )

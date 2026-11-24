@@ -86,20 +86,42 @@ private fun BoxScope.BookCoverShadowLayer(
   shape: Shape,
   progressProvider: () -> Float,
   reduceMotion: Boolean,
+  shadowProgressProvider: (() -> Float)? = null,
 ) {
-  val p = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
-  val s = if (reduceMotion) 1f else smoothstep(0.35f, 1f, p)
-  Box(
-    modifier =
-      Modifier.matchParentSize()
-        .shadow(
-          elevation = elevation,
-          shape = shape,
-          clip = false,
-          ambientColor = CoverShadowColor.copy(alpha = 0.18f * s),
-          spotColor = CoverShadowColor.copy(alpha = 0.28f * s),
-        ),
-  )
+  if (shadowProgressProvider != null) {
+    val s = if (reduceMotion) 1f else shadowProgressProvider().coerceIn(0f, 1f)
+    val animatedElevation = elevation * s
+    val shadowScale = 0.96f + (0.04f * s)
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .graphicsLayer {
+            scaleX = shadowScale
+            scaleY = shadowScale
+          }
+          .shadow(
+            elevation = animatedElevation,
+            shape = shape,
+            clip = false,
+            ambientColor = CoverShadowColor.copy(alpha = 0.18f * s),
+            spotColor = CoverShadowColor.copy(alpha = 0.28f * s),
+          ),
+    )
+  } else {
+    val p = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
+    val s = if (reduceMotion) 1f else smoothstep(0.35f, 1f, p)
+    Box(
+      modifier =
+        Modifier.matchParentSize()
+          .shadow(
+            elevation = elevation,
+            shape = shape,
+            clip = false,
+            ambientColor = CoverShadowColor.copy(alpha = 0.18f * s),
+            spotColor = CoverShadowColor.copy(alpha = 0.28f * s),
+          ),
+    )
+  }
 }
 
 @Composable
@@ -116,6 +138,8 @@ fun BookCoverArtwork(
   animateEntrance: Boolean = false,
   entranceKey: Any? = null,
   entranceProgress: (() -> Float)? = null,
+  applyEntranceScale: Boolean = true,
+  shadowProgress: (() -> Float)? = null,
   bottomProgressPercent: Float? = null,
   widthHintDp: Dp? = null,
   contentScale: ContentScale = ContentScale.Crop,
@@ -273,7 +297,7 @@ fun BookCoverArtwork(
           if (shouldTransformEntrance) {
             Modifier.graphicsLayer {
               val p = if (reduceMotion) 1f else progressProvider().coerceIn(0f, 1f)
-              val scale = 0.94f + (0.06f * p)
+              val scale = if (applyEntranceScale) 0.94f + (0.06f * p) else 1f
               translationY = (1f - p) * risePx
               scaleX = scale
               scaleY = scale
@@ -290,6 +314,7 @@ fun BookCoverArtwork(
         elevation = shadowElevation,
         shape = BookCoverShape,
         progressProvider = progressProvider,
+        shadowProgressProvider = shadowProgress,
         reduceMotion = reduceMotion,
       )
     }
