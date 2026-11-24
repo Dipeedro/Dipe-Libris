@@ -332,6 +332,9 @@ interface EditionDao {
   @Query("SELECT coverUri FROM editions WHERE workId = :workId AND coverUri IS NOT NULL")
   suspend fun getCoverUrisForWork(workId: Long): List<String>
 
+  @Query("SELECT * FROM editions WHERE isCoverCustomized = 0 AND coverUri IS NOT NULL")
+  suspend fun getAutoManagedCoverEditions(): List<EditionEntity>
+
   @Query("SELECT COUNT(*) FROM editions WHERE workId = :workId")
   suspend fun countEditionsForWork(workId: Long): Int
 

@@ -20,6 +20,13 @@ interface CoverStorageManager {
   suspend fun downloadBestAvailableCover(imageUrls: List<String>): String? =
     imageUrls.firstNotNullOfOrNull { downloadAndImportCover(it) }
 
+  suspend fun downloadBestAvailableCover(
+    imageUrls: List<String>,
+    minPreferredWidth: Int,
+  ): String? = downloadBestAvailableCover(imageUrls)
+
+  suspend fun getLocalCoverDimensions(coverUri: String?): Pair<Int, Int>? = null
+
   suspend fun deleteCoverIfManaged(coverUri: String?)
 }
 
@@ -49,7 +56,7 @@ class InternalCoverStorageManager(
           return@withContext null
         }
 
-        decodeAndSaveTempFile(tempFile, minWidth = 1, minHeight = 1)
+        decodeAndSaveTempFile(tempFile, minWidth = 1, minHeight = 1)?.first
       } catch (_: Throwable) {
         null
       } finally {
@@ -58,6 +65,64 @@ class InternalCoverStorageManager(
     }
 
   override suspend fun downloadAndImportCover(imageUrl: String): String? =
+    downloadAndImportWithDimensions(imageUrl)?.first
+
+  override suspend fun downloadBestAvailableCover(imageUrls: List<String>): String? =
+    downloadBestAvailableCover(imageUrls, minPreferredWidth = DEFAULT_PREFERRED_MIN_WIDTH_PX)
+
+  override suspend fun downloadBestAvailableCover(
+    imageUrls: List<String>,
+    minPreferredWidth: Int,
+  ): String? =
+    withContext(Dispatchers.IO) {
+      var bestFallbackPath: String? = null
+      var bestFallbackWidth = 0
+
+      for (url in imageUrls.distinct()) {
+        val result = downloadAndImportWithDimensions(url) ?: continue
+        val (path, width) = result
+        if (width >= minPreferredWidth) {
+          if (bestFallbackPath != null && bestFallbackPath != path) {
+            deleteCoverIfManaged(bestFallbackPath)
+          }
+          return@withContext path
+        }
+        if (width > bestFallbackWidth) {
+          if (bestFallbackPath != null && bestFallbackPath != path) {
+            deleteCoverIfManaged(bestFallbackPath)
+          }
+          bestFallbackPath = path
+          bestFallbackWidth = width
+        } else {
+          deleteCoverIfManaged(path)
+        }
+      }
+      bestFallbackPath
+    }
+
+  override suspend fun getLocalCoverDimensions(coverUri: String?): Pair<Int, Int>? =
+    withContext(Dispatchers.IO) {
+      if (coverUri.isNullOrBlank()) return@withContext null
+      val file =
+        when {
+          coverUri.startsWith("file://") ->
+            File(Uri.parse(coverUri).path ?: return@withContext null)
+          coverUri.startsWith("/") -> File(coverUri)
+          else -> return@withContext null
+        }
+      if (!file.exists() || !file.isFile) return@withContext null
+      runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+          bounds.outWidth to bounds.outHeight
+        } else {
+          null
+        }
+      }.getOrNull()
+    }
+
+  private suspend fun downloadAndImportWithDimensions(imageUrl: String): Pair<String, Int>? =
     withContext(Dispatchers.IO) {
       val cleanUrl = imageUrl.trim()
       if (!cleanUrl.startsWith("https://") && !cleanUrl.startsWith("http://")) {
@@ -84,10 +149,10 @@ class InternalCoverStorageManager(
         if (!tempFile.exists() || length < 256L) {
           return@withContext null
         }
-        // Reject tiny placeholder responses (~9KB "image not available" PNG) on Google Books zoom=0/fife upgrades
+        // Reject tiny placeholder responses (~9KB "image not available" PNG) on Google Books HD endpoints
         val isGoogleHdProbe =
           cleanUrl.contains("books.google.com") &&
-            (cleanUrl.contains("fife=w") || cleanUrl.contains("zoom=0"))
+            (cleanUrl.contains("fife=w") || cleanUrl.contains("zoom=0") || cleanUrl.contains("frontcovers"))
         if (isGoogleHdProbe && length in 1L..11_000L) {
           return@withContext null
         }
@@ -103,9 +168,11 @@ class InternalCoverStorageManager(
     tempFile: File,
     minWidth: Int,
     minHeight: Int,
-  ): String? {
+  ): Pair<String, Int>? {
     val decoded = decodeScaledBitmap(tempFile) ?: return null
-    if (decoded.width < minWidth || decoded.height < minHeight) {
+    val actualWidth = decoded.width
+    val actualHeight = decoded.height
+    if (actualWidth < minWidth || actualHeight < minHeight) {
       decoded.recycle()
       return null
     }
@@ -113,6 +180,7 @@ class InternalCoverStorageManager(
     val outFile = File(targetDir, "cover_${UUID.randomUUID()}.jpg")
     return try {
       val scaled = downscaleIfNeeded(decoded, MAX_DIMENSION_PX)
+      val savedWidth = scaled.width
       try {
         FileOutputStream(outFile).use { out ->
           scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
@@ -123,7 +191,7 @@ class InternalCoverStorageManager(
         }
         decoded.recycle()
       }
-      if (outFile.exists() && outFile.length() > 0L) outFile.absolutePath else null
+      if (outFile.exists() && outFile.length() > 0L) outFile.absolutePath to savedWidth else null
     } catch (t: Throwable) {
       outFile.delete()
       throw t
@@ -201,7 +269,8 @@ class InternalCoverStorageManager(
   }
 
   private companion object {
-    const val MAX_DIMENSION_PX = 1080
-    const val JPEG_QUALITY = 88
+    const val MAX_DIMENSION_PX = 1440
+    const val JPEG_QUALITY = 90
+    const val DEFAULT_PREFERRED_MIN_WIDTH_PX = 300
   }
 }

@@ -167,6 +167,7 @@
     <string name="book_detail_translator_label">Translator</string>
     <string name="book_detail_unspecified">—</string>
     <string name="book_detail_edit_work">Edit work</string>
+    <string name="book_detail_original_title">Original title: %1$s</string>
 
     <!-- Editions Carousel & Comparison -->
     <string name="book_detail_editions_pager_indicator">Edition %1$d of %2$d</string>

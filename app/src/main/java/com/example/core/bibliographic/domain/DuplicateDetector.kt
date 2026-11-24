@@ -14,15 +14,18 @@ object DuplicateDetector {
     matchedIsbnEditions: List<EditionEntity>,
     copyCountsByEditionId: Map<Long, Int>,
   ): DuplicateAssessment {
+    val primaryTitle = candidate.editionTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle
+    val altTitle = candidate.originalTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle
     return assessRaw(
       isbn13 = candidate.isbn13,
       isbn10 = candidate.isbn10,
       externalWorkKey = candidate.externalWorkKey,
-      title = candidate.workTitle,
+      title = primaryTitle,
       author = candidate.primaryAuthorsText,
       localCatalog = localCatalog,
       matchedIsbnEditions = matchedIsbnEditions,
       copyCountsByEditionId = copyCountsByEditionId,
+      alternateTitle = altTitle.takeIf { it != primaryTitle },
     )
   }
 
@@ -35,6 +38,7 @@ object DuplicateDetector {
     localCatalog: List<CatalogBook>,
     matchedIsbnEditions: List<EditionEntity>,
     copyCountsByEditionId: Map<Long, Int>,
+    alternateTitle: String? = null,
   ): DuplicateAssessment {
     // 1. Exact edition match by ISBN
     if (matchedIsbnEditions.isNotEmpty()) {
@@ -66,16 +70,30 @@ object DuplicateDetector {
       }
     }
 
-    // 3. Title + author similarity comparison
-    val candidateTitleCore = BibliographicMath.normalizeTitleCore(title)
+    // 3. Title + author similarity comparison (checking both edition and original work titles)
+    val candidateTitleCores =
+      listOfNotNull(
+        BibliographicMath.normalizeTitleCore(title).takeIf { it.isNotEmpty() },
+        alternateTitle?.let { BibliographicMath.normalizeTitleCore(it) }?.takeIf { it.isNotEmpty() },
+      ).distinct()
     val candidateAuthorSurname = BibliographicMath.normalizeAuthorSurname(author)
-    if (candidateTitleCore.isEmpty()) return DuplicateAssessment.NoMatch
+    if (candidateTitleCores.isEmpty()) return DuplicateAssessment.NoMatch
 
     val scoredMatches =
       localCatalog
         .mapNotNull { book ->
-          val localTitleCore = BibliographicMath.normalizeTitleCore(book.title)
-          val titleSim = BibliographicMath.tokenSimilarity(candidateTitleCore, localTitleCore)
+          val localTitleCores =
+            listOfNotNull(
+              BibliographicMath.normalizeTitleCore(book.title).takeIf { it.isNotEmpty() },
+              book.work.originalTitle?.let { BibliographicMath.normalizeTitleCore(it) }?.takeIf { it.isNotEmpty() },
+            ).distinct()
+          var titleSim = 0f
+          for (candCore in candidateTitleCores) {
+            for (locCore in localTitleCores) {
+              val sim = BibliographicMath.tokenSimilarity(candCore, locCore)
+              if (sim > titleSim) titleSim = sim
+            }
+          }
           if (titleSim < 0.72f) return@mapNotNull null
 
           val localSurname = BibliographicMath.normalizeAuthorSurname(book.author)

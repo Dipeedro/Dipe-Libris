@@ -131,7 +131,8 @@ class BookReviewViewModel(
           prefillTitleOrIsbn = prefillArg,
         )
 
-    draftState = MutableStateFlow(buildInitialState(payload))
+    draftState = MutableStateFlow(buildInitialReviewState(payload))
+    nextContributorKey = (draftState.value.contributors.maxOfOrNull { it.localKey } ?: 1) + 5
 
     viewModelScope.launch {
       val genres = libraryRepository.observeGenres().first()
@@ -165,68 +166,6 @@ class BookReviewViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = draftState.value,
       )
-
-  private fun buildInitialState(payload: ReviewDraftPayload): BookReviewUiState {
-    val candidate = payload.candidate
-    if (candidate != null) {
-      val contribRows =
-        if (candidate.contributors.isNotEmpty()) {
-          candidate.contributors.mapIndexed { idx, c ->
-            EditableContributorRow(localKey = idx + 1, name = c.name, role = c.role)
-          }
-        } else {
-          listOf(EditableContributorRow(1, "", ContributorRole.AUTHOR))
-        }
-      nextContributorKey = contribRows.size + 5
-      val bestCover = candidate.bestCover
-      val bestSynopsis = candidate.bestSynopsis
-      val extIdsJson =
-        candidate.externalIds.takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
-
-      return BookReviewUiState(
-        mode = payload.mode,
-        targetWorkId = payload.targetWorkId,
-        targetEditionId = payload.targetEditionId,
-        title = candidate.workTitle,
-        subtitle = candidate.subtitle.orEmpty(),
-        originalTitle = candidate.originalTitle.orEmpty(),
-        contributors = contribRows,
-        coverCandidates = candidate.coverCandidates,
-        selectedRemoteCoverUrl = bestCover?.imageUrl,
-        coverSource = bestCover?.source?.name,
-        useTypographicCover = bestCover == null,
-        publisher = candidate.publisher.orEmpty(),
-        publicationYear = candidate.publicationYear?.toString().orEmpty(),
-        totalPages = candidate.totalPages?.toString().orEmpty(),
-        isbn13 = candidate.isbn13.orEmpty(),
-        isbn10 = candidate.isbn10.orEmpty(),
-        language = candidate.language.orEmpty(),
-        editionLabel = candidate.editionLabel.orEmpty(),
-        format = candidate.format,
-        seriesName = candidate.seriesName.orEmpty(),
-        seriesVolume = candidate.seriesVolume.orEmpty(),
-        externalWorkKey = candidate.externalWorkKey,
-        externalIdsJson = extIdsJson,
-        secondaryCategories = candidate.categories,
-        synopsis = bestSynopsis?.text.orEmpty(),
-        synopsisLanguage = bestSynopsis?.language,
-        synopsisSource = bestSynopsis?.source?.name,
-        synopsisCandidates = candidate.synopsisCandidates,
-      )
-    }
-
-    val prefill = payload.prefillTitleOrIsbn?.trim().orEmpty()
-    val parsedPrefillIsbn = if (prefill.isNotEmpty()) BibliographicMath.parseIsbn(prefill) else null
-    return BookReviewUiState(
-      mode = payload.mode,
-      targetWorkId = payload.targetWorkId,
-      targetEditionId = payload.targetEditionId,
-      title = if (parsedPrefillIsbn == null) prefill else "",
-      isbn13 = parsedPrefillIsbn?.isbn13.orEmpty(),
-      isbn10 = parsedPrefillIsbn?.isbn10.orEmpty(),
-      useTypographicCover = true,
-    )
-  }
 
   fun toggleSection(section: ReviewSection) {
     val current = draftState.value.expandedSections
@@ -618,4 +557,76 @@ class BookReviewViewModel(
       }
     }
   }
+}
+
+internal fun buildInitialReviewState(payload: ReviewDraftPayload): BookReviewUiState {
+  val candidate = payload.candidate
+  if (candidate != null) {
+    val contribRows =
+      if (candidate.contributors.isNotEmpty()) {
+        candidate.contributors.mapIndexed { idx, c ->
+          EditableContributorRow(localKey = idx + 1, name = c.name, role = c.role)
+        }
+      } else {
+        listOf(EditableContributorRow(1, "", ContributorRole.AUTHOR))
+      }
+    val bestCover = candidate.bestCover
+    val bestSynopsis = candidate.bestSynopsis
+    val extIdsJson =
+      candidate.externalIds.takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
+    val resolvedTitle =
+      candidate.editionTitle?.trim()?.takeIf { it.isNotEmpty() } ?: candidate.workTitle
+    val resolvedTitleNorm = BibliographicMath.normalizeBaseTitle(resolvedTitle)
+    val resolvedOriginalTitle =
+      candidate.originalTitle
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && BibliographicMath.normalizeBaseTitle(it) != resolvedTitleNorm }
+        ?: candidate.workTitle
+          .trim()
+          .takeIf { it.isNotEmpty() && BibliographicMath.normalizeBaseTitle(it) != resolvedTitleNorm }
+          .orEmpty()
+
+    return BookReviewUiState(
+      mode = payload.mode,
+      targetWorkId = payload.targetWorkId,
+      targetEditionId = payload.targetEditionId,
+      title = resolvedTitle,
+      subtitle = candidate.subtitle.orEmpty(),
+      originalTitle = resolvedOriginalTitle,
+      contributors = contribRows,
+      coverCandidates = candidate.coverCandidates,
+      selectedRemoteCoverUrl = bestCover?.imageUrl,
+      coverSource = bestCover?.source?.name,
+      useTypographicCover = bestCover == null,
+      publisher = candidate.publisher.orEmpty(),
+      publicationYear = candidate.publicationYear?.toString().orEmpty(),
+      totalPages = candidate.totalPages?.toString().orEmpty(),
+      isbn13 = candidate.isbn13.orEmpty(),
+      isbn10 = candidate.isbn10.orEmpty(),
+      language = candidate.language.orEmpty(),
+      editionLabel = candidate.editionLabel.orEmpty(),
+      format = candidate.format,
+      seriesName = candidate.seriesName.orEmpty(),
+      seriesVolume = candidate.seriesVolume.orEmpty(),
+      externalWorkKey = candidate.externalWorkKey,
+      externalIdsJson = extIdsJson,
+      secondaryCategories = candidate.categories,
+      synopsis = bestSynopsis?.text.orEmpty(),
+      synopsisLanguage = bestSynopsis?.language,
+      synopsisSource = bestSynopsis?.source?.name,
+      synopsisCandidates = candidate.synopsisCandidates,
+    )
+  }
+
+  val prefill = payload.prefillTitleOrIsbn?.trim().orEmpty()
+  val parsedPrefillIsbn = if (prefill.isNotEmpty()) BibliographicMath.parseIsbn(prefill) else null
+  return BookReviewUiState(
+    mode = payload.mode,
+    targetWorkId = payload.targetWorkId,
+    targetEditionId = payload.targetEditionId,
+    title = if (parsedPrefillIsbn == null) prefill else "",
+    isbn13 = parsedPrefillIsbn?.isbn13.orEmpty(),
+    isbn10 = parsedPrefillIsbn?.isbn10.orEmpty(),
+    useTypographicCover = true,
+  )
 }

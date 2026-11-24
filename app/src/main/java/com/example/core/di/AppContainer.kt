@@ -12,6 +12,7 @@ import com.example.core.bibliographic.network.OpenLibraryAdapter
 import com.example.core.bibliographic.network.WikidataAdapter
 import com.example.core.data.local.db.DipeLibrisDatabase
 import com.example.core.data.local.media.CoverStorageManager
+import com.example.core.data.local.media.CoverUpgradeCoordinator
 import com.example.core.data.local.media.InternalCoverStorageManager
 import com.example.core.data.local.preferences.DataStorePreferencesRepository
 import com.example.core.data.local.preferences.PreferencesRepository
@@ -37,6 +38,7 @@ interface AppContainer {
   val hybridSearchOrchestrator: HybridSearchOrchestrator
   val metadataUpdateRepository: MetadataUpdateRepository
   val bibliographicDraftStore: BibliographicDraftStore
+  val coverUpgradeCoordinator: CoverUpgradeCoordinator? get() = null
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -121,6 +123,18 @@ class DefaultAppContainer(context: Context) : AppContainer {
       bookDao = database.bookDao(),
       diaryDao = database.diaryDao(),
       readingJourneyDao = database.readingJourneyDao(),
+    )
+  }
+
+  override val coverUpgradeCoordinator: CoverUpgradeCoordinator by lazy {
+    CoverUpgradeCoordinator(
+      context = appContext,
+      bookDao = database.bookDao(),
+      editionDao = database.editionDao(),
+      coverStorageManager = coverStorageManager,
+      orchestrator = hybridSearchOrchestrator,
+      preferencesRepository = preferencesRepository,
+      connectivityChecker = connectivityChecker,
     )
   }
 }

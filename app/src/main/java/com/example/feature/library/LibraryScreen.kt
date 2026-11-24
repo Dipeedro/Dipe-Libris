@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -100,6 +101,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -125,6 +127,7 @@ import com.example.core.designsystem.components.MicroMetadataItem
 import com.example.core.designsystem.components.MinimalLanguageBadge
 import com.example.core.designsystem.components.readingStatusAccentColor
 import com.example.core.designsystem.components.readingStatusLabel
+import com.example.core.designsystem.components.shouldShowMinimalLanguageBadge
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
 import com.example.core.model.CatalogBook
@@ -439,12 +442,13 @@ fun LibraryScreen(
   val spinesPerShelf =
     remember(containerWidthPx, horizontalPadding, density) {
       if (containerWidthPx <= 0) {
-        6
+        5
       } else {
         val availableWidthDp =
           with(density) { containerWidthPx.toDp() }.coerceAtMost(960.dp) - (horizontalPadding * 2)
-        val shelfInnerWidth = (availableWidthDp - (DipeSpacing.md * 2)).coerceAtLeast(48.dp)
-        (((shelfInnerWidth + DipeSpacing.xs) / (48.dp + DipeSpacing.xs)).toInt()).coerceAtLeast(1)
+        val spineWidthDp = 56.dp
+        val shelfInnerWidth = (availableWidthDp - (DipeSpacing.md * 2)).coerceAtLeast(spineWidthDp)
+        (((shelfInnerWidth + DipeSpacing.xs) / (spineWidthDp + DipeSpacing.xs)).toInt()).coerceAtLeast(1)
       }
     }
 
@@ -465,6 +469,7 @@ fun LibraryScreen(
     modifier = modifier.fillMaxSize().onSizeChanged { containerWidthPx = it.width },
     contentAlignment = Alignment.TopCenter,
   ) {
+    val containerMaxHeight = maxHeight
     val isLandscape =
       (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && maxWidth >= 380.dp) ||
         (maxWidth > maxHeight && maxWidth >= 440.dp)
@@ -587,10 +592,19 @@ fun LibraryScreen(
             }
 
             else -> {
+              val availableShelfHeightDp =
+                (containerMaxHeight - listTopPadding - DipeSpacing.xxl).coerceAtLeast(280.dp)
+              val desiredShelfCount =
+                ((availableShelfHeightDp.value + 160f) / 286f).toInt().coerceIn(2, 6)
               val shelfRows =
-                remember(uiState.books, spinesPerShelf, uiState.viewMode) {
-                  if (uiState.viewMode == LibraryViewMode.SHELF) uiState.books.chunked(spinesPerShelf)
-                  else emptyList()
+                remember(uiState.books, spinesPerShelf, uiState.viewMode, desiredShelfCount) {
+                  if (uiState.viewMode == LibraryViewMode.SHELF) {
+                    val chunks = uiState.books.chunked(spinesPerShelf)
+                    val missingRows = (desiredShelfCount - chunks.size).coerceAtLeast(0)
+                    chunks + List(missingRows) { emptyList() }
+                  } else {
+                    emptyList()
+                  }
                 }
 
               LazyColumn(
@@ -629,11 +643,11 @@ fun LibraryScreen(
                   }
 
                   LibraryViewMode.SHELF -> {
-                    items(
+                    itemsIndexed(
                       items = shelfRows,
-                      key = { row -> row.first().id },
-                      contentType = { "shelf_row" },
-                    ) { shelfBooks ->
+                      key = { index, row -> row.firstOrNull()?.id ?: "empty_shelf_$index" },
+                      contentType = { _, _ -> "shelf_row" },
+                    ) { _, shelfBooks ->
                       LibraryShelfRow(
                         shelfBooks = shelfBooks,
                         coverProgressProvider = screenCoverProgressProvider,
@@ -1488,10 +1502,19 @@ private fun LibraryGridCard(
       modifier = Modifier.fillMaxWidth(),
     )
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+      val displayFamily = LocalDipeTypography.current.displayFontFamily
       Text(
         text = book.title,
-        style = MaterialTheme.typography.titleMedium,
+        style =
+          MaterialTheme.typography.titleMedium.copy(
+            fontFamily = displayFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 16.sp,
+            lineHeight = 21.sp,
+            letterSpacing = (-0.1).sp,
+          ),
         color = MaterialTheme.colorScheme.onSurface,
+        minLines = 2,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
@@ -1499,6 +1522,7 @@ private fun LibraryGridCard(
         text = book.author,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        minLines = 1,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )
@@ -1547,6 +1571,15 @@ private fun LibraryGridStatusAndLanguageRow(
   languageTag: String?,
 ) {
   val density = LocalDensity.current
+  val appLanguage = LocalAppLanguage.current
+  val showBadge =
+    remember(languageTag, appLanguage) {
+      shouldShowMinimalLanguageBadge(
+        languageTag = languageTag,
+        appLanguage = appLanguage,
+        hideIfMatchesAppLanguage = true,
+      )
+    }
   val gapPx = remember(density) { with(density) { 6.dp.roundToPx() } }
 
   SubcomposeLayout(modifier = Modifier.fillMaxWidth()) { constraints ->
@@ -1571,9 +1604,16 @@ private fun LibraryGridStatusAndLanguageRow(
       }.first().measure(unboundedConstraints)
 
     val badgePlaceable =
-      subcompose("badge") {
-        MinimalLanguageBadge(languageTag = languageTag)
-      }.firstOrNull()?.measure(looseConstraints)
+      if (showBadge) {
+        subcompose("badge") {
+          MinimalLanguageBadge(
+            languageTag = languageTag,
+            hideIfMatchesAppLanguage = true,
+          )
+        }.firstOrNull()?.measure(looseConstraints)
+      } else {
+        null
+      }
 
     val fitsWithBadge =
       badgePlaceable != null &&
@@ -1587,6 +1627,10 @@ private fun LibraryGridStatusAndLanguageRow(
           x = constraints.maxWidth - badgePlaceable.width,
           y = (rowHeight - badgePlaceable.height) / 2,
         )
+      }
+    } else if (!showBadge && statusUnbounded.width <= constraints.maxWidth) {
+      layout(constraints.maxWidth, statusUnbounded.height) {
+        statusUnbounded.placeRelative(0, 0)
       }
     } else {
       val wrappedStatus =
@@ -1659,6 +1703,7 @@ private fun LibraryListRow(
           modifier = Modifier.weight(1f),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+          val displayFamily = LocalDipeTypography.current.displayFontFamily
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
@@ -1666,19 +1711,28 @@ private fun LibraryListRow(
           ) {
             Text(
               text = book.title,
-              style = MaterialTheme.typography.titleMedium,
+              style =
+                MaterialTheme.typography.titleMedium.copy(
+                  fontFamily = displayFamily,
+                  fontWeight = FontWeight.Normal,
+                  fontSize = 16.5.sp,
+                  lineHeight = 22.sp,
+                ),
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 2,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.weight(1f),
             )
-            MinimalLanguageBadge(languageTag = book.primaryEdition?.language)
+            MinimalLanguageBadge(
+              languageTag = book.primaryEdition?.language,
+              hideIfMatchesAppLanguage = true,
+            )
           }
           Text(
             text = book.author,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
           )
 
@@ -1807,32 +1861,37 @@ private fun LibraryShelfRow(
   onOpenBook: (Long) -> Unit,
 ) {
   Column(
-    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md, bottom = DipeSpacing.md),
+    modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.sm, bottom = DipeSpacing.sm),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = DipeSpacing.md),
       horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
       verticalAlignment = Alignment.Bottom,
     ) {
-      shelfBooks.forEach { book ->
-        val spineHeight =
-          remember(book.title) { (164 + ((book.title.hashCode() and Int.MAX_VALUE) % 32)).dp }
-        val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
-        BookSpineTile(
-          title = book.title,
-          author = book.author,
-          isFavorite = book.isFavorite,
-          height = spineHeight,
-          hasActiveReading = book.status == ReadingStatus.READING,
-          hasMultipleCopies = book.copyCount > 1,
-          elevated = true,
-          shadowElevation = 8.dp,
-          entranceKey = "lib_shelf_${book.id}",
-          entranceProgress = coverProgressProvider,
-          modifier =
-            Modifier.clickable(onClick = onBookClick)
-              .testTag("library_shelf_book_${book.id}"),
-        )
+      if (shelfBooks.isEmpty()) {
+        Spacer(modifier = Modifier.height(224.dp))
+      } else {
+        shelfBooks.forEach { book ->
+          val spineHeight =
+            remember(book.title) { (224 + ((book.title.hashCode() and Int.MAX_VALUE) % 36)).dp }
+          val onBookClick = remember(book.id, onOpenBook) { { onOpenBook(book.id) } }
+          BookSpineTile(
+            title = book.title,
+            author = book.author,
+            isFavorite = book.isFavorite,
+            height = spineHeight,
+            width = 56.dp,
+            hasActiveReading = book.status == ReadingStatus.READING,
+            hasMultipleCopies = book.copyCount > 1,
+            elevated = true,
+            shadowElevation = 8.dp,
+            entranceKey = "lib_shelf_${book.id}",
+            entranceProgress = coverProgressProvider,
+            modifier =
+              Modifier.clickable(onClick = onBookClick)
+                .testTag("library_shelf_book_${book.id}"),
+          )
+        }
       }
     }
     Box(
@@ -1905,21 +1964,34 @@ private fun LibraryGalleryItem(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           textAlign = TextAlign.Center,
         )
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          MinimalLanguageBadge(languageTag = book.primaryEdition?.language)
-          if (book.editionCount > 1) {
-            MicroMetadataItem(
-              icon = Icons.Outlined.Layers,
-              text =
-                pluralStringResource(
-                  R.plurals.editions_short_count,
-                  book.editionCount,
-                  book.editionCount,
-                ),
+        val showGalleryBadge =
+          remember(book.primaryEdition?.language, language) {
+            shouldShowMinimalLanguageBadge(
+              languageTag = book.primaryEdition?.language,
+              appLanguage = language,
+              hideIfMatchesAppLanguage = true,
             )
+          }
+        if (showGalleryBadge || book.editionCount > 1) {
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            MinimalLanguageBadge(
+              languageTag = book.primaryEdition?.language,
+              hideIfMatchesAppLanguage = true,
+            )
+            if (book.editionCount > 1) {
+              MicroMetadataItem(
+                icon = Icons.Outlined.Layers,
+                text =
+                  pluralStringResource(
+                    R.plurals.editions_short_count,
+                    book.editionCount,
+                    book.editionCount,
+                  ),
+              )
+            }
           }
         }
       }

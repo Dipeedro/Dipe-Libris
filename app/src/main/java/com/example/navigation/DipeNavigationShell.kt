@@ -181,6 +181,7 @@ fun DipeNavigationShell(
             preferencesRepository = it.preferencesRepository,
             coverStorageManager = it.coverStorageManager,
             metadataUpdateRepository = it.metadataUpdateRepository,
+            coverUpgradeCoordinator = it.coverUpgradeCoordinator,
           )
         }
     )
@@ -592,6 +593,9 @@ fun DipeNavigationShell(
                 onSelectEdition = bookDetailViewModel::selectEdition,
                 onUpdateWorkMetadata = { newTitle, newAuthor ->
                   bookDetailViewModel.updateWorkMetadata(title = newTitle, author = newAuthor)
+                },
+                onUpdateWorkDetails = { updatedWork ->
+                  bookDetailViewModel.updateWorkDetails(work = updatedWork)
                 },
                 onAddEdition = { sub ->
                   bookDetailViewModel.addEdition(

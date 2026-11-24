@@ -86,6 +86,7 @@ import com.example.core.designsystem.components.readingStatusAccentColor
 import com.example.core.designsystem.components.readingStatusLabel
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.localization.LocaleManager
+import com.example.core.model.BibliographicMath
 import com.example.core.model.BookCopy
 import com.example.core.model.CopyMediaType
 import com.example.core.model.Edition
@@ -527,6 +528,22 @@ fun BookDetailScreen(
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                       textAlign = TextAlign.Center,
                       modifier = Modifier.padding(horizontal = horizontalPadding),
+                    )
+                  }
+                  work.originalTitle?.trim()?.takeIf { orig ->
+                    orig.isNotEmpty() &&
+                      BibliographicMath.normalizeBaseTitle(orig) !=
+                        BibliographicMath.normalizeBaseTitle(work.title)
+                  }?.let { orig ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = stringResource(R.string.book_detail_original_title, orig),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      textAlign = TextAlign.Center,
+                      modifier =
+                        Modifier.padding(horizontal = horizontalPadding)
+                          .testTag("book_detail_original_title"),
                     )
                   }
                   Spacer(modifier = Modifier.height(DipeSpacing.xs))
@@ -981,9 +998,26 @@ fun BookDetailScreen(
         WorkEditSheet(
           initialTitle = work.title,
           initialAuthor = work.author,
+          initialOriginalTitle = work.originalTitle,
           onDismiss = { showWorkEditSheet = false },
           onSave = { newTitle, newAuthor ->
             onUpdateWorkMetadata(newTitle, newAuthor)
+            showWorkEditSheet = false
+          },
+          onSaveWithOriginalTitle = { newTitle, newAuthor, newOriginalTitle ->
+            val prevOrig = work.originalTitle?.trim()?.ifEmpty { null }
+            val nextOrig = newOriginalTitle?.trim()?.ifEmpty { null }
+            if (prevOrig != nextOrig) {
+              onUpdateWorkDetails(
+                work.copy(
+                  title = newTitle,
+                  author = newAuthor,
+                  originalTitle = nextOrig,
+                )
+              )
+            } else {
+              onUpdateWorkMetadata(newTitle, newAuthor)
+            }
             showWorkEditSheet = false
           },
         )

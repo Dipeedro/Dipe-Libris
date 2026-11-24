@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -149,9 +150,10 @@ fun BookCoverArtwork(
   val density = LocalDensity.current
   val effectiveWidthDp = widthHintDp ?: if (compact) 52.dp else 160.dp
 
+  val minTargetWidthPx = if (compact) 64 else 320
   val targetWidthPx =
-    remember(effectiveWidthDp, density) {
-      with(density) { effectiveWidthDp.roundToPx() }.coerceIn(64, 1600)
+    remember(effectiveWidthDp, density, compact) {
+      with(density) { effectiveWidthDp.roundToPx() }.coerceIn(minTargetWidthPx, 1600)
     }
   val targetHeightPx = (targetWidthPx * 3) / 2
 
@@ -572,6 +574,7 @@ fun BookSpineTile(
   isFavorite: Boolean,
   height: Dp,
   modifier: Modifier = Modifier,
+  width: Dp = 56.dp,
   hasActiveReading: Boolean = false,
   hasMultipleCopies: Boolean = false,
   elevated: Boolean = false,
@@ -621,7 +624,7 @@ fun BookSpineTile(
     modifier =
       modifier
         .height(height)
-        .width(48.dp)
+        .width(width)
         .then(
           if (shouldTransformEntrance) {
             Modifier.graphicsLayer {
@@ -674,16 +677,16 @@ fun BookSpineTile(
               )
             onDrawBehind { drawRect(brush = spineShade) }
           }
-          .padding(vertical = DipeSpacing.sm, horizontal = DipeSpacing.xs),
+          .padding(vertical = DipeSpacing.sm, horizontal = 6.dp),
       contentAlignment = Alignment.Center,
     ) {
       Column(
         modifier = Modifier.fillMaxHeight().fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         if (isFavorite) {
-          Box(modifier = Modifier.width(14.dp).height(3.dp).background(coverTokens.favoriteRibbon))
+          Box(modifier = Modifier.width(16.dp).height(3.dp).background(coverTokens.favoriteRibbon))
         } else if (hasActiveReading) {
           Box(
             modifier =
@@ -696,16 +699,34 @@ fun BookSpineTile(
           Box(modifier = Modifier.width(14.dp).height(1.dp).background(palette.ruleColor))
         }
 
-        Box(
+        BoxWithConstraints(
           modifier = Modifier.weight(1f).fillMaxWidth(),
           contentAlignment = Alignment.Center,
         ) {
+          val charLen = title.trim().length
+          val maxLineCount = if (charLen > 34 && maxWidth >= 34.dp) 3 else 2
+          val adaptiveStyle =
+            remember(typography.bookSpineTitle, charLen, maxHeight, maxWidth) {
+              when {
+                charLen <= 18 && maxHeight >= 150.dp ->
+                  typography.bookSpineTitle.copy(fontSize = 12.5.sp, lineHeight = 14.5.sp)
+                charLen <= 28 ->
+                  typography.bookSpineTitle.copy(fontSize = 11.5.sp, lineHeight = 13.5.sp)
+                else ->
+                  typography.bookSpineTitle.copy(
+                    fontSize = 10.5.sp,
+                    lineHeight = 12.sp,
+                    letterSpacing = 0.1.sp,
+                  )
+              }
+            }
           Text(
             text = title,
-            style = typography.bookSpineTitle,
+            style = adaptiveStyle,
             color = palette.onCloth,
-            maxLines = 1,
-            softWrap = false,
+            textAlign = TextAlign.Center,
+            maxLines = maxLineCount,
+            softWrap = true,
             overflow = TextOverflow.Ellipsis,
             modifier =
               Modifier.layout { measurable, constraints ->

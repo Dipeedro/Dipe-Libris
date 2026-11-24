@@ -88,6 +88,7 @@ interface LibraryRepository {
     externalWorkKey: String?,
     title: String,
     author: String,
+    alternateTitle: String? = null,
   ): DuplicateAssessment = DuplicateAssessment.NoMatch
 
   suspend fun saveBookFromReview(submission: BookReviewSubmission): Long =
@@ -465,6 +466,7 @@ class RoomLibraryRepository(
                 listOfNotNull(
                   book.title,
                   book.work.subtitle,
+                  book.work.originalTitle,
                   book.author,
                   book.primaryEdition?.publisherOrNote,
                   book.primaryEdition?.translator,
@@ -491,6 +493,7 @@ class RoomLibraryRepository(
     externalWorkKey: String?,
     title: String,
     author: String,
+    alternateTitle: String?,
   ): DuplicateAssessment =
     withContext(Dispatchers.Default) {
       val parsed = BibliographicMath.parseIsbn(isbn13 ?: isbn10)
@@ -531,6 +534,7 @@ class RoomLibraryRepository(
         localCatalog = localBooks,
         matchedIsbnEditions = matchedEditions,
         copyCountsByEditionId = copyCounts,
+        alternateTitle = alternateTitle,
       )
     }
 

@@ -54,6 +54,8 @@ import kotlin.math.roundToInt
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.LocalDipeTypography
+import com.example.core.localization.LocalAppLanguage
+import com.example.core.model.AppLanguage
 
 /**
  * Normalizes raw bibliographic language tags (e.g., "pt-br", "por", "en-US") into
@@ -88,11 +90,31 @@ fun isBrazilianPortugueseTag(rawLanguage: String?): Boolean {
   return normalized == "pt-br" || normalized == "por-br" || normalized.contains("brazil") || normalized.contains("brasil")
 }
 
+fun shouldShowMinimalLanguageBadge(
+  languageTag: String?,
+  appLanguage: AppLanguage,
+  hideIfMatchesAppLanguage: Boolean,
+): Boolean {
+  val code = formatMinimalLanguageCode(languageTag) ?: return false
+  if (!hideIfMatchesAppLanguage) return true
+  return when (appLanguage) {
+    AppLanguage.PORTUGUESE_BR -> code != "PT" && code != "BR"
+    AppLanguage.ENGLISH -> code != "EN"
+  }
+}
+
 @Composable
 fun MinimalLanguageBadge(
   languageTag: String?,
   modifier: Modifier = Modifier,
+  hideIfMatchesAppLanguage: Boolean = false,
 ) {
+  val appLanguage = LocalAppLanguage.current
+  val shouldShow =
+    remember(languageTag, appLanguage, hideIfMatchesAppLanguage) {
+      shouldShowMinimalLanguageBadge(languageTag, appLanguage, hideIfMatchesAppLanguage)
+    }
+  if (!shouldShow) return
   val code = remember(languageTag) { formatMinimalLanguageCode(languageTag) } ?: return
   val isPtBr = remember(languageTag) { isBrazilianPortugueseTag(languageTag) }
   val cd = stringResource(R.string.cd_language_badge, code)

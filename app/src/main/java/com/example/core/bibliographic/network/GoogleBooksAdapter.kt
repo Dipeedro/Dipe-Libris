@@ -65,6 +65,7 @@ private data class GoogleImageLinks(
   val small: String? = null,
   val medium: String? = null,
   val large: String? = null,
+  val extraLarge: String? = null,
 )
 
 class GoogleBooksAdapter(
@@ -297,7 +298,8 @@ class GoogleBooksAdapter(
     val lang = langAssessment.normalizedCode
     val cleanSynopsis = BibliographicMath.stripHtmlTags(info.description)
     val rawImage =
-      info.imageLinks?.large
+      info.imageLinks?.extraLarge
+        ?: info.imageLinks?.large
         ?: info.imageLinks?.medium
         ?: info.imageLinks?.small
         ?: info.imageLinks?.thumbnail
@@ -329,6 +331,7 @@ class GoogleBooksAdapter(
       candidateId = "gb_${item.id ?: title.hashCode()}",
       workTitle = title,
       subtitle = BibliographicMath.sanitizeDisplayText(info.subtitle),
+      editionTitle = title,
       contributors = contributors,
       publisher = pub,
       publicationYear = year,

@@ -131,6 +131,7 @@ class BrasilApiAdapter(
                 candidateId = "br_${parsedIsbn?.isbn13 ?: target}",
                 workTitle = title,
                 subtitle = parsed.subtitle?.trim()?.takeIf { it.isNotEmpty() },
+                editionTitle = title,
                 contributors = contributors,
                 publisher = parsed.publisher?.trim()?.takeIf { it.isNotEmpty() },
                 publicationYear = parsed.year?.takeIf { it in 1400..2100 },

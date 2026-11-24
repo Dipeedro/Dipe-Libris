@@ -351,23 +351,38 @@ object WorkGroupingEngine {
             ed.subtitle?.takeIf { s -> s.isNotBlank() && BibliographicMath.normalizeBaseTitle(s) != canonicalNorm }
           }
         val originalTitle = pickOriginalTitle(allBucketEditions, canonicalTitle)
+        val enrichedEditions =
+          if (originalTitle != null) {
+            val origNorm = BibliographicMath.normalizeBaseTitle(originalTitle)
+            sortedEditions.map { ed ->
+              val edTitleNorm =
+                BibliographicMath.normalizeBaseTitle(ed.editionTitle?.takeIf { it.isNotBlank() } ?: ed.workTitle)
+              if (ed.originalTitle.isNullOrBlank() && origNorm != edTitleNorm) {
+                ed.copy(originalTitle = originalTitle)
+              } else {
+                ed
+              }
+            }
+          } else {
+            sortedEditions
+          }
         val externalWorkKey =
-          sortedEditions.firstNotNullOfOrNull { it.externalWorkKey }
+          enrichedEditions.firstNotNullOfOrNull { it.externalWorkKey }
             ?: allBucketEditions.firstNotNullOfOrNull { it.externalWorkKey }
         val primaryAuthors =
-          sortedEditions
+          enrichedEditions
             .flatMap { it.contributors }
             .filter { it.role.isPrimaryWorkRole }
             .distinctBy { BibliographicMath.normalizeText(it.name) }
             .ifEmpty {
-              sortedEditions
+              enrichedEditions
                 .flatMap { it.contributors }
                 .distinctBy { BibliographicMath.normalizeText(it.name) }
                 .take(2)
             }
-        val allCategories = sortedEditions.flatMap { it.categories }.distinct()
+        val allCategories = enrichedEditions.flatMap { it.categories }.distinct()
         val suggestedGenreSlug = GenreSuggester.suggestSlug(allCategories, canonicalTitle)
-        val allSources = sortedEditions.flatMap { it.sources }.distinct()
+        val allSources = enrichedEditions.flatMap { it.sources }.distinct()
         val workPopScore = computeWorkPopularityScore(allBucketEditions, allSources)
         val bestEval = sortedItems.maxByOrNull { it.evaluation.queryMatchScore }?.evaluation
         val queryRelevance =
@@ -376,9 +391,9 @@ object WorkGroupingEngine {
           } else {
             bestEval?.queryMatchScore ?: 0
           }
-        val bestTierRank = sortedEditions.minOfOrNull { it.languageTierRank } ?: LanguageTier.UNKNOWN.rank
+        val bestTierRank = enrichedEditions.minOfOrNull { it.languageTierRank } ?: LanguageTier.UNKNOWN.rank
         val totalHints =
-          allBucketEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > sortedEditions.size }
+          allBucketEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > enrichedEditions.size }
         val repStruct = sortedItems.first().titleStructure
 
         val deterministicGroupId =
@@ -401,7 +416,7 @@ object WorkGroupingEngine {
             primaryAuthors = primaryAuthors,
             externalWorkKey = externalWorkKey,
             suggestedGenreSlug = suggestedGenreSlug,
-            editions = sortedEditions,
+            editions = enrichedEditions,
             sources = allSources,
             localMatchedWorkId = primary.localExistingWorkId,
             workPopularityScore = workPopScore,
@@ -581,11 +596,40 @@ object WorkGroupingEngine {
     val mergedCategories = (primary.categories + secondary.categories).distinct()
     val mergedWorkLangs = (primary.availableWorkLanguages + secondary.availableWorkLanguages).distinct()
 
+    val primaryEdTitle = primary.editionTitle?.takeIf { it.isNotBlank() }
+    val secondaryEdTitle = secondary.editionTitle?.takeIf { it.isNotBlank() } ?: secondary.workTitle
+    val primaryLooksLocalized =
+      mergedLanguage == "pt" &&
+        (looksPortugueseLike(primaryEdTitle ?: primary.workTitle) || primary.language == "pt")
+    val secondaryLooksLocalized =
+      mergedLanguage == "pt" &&
+        (looksPortugueseLike(secondaryEdTitle) || secondary.language == "pt")
+    val resolvedEditionTitle =
+      when {
+        primaryEdTitle != null && (!secondaryLooksLocalized || primaryLooksLocalized) -> primaryEdTitle
+        secondaryLooksLocalized && !primaryLooksLocalized -> secondaryEdTitle
+        else -> primaryEdTitle ?: secondary.editionTitle
+      }
+    val resolvedEditionNorm = resolvedEditionTitle?.let { BibliographicMath.normalizeBaseTitle(it) }
+    val resolvedOriginalTitle =
+      primary.originalTitle?.takeIf {
+        resolvedEditionNorm == null || BibliographicMath.normalizeBaseTitle(it) != resolvedEditionNorm
+      }
+        ?: secondary.originalTitle?.takeIf {
+          resolvedEditionNorm == null || BibliographicMath.normalizeBaseTitle(it) != resolvedEditionNorm
+        }
+        ?: primary.workTitle.takeIf { w ->
+          resolvedEditionNorm != null && BibliographicMath.normalizeBaseTitle(w) != resolvedEditionNorm
+        }
+        ?: secondary.workTitle.takeIf { w ->
+          resolvedEditionNorm != null && BibliographicMath.normalizeBaseTitle(w) != resolvedEditionNorm
+        }
+
     val merged =
       primary.copy(
         subtitle = primary.subtitle ?: secondary.subtitle,
-        originalTitle = primary.originalTitle ?: secondary.originalTitle,
-        editionTitle = primary.editionTitle ?: secondary.editionTitle,
+        originalTitle = resolvedOriginalTitle,
+        editionTitle = resolvedEditionTitle,
         contributors = mergedContributors,
         publisher = primary.publisher ?: secondary.publisher,
         publicationYear = primary.publicationYear ?: secondary.publicationYear,

@@ -38,9 +38,12 @@ fun WorkEditSheet(
   initialAuthor: String,
   onDismiss: () -> Unit,
   onSave: (title: String, author: String) -> Unit,
+  initialOriginalTitle: String? = null,
+  onSaveWithOriginalTitle: ((title: String, author: String, originalTitle: String?) -> Unit)? = null,
 ) {
   var title by remember(initialTitle) { mutableStateOf(initialTitle) }
   var author by remember(initialAuthor) { mutableStateOf(initialAuthor) }
+  var originalTitle by remember(initialOriginalTitle) { mutableStateOf(initialOriginalTitle.orEmpty()) }
   var showError by remember { mutableStateOf(false) }
 
   val textFieldColors =
@@ -97,6 +100,18 @@ fun WorkEditSheet(
         modifier = Modifier.fillMaxWidth().testTag("work_edit_author_input"),
       )
 
+      if (onSaveWithOriginalTitle != null) {
+        OutlinedTextField(
+          value = originalTitle,
+          onValueChange = { originalTitle = it },
+          label = { Text(stringResource(R.string.review_field_original_title)) },
+          singleLine = true,
+          shape = MaterialTheme.shapes.medium,
+          colors = textFieldColors,
+          modifier = Modifier.fillMaxWidth().testTag("work_edit_original_title_input"),
+        )
+      }
+
       if (showError) {
         Text(
           text = stringResource(R.string.book_validation_required),
@@ -122,7 +137,14 @@ fun WorkEditSheet(
             if (title.isBlank() || author.isBlank()) {
               showError = true
             } else {
-              onSave(title.trim(), author.trim())
+              val trimmedTitle = title.trim()
+              val trimmedAuthor = author.trim()
+              val trimmedOriginal = originalTitle.trim().takeIf { it.isNotEmpty() }
+              if (onSaveWithOriginalTitle != null) {
+                onSaveWithOriginalTitle(trimmedTitle, trimmedAuthor, trimmedOriginal)
+              } else {
+                onSave(trimmedTitle, trimmedAuthor)
+              }
             }
           },
           shape = CircleShape,

@@ -5,6 +5,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.data.local.media.CoverStorageManager
+import com.example.core.data.local.media.CoverUpgradeCoordinator
 import com.example.core.data.local.preferences.PreferencesRepository
 import com.example.core.data.repository.LibraryRepository
 import com.example.core.data.repository.LibraryUpdateCheckSummary
@@ -71,6 +72,7 @@ class LibraryViewModel(
   private val preferencesRepository: PreferencesRepository,
   private val coverStorageManager: CoverStorageManager? = null,
   private val metadataUpdateRepository: MetadataUpdateRepository? = null,
+  private val coverUpgradeCoordinator: CoverUpgradeCoordinator? = null,
 ) : ViewModel() {
 
   private val searchQuery = MutableStateFlow("")
@@ -91,6 +93,9 @@ class LibraryViewModel(
           latestDefaultViewMode.value = newDefault
           activeViewModeOverride.value = null
         }
+    }
+    coverUpgradeCoordinator?.let { coordinator ->
+      viewModelScope.launch { coordinator.upgradeLowResCoversIfNeeded() }
     }
   }
 
@@ -150,6 +155,7 @@ class LibraryViewModel(
                   BibliographicMath.normalizeText(
                     listOfNotNull(
                       book.title,
+                      book.work.originalTitle,
                       book.work.subtitle,
                       book.author,
                       book.primaryEdition?.publisherOrNote,

@@ -368,13 +368,18 @@ class BookSearchViewModel(
     onReadyForReview: () -> Unit,
   ) {
     viewModelScope.launch {
+      val chosenTitle = candidate.editionTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle
+      val alternateTitle =
+        (candidate.originalTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle)
+          .takeIf { it != chosenTitle }
       val assessment =
         libraryRepository.assessDuplicates(
           isbn13 = candidate.isbn13,
           isbn10 = candidate.isbn10,
           externalWorkKey = candidate.externalWorkKey,
-          title = candidate.workTitle,
+          title = chosenTitle,
           author = candidate.primaryAuthorsText,
+          alternateTitle = alternateTitle,
         )
       when (assessment) {
         DuplicateAssessment.NoMatch -> {

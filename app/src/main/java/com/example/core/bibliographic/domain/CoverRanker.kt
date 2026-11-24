@@ -55,6 +55,33 @@ object CoverRanker {
     }
   }
 
+  fun expandHdVariants(rawUrl: String): List<String> {
+    val clean = normalizeCoverUrl(rawUrl) ?: return emptyList()
+    val lower = clean.lowercase()
+    return when {
+      "books.google" in lower ->
+        buildGoogleBooksCoverCandidates(
+          rawUrl = clean,
+          matchesIsbn = false,
+          matchesPublisherYear = false,
+          matchesLanguage = false,
+        ).map { it.imageUrl }
+      "covers.openlibrary.org" in lower ->
+        listOf(
+          clean.replace(Regex("-[SM]\\.jpg(?=\\?|$)", RegexOption.IGNORE_CASE), "-L.jpg"),
+          clean,
+        ).distinct()
+      "mzstatic.com" in lower ->
+        buildAppleBooksCoverCandidates(
+          artworkUrl100 = clean,
+          matchesIsbn = false,
+          matchesPublisherYear = false,
+          matchesLanguage = false,
+        ).map { it.imageUrl }
+      else -> listOf(clean)
+    }
+  }
+
   fun buildGoogleBooksCoverCandidates(
     rawUrl: String?,
     matchesIsbn: Boolean,
@@ -71,33 +98,53 @@ object CoverRanker {
 
     val candidates = mutableListOf<CoverCandidate>()
     val hasZoomParam = Regex("[?&]zoom=\\d+").containsMatchIn(cleanBase)
-    if (hasZoomParam && "books.google" in cleanBase) {
-      val noZoomBase = cleanBase.replace(Regex("&zoom=\\d+"), "")
-      val fifeW800 =
-        if ("?" in noZoomBase) "$noZoomBase&fife=w800" else "$noZoomBase?fife=w800"
-      val zoom0 = cleanBase.replace(Regex("([?&])zoom=\\d+"), "$1zoom=0")
-      candidates.add(
-        CoverCandidate(
-          imageUrl = fifeW800,
-          source = MetadataSource.GOOGLE_BOOKS,
-          matchesIsbn = matchesIsbn,
-          matchesPublisherYear = matchesPublisherYear,
-          matchesLanguage = matchesLanguage,
-          widthHint = 800,
-          heightHint = 1200,
+    val volumeId = Regex("[?&]id=([^&]+)").find(cleanBase)?.groupValues?.getOrNull(1)
+    if ("books.google" in cleanBase) {
+      if (!volumeId.isNullOrBlank()) {
+        val publisherFifeW800 =
+          "https://books.google.com/books/publisher/content/images/frontcovers/$volumeId?fife=w800"
+        candidates.add(
+          CoverCandidate(
+            imageUrl = publisherFifeW800,
+            source = MetadataSource.GOOGLE_BOOKS,
+            matchesIsbn = matchesIsbn,
+            matchesPublisherYear = matchesPublisherYear,
+            matchesLanguage = matchesLanguage,
+            widthHint = 800,
+            heightHint = 1200,
+          )
         )
-      )
-      candidates.add(
-        CoverCandidate(
-          imageUrl = zoom0,
-          source = MetadataSource.GOOGLE_BOOKS,
-          matchesIsbn = matchesIsbn,
-          matchesPublisherYear = matchesPublisherYear,
-          matchesLanguage = matchesLanguage,
-          widthHint = 900,
-          heightHint = 1350,
+      } else if (hasZoomParam) {
+        val noZoomBase = cleanBase.replace(Regex("&zoom=\\d+"), "")
+        val fifeW800 =
+          if ("?" in noZoomBase) "$noZoomBase&fife=w800" else "$noZoomBase?fife=w800"
+        candidates.add(
+          CoverCandidate(
+            imageUrl = fifeW800,
+            source = MetadataSource.GOOGLE_BOOKS,
+            matchesIsbn = matchesIsbn,
+            matchesPublisherYear = matchesPublisherYear,
+            matchesLanguage = matchesLanguage,
+            widthHint = 800,
+            heightHint = 1200,
+          )
         )
-      )
+      }
+
+      if (hasZoomParam) {
+        val zoom0 = cleanBase.replace(Regex("([?&])zoom=\\d+"), "$1zoom=0")
+        candidates.add(
+          CoverCandidate(
+            imageUrl = zoom0,
+            source = MetadataSource.GOOGLE_BOOKS,
+            matchesIsbn = matchesIsbn,
+            matchesPublisherYear = matchesPublisherYear,
+            matchesLanguage = matchesLanguage,
+            widthHint = 900,
+            heightHint = 1350,
+          )
+        )
+      }
     }
 
     candidates.add(
@@ -128,9 +175,24 @@ object CoverRanker {
         ?: return emptyList()
 
     val candidates = mutableListOf<CoverCandidate>()
+    val upgraded1200 =
+      cleanBase.replace(Regex("\\d+x\\d+bb(?=\\.[a-zA-Z0-9]+$)"), "1200x1800bb")
+    if (upgraded1200 != cleanBase) {
+      candidates.add(
+        CoverCandidate(
+          imageUrl = upgraded1200,
+          source = MetadataSource.APPLE_BOOKS,
+          matchesIsbn = matchesIsbn,
+          matchesPublisherYear = matchesPublisherYear,
+          matchesLanguage = matchesLanguage,
+          widthHint = 1200,
+          heightHint = 1800,
+        )
+      )
+    }
     val upgraded600 =
       cleanBase.replace(Regex("\\d+x\\d+bb(?=\\.[a-zA-Z0-9]+$)"), "600x900bb")
-    if (upgraded600 != cleanBase) {
+    if (upgraded600 != cleanBase && upgraded600 != upgraded1200) {
       candidates.add(
         CoverCandidate(
           imageUrl = upgraded600,
@@ -171,24 +233,28 @@ object CoverRanker {
         MetadataSource.BRASIL_API -> 21
         MetadataSource.WIKIDATA -> 18
         MetadataSource.CROSSREF -> 10
-        MetadataSource.APPLE_BOOKS -> 2
+        MetadataSource.APPLE_BOOKS -> 6
       }
     val w = c.widthHint ?: 0
     val h = c.heightHint ?: 0
-    if (w >= 600 || h >= 900) {
+    if (w >= 800 || h >= 1200) {
+      score += 24
+    } else if (w >= 600 || h >= 900) {
       score += 18
-    } else if (w >= 400 || h >= 600) {
+    } else if (w >= 333 || h >= 500) {
       score += 12
-    } else if (w in 1..130 || h in 1..195) {
-      score -= 8
+    } else if (w in 1..150 || h in 1..210) {
+      score -= 14
     }
     val lowerUrl = c.imageUrl.lowercase()
     when {
-      "fife=w800" in lowerUrl || "fife=w1000" in lowerUrl -> score += 18
-      "zoom=0" in lowerUrl -> score += 15
+      "publisher/content/images/frontcovers" in lowerUrl || "fife=w800" in lowerUrl || "fife=w1000" in lowerUrl -> score += 22
+      "zoom=0" in lowerUrl -> score += 18
+      "1200x1800bb" in lowerUrl -> score += 20
+      "600x900bb" in lowerUrl -> score += 14
       "-l.jpg" in lowerUrl -> score += 12
-      "zoom=1" in lowerUrl -> score += 4
-      "zoom=5" in lowerUrl || "-s.jpg" in lowerUrl -> score -= 12
+      "zoom=1" in lowerUrl -> score -= 6
+      "zoom=5" in lowerUrl || "-s.jpg" in lowerUrl || "100x100bb" in lowerUrl -> score -= 18
     }
     return score
   }

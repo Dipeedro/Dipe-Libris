@@ -1001,6 +1001,13 @@ class HybridSearchOrchestrator(
           val q = listOf(title, author).filter { it.isNotBlank() }.joinToString(" ")
           jobs.add(async { openLibraryAdapter.searchByQuery(q) })
           jobs.add(async { googleBooksAdapter.searchByQuery(q) })
+          appleBooksAdapter?.let { ab -> jobs.add(async { ab.searchByQuery(q) }) }
+        }
+        if (primaryIsbn != null && appleBooksAdapter != null) {
+          val q = listOf(title, author).filter { it.isNotBlank() }.joinToString(" ")
+          if (q.isNotBlank()) {
+            jobs.add(async { appleBooksAdapter.searchByQuery(q) })
+          }
         }
         jobs.awaitAll()
       }

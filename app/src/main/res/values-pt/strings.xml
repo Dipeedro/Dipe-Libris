@@ -150,6 +150,7 @@
     <string name="book_detail_translator_label">Tradução</string>
     <string name="book_detail_unspecified">—</string>
     <string name="book_detail_edit_work">Editar obra</string>
+    <string name="book_detail_original_title">Título original: %1$s</string>
 
     <!-- Editions Carousel & Comparison -->
     <string name="book_detail_editions_pager_indicator">Edição %1$d de %2$d</string>
