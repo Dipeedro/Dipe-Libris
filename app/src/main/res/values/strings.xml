@@ -212,6 +212,8 @@
     <string name="journey_reread_label">Reading #%1$d</string>
     <string name="journey_page_of_total">p. %1$s of %2$s</string>
     <string name="journey_page_only">p. %1$s</string>
+    <string name="journey_page_total_unknown">p. %1$s · total unknown</string>
+    <string name="journey_define_total_action">Set total</string>
     <string name="journey_other_edition_notice">Reading another edition (%1$s)</string>
     <string name="journey_no_history">No reading journeys recorded yet.</string>
     <string name="journey_started_on">Started %1$s</string>
@@ -219,12 +221,14 @@
     <string name="progress_sheet_title">Reading progress</string>
     <string name="progress_mode_page">Page</string>
     <string name="progress_mode_percent">Percent</string>
+    <string name="progress_field_total_pages">Total pages</string>
     <string name="progress_field_page">Current page</string>
     <string name="progress_field_page_entry">Enter page</string>
     <string name="progress_field_percent">Completion (%)</string>
     <string name="progress_field_percent_entry">Enter percentage (%)</string>
     <string name="progress_field_note">Short note (optional)</string>
     <string name="progress_of_total_inline">of %1$s</string>
+    <string name="progress_total_unknown_hint">Total pages not set</string>
     <string name="progress_page_unit">p.</string>
     <string name="progress_complete_action">Mark as finished (100%)</string>
     <string name="progress_complete_short">Finish reading</string>
@@ -234,6 +238,7 @@
     <string name="progress_completed_snackbar">Marked “%1$s” as finished.</string>
     <string name="progress_updated_snackbar">Progress updated.</string>
     <string name="action_undo">Undo</string>
+    <string name="progress_validation_total_pages">Enter a whole number greater than zero.</string>
     <string name="progress_validation_page_negative">Enter page 0 or higher.</string>
     <string name="progress_validation_page_exceeds">Page cannot exceed %1$s pages in this edition.</string>
     <string name="progress_validation_percent">Enter a percentage between 0 and 100.</string>

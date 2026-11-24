@@ -36,6 +36,7 @@ interface ReadingJourneyRepository {
     page: Int,
     note: String? = null,
     markFinishedIfComplete: Boolean = true,
+    updatedTotalPages: Int? = null,
   )
 
   suspend fun updateProgressByPercent(
@@ -134,20 +135,28 @@ class RoomReadingJourneyRepository(
     page: Int,
     note: String?,
     markFinishedIfComplete: Boolean,
+    updatedTotalPages: Int?,
   ) {
     runInTransaction {
       val now = System.currentTimeMillis()
       val session = journeyDao.getSessionById(sessionId) ?: return@runInTransaction
       val copy = session.copyId?.let { copyDao.getCopyById(it) }
-      val edition = copy?.let { editionDao.getEditionById(it.editionId) }
+      val edition =
+        copy?.let { editionDao.getEditionById(it.editionId) }
+          ?: editionDao.getEditionsForWork(session.workId).firstOrNull()
+      val normalizedUpdatedTotal = updatedTotalPages?.takeIf { it > 0 }
+      if (normalizedUpdatedTotal != null && edition != null && edition.totalPages != normalizedUpdatedTotal) {
+        editionDao.updateEdition(edition.copy(totalPages = normalizedUpdatedTotal))
+      }
       val totalPages =
-        ReadingProgressMath.effectiveTotalPages(edition?.totalPages, session.totalPagesSnapshot)
+        normalizedUpdatedTotal
+          ?: ReadingProgressMath.effectiveTotalPages(edition?.totalPages, session.totalPagesSnapshot)
 
       val calc =
         ReadingProgressMath.calculateFromPage(
           page = page,
           totalPages = totalPages,
-          fallbackPercent = session.progressPercent,
+          fallbackPercent = if (normalizedUpdatedTotal != null) 0f else session.progressPercent,
         )
 
       val reachedEnd = markFinishedIfComplete && totalPages != null && calc.currentPage >= totalPages

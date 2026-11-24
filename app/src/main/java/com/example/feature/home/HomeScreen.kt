@@ -1,5 +1,6 @@
 package com.example.feature.home
 
+import android.content.res.Configuration
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -12,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,14 +59,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -96,6 +102,8 @@ fun HomeScreen(
   onChooseFromLibrary: () -> Unit = {},
   onCatalogBook: () -> Unit = {},
   onUpdateProgressByPage: (book: CatalogBook, page: Int, note: String?) -> Unit = { _, _, _ -> },
+  onUpdateProgressByPageWithTotal:
+    ((book: CatalogBook, page: Int, note: String?, totalPages: Int?) -> Unit)? = null,
   onUpdateProgressByPercent: (book: CatalogBook, percent: Float, note: String?) -> Unit = { _, _, _ -> },
   onCompleteReading: (CatalogBook) -> Unit = {},
   onCompleteReadingWithUndo: (book: CatalogBook, note: String?) -> Unit = { book, _ ->
@@ -111,6 +119,7 @@ fun HomeScreen(
       if (uiState.currentlyReading.size > 1) uiState.currentlyReading.drop(1) else emptyList()
     }
   var progressSheetBook by remember { mutableStateOf<CatalogBook?>(null) }
+  var progressSheetFocusTotal by remember { mutableStateOf(false) }
 
   val mastheadSubtitle =
     when {
@@ -142,23 +151,38 @@ fun HomeScreen(
   }
 
   val centerPrimaryStage = secondaryReading.isEmpty()
+  val configuration = LocalConfiguration.current
+  val density = LocalDensity.current
+  var measuredMastheadHeightPx by remember { mutableIntStateOf(0) }
 
   BoxWithConstraints(
     modifier = modifier.fillMaxSize().background(DipeTheme.colors.homeCanvas),
     contentAlignment = Alignment.TopCenter,
   ) {
     val viewportMaxHeight = maxHeight
-    val isLandscape = maxWidth > maxHeight && maxWidth >= 480.dp
+    val isLandscape =
+      (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && maxWidth >= 380.dp) ||
+        (maxWidth > maxHeight && maxWidth >= 440.dp)
     val isCompactHeight = maxHeight < 480.dp
-    val topContentPadding = if (isCompactHeight) DipeSpacing.xs else DipeSpacing.md
-    val bottomContentPadding =
-      if (centerPrimaryStage) {
-        if (isCompactHeight) DipeSpacing.sm else DipeSpacing.md
-      } else {
-        DipeSpacing.xl
+    val topContentPadding =
+      when {
+        isLandscape && centerPrimaryStage -> 0.dp
+        isCompactHeight -> DipeSpacing.xs
+        else -> DipeSpacing.md
       }
-    val mastheadReserve = if (isCompactHeight) 92.dp else 124.dp
-    val minStageHeight = (maxHeight - mastheadReserve).coerceAtLeast(180.dp)
+    val bottomContentPadding =
+      when {
+        isLandscape && centerPrimaryStage -> DipeSpacing.xs
+        centerPrimaryStage && isCompactHeight -> DipeSpacing.sm
+        centerPrimaryStage -> DipeSpacing.md
+        else -> DipeSpacing.xl
+      }
+    val defaultMastheadReserve = if (isCompactHeight) 84.dp else 116.dp
+    val mastheadHeightDp =
+      if (measuredMastheadHeightPx > 0) with(density) { measuredMastheadHeightPx.toDp() }
+      else defaultMastheadReserve
+    val minStageHeight =
+      (maxHeight - mastheadHeightDp - topContentPadding - bottomContentPadding).coerceAtLeast(160.dp)
     val maxContentWidth = if (widthClass == WindowWidthClass.COMPACT) 760.dp else 880.dp
 
     LazyColumn(
@@ -178,6 +202,7 @@ fun HomeScreen(
         EditorialMasthead(
           title = stringResource(R.string.home_masthead_title),
           subtitle = mastheadSubtitle,
+          modifier = Modifier.onSizeChanged { measuredMastheadHeightPx = it.height },
         )
       }
 
@@ -205,9 +230,17 @@ fun HomeScreen(
               widthClass = widthClass,
               isLandscape = isLandscape,
               viewportMaxHeight = viewportMaxHeight,
+              stageAvailableHeight = minStageHeight,
               language = language,
               onClick = onFeaturedClick,
-              onUpdateProgress = { progressSheetBook = featuredReading },
+              onUpdateProgress = {
+                progressSheetFocusTotal = false
+                progressSheetBook = featuredReading
+              },
+              onDefineTotal = {
+                progressSheetFocusTotal = true
+                progressSheetBook = featuredReading
+              },
             )
           }
         }
@@ -239,9 +272,19 @@ fun HomeScreen(
       initialPage = target.activeCurrentPage ?: target.primaryCopy?.currentPage ?: 0,
       totalPages = target.totalPages,
       initialPercent = target.activeProgressPercent ?: 0f,
+      focusTotalPagesOnOpen = progressSheetFocusTotal,
+      requireTotalPagesIfMissing = progressSheetFocusTotal,
       onDismiss = { progressSheetBook = null },
       onSavePage = { page, note ->
         onUpdateProgressByPage(target, page, note)
+        progressSheetBook = null
+      },
+      onSavePageWithTotal = { page, note, enteredTotal ->
+        if (onUpdateProgressByPageWithTotal != null) {
+          onUpdateProgressByPageWithTotal(target, page, note, enteredTotal)
+        } else {
+          onUpdateProgressByPage(target, page, note)
+        }
         progressSheetBook = null
       },
       onSavePercent = { percent, note ->
@@ -263,9 +306,11 @@ private fun FeaturedReadingShowcase(
   widthClass: WindowWidthClass,
   isLandscape: Boolean,
   viewportMaxHeight: Dp,
+  stageAvailableHeight: Dp,
   language: AppLanguage,
   onClick: () -> Unit,
   onUpdateProgress: () -> Unit,
+  onDefineTotal: () -> Unit,
 ) {
   val progressPercent = book.activeProgressPercent
   val currentPage = book.activeCurrentPage
@@ -306,7 +351,7 @@ private fun FeaturedReadingShowcase(
           }
         val coverWidthHint =
           if (isSideBySide) {
-            ((viewportMaxHeight * 0.70f).coerceAtLeast(150.dp) * 0.72f).coerceIn(140.dp, 236.dp)
+            ((viewportMaxHeight * 0.64f).coerceAtLeast(140.dp) * 0.72f).coerceIn(132.dp, 236.dp)
           } else {
             if (widthClass == WindowWidthClass.COMPACT) 204.dp else 224.dp
           }
@@ -376,19 +421,27 @@ private fun FeaturedReadingShowcase(
   val interactionSource = remember { MutableInteractionSource() }
 
   if (isSideBySide) {
-    val maxCoverHeight = (viewportMaxHeight * 0.70f).coerceAtLeast(150.dp)
-    val maxCoverWidthHint = (maxCoverHeight * 0.72f).coerceIn(140.dp, 236.dp)
+    val maxCoverHeight =
+      if (isLandscape) {
+        minOf(
+          viewportMaxHeight * 0.64f,
+          (stageAvailableHeight - 28.dp).coerceAtLeast(140.dp),
+        ).coerceAtLeast(140.dp)
+      } else {
+        (viewportMaxHeight * 0.64f).coerceAtLeast(150.dp)
+      }
+    val maxCoverWidthHint = (maxCoverHeight * 0.72f).coerceIn(132.dp, 236.dp)
     Row(
       modifier =
         Modifier.fillMaxWidth()
           .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-          .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.sm)
+          .padding(horizontal = DipeSpacing.xs, vertical = DipeSpacing.xs)
           .testTag("home_reading_book_${book.id}"),
       horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xl, Alignment.CenterHorizontally),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
-        modifier = coverCascadeModifier,
+        modifier = coverCascadeModifier.padding(14.dp),
         contentAlignment = Alignment.Center,
       ) {
         BookCoverArtwork(
@@ -419,6 +472,7 @@ private fun FeaturedReadingShowcase(
           buttonsModifier = buttonsCascadeModifier,
           onOpenBook = onClick,
           onUpdateProgress = onUpdateProgress,
+          onDefineTotal = onDefineTotal,
         )
       }
     }
@@ -442,7 +496,7 @@ private fun FeaturedReadingShowcase(
         modifier = coverCascadeModifier.width(featuredWidth),
       )
 
-      Spacer(modifier = Modifier.height(DipeSpacing.md))
+      Spacer(modifier = Modifier.height(DipeSpacing.lg))
 
       FeaturedBookDetails(
         book = book,
@@ -457,6 +511,7 @@ private fun FeaturedReadingShowcase(
         buttonsModifier = buttonsCascadeModifier,
         onOpenBook = onClick,
         onUpdateProgress = onUpdateProgress,
+        onDefineTotal = onDefineTotal,
       )
     }
   }
@@ -477,9 +532,11 @@ private fun FeaturedBookDetails(
   buttonsModifier: Modifier = Modifier,
   onOpenBook: () -> Unit,
   onUpdateProgress: () -> Unit,
+  onDefineTotal: () -> Unit,
 ) {
   val textAlign = if (centered) TextAlign.Center else TextAlign.Start
   val columnAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start
+  val hasKnownTotal = (book.totalPages ?: 0) > 0
 
   Column(
     modifier = Modifier.fillMaxWidth(),
@@ -494,7 +551,7 @@ private fun FeaturedBookDetails(
         style = MaterialTheme.typography.displayMedium,
         color = MaterialTheme.colorScheme.onBackground,
         textAlign = textAlign,
-        maxLines = 3,
+        maxLines = if (isLandscape) 2 else 3,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth(),
       )
@@ -559,51 +616,111 @@ private fun FeaturedBookDetails(
       }
     }
 
-    if (progressPercent != null) {
-      Spacer(modifier = Modifier.height(DipeSpacing.compact))
-      val progressParts =
-        buildList {
-          if (book.activeRereadNumber != null && book.activeRereadNumber > 1) {
-            add(stringResource(R.string.journey_reread_label, book.activeRereadNumber))
-          }
-          if (currentPage != null && book.totalPages != null) {
-            add(
-              stringResource(
-                R.string.journey_page_of_total,
-                LocaleManager.formatInteger(currentPage, language),
-                LocaleManager.formatInteger(book.totalPages!!, language),
+    if (progressPercent != null || book.activeSessionId != null) {
+      Spacer(modifier = Modifier.height(if (hasKnownTotal) DipeSpacing.compact else DipeSpacing.xs))
+      if (hasKnownTotal) {
+        val progressParts =
+          buildList {
+            if (book.activeRereadNumber != null && book.activeRereadNumber > 1) {
+              add(stringResource(R.string.journey_reread_label, book.activeRereadNumber))
+            }
+            if (currentPage != null && book.totalPages != null) {
+              add(
+                stringResource(
+                  R.string.journey_page_of_total,
+                  LocaleManager.formatInteger(currentPage, language),
+                  LocaleManager.formatInteger(book.totalPages!!, language),
+                )
               )
-            )
-          } else if (currentPage != null && currentPage > 0) {
-            add(
-              stringResource(
-                R.string.journey_page_only,
-                LocaleManager.formatInteger(currentPage, language),
+            } else if (currentPage != null && currentPage > 0) {
+              add(
+                stringResource(
+                  R.string.journey_page_only,
+                  LocaleManager.formatInteger(currentPage, language),
+                )
               )
-            )
+            }
+            add(LocaleManager.formatPercent(progressPercent ?: 0f, language))
           }
-          add(LocaleManager.formatPercent(progressPercent, language))
-        }
 
-      Column(
-        modifier =
-          (if (isLandscape) Modifier.fillMaxWidth() else Modifier.widthIn(max = 264.dp).fillMaxWidth())
-            .then(progressModifier),
-        horizontalAlignment = columnAlignment,
-        verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
-      ) {
-        EditorialProgressBar(progressPercent = progressPercent, height = 3.dp)
-        Text(
-          text = progressParts.joinToString(" · "),
-          style = DipeTheme.typography.monoMetadata,
-          color = MaterialTheme.colorScheme.secondary,
-          textAlign = textAlign,
-          modifier = Modifier.testTag("home_featured_progress_label"),
-        )
+        Column(
+          modifier =
+            (if (isLandscape) Modifier.fillMaxWidth() else Modifier.widthIn(max = 264.dp).fillMaxWidth())
+              .then(progressModifier),
+          horizontalAlignment = columnAlignment,
+          verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+        ) {
+          EditorialProgressBar(progressPercent = progressPercent ?: 0f, height = 3.dp)
+          Text(
+            text = progressParts.joinToString(" · "),
+            style = DipeTheme.typography.monoMetadata,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = textAlign,
+            modifier = Modifier.testTag("home_featured_progress_label"),
+          )
+        }
+      } else {
+        val safePage = (currentPage ?: book.primaryCopy?.currentPage ?: 0).coerceAtLeast(0)
+        val pageUnknownBase =
+          stringResource(
+            R.string.journey_page_total_unknown,
+            LocaleManager.formatInteger(safePage, language),
+          )
+        val pageUnknownLabel =
+          if (book.activeRereadNumber != null && book.activeRereadNumber > 1) {
+            "${stringResource(R.string.journey_reread_label, book.activeRereadNumber)} · $pageUnknownBase"
+          } else {
+            pageUnknownBase
+          }
+
+        FlowRow(
+          modifier =
+            (if (isLandscape) Modifier.fillMaxWidth() else Modifier.widthIn(max = 320.dp).fillMaxWidth())
+              .then(progressModifier),
+          horizontalArrangement =
+            Arrangement.spacedBy(
+              DipeSpacing.sm,
+              if (centered) Alignment.CenterHorizontally else Alignment.Start,
+            ),
+          verticalArrangement = Arrangement.Center,
+        ) {
+          Text(
+            text = pageUnknownLabel,
+            style = DipeTheme.typography.monoMetadata,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = textAlign,
+            modifier = Modifier.align(Alignment.CenterVertically).testTag("home_featured_progress_label"),
+          )
+          Box(
+            modifier =
+              Modifier.align(Alignment.CenterVertically)
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onDefineTotal)
+                .padding(horizontal = DipeSpacing.xs)
+                .testTag("home_define_total_link"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = stringResource(R.string.journey_define_total_action),
+              style = DipeTheme.typography.monoMetadata.copy(textDecoration = TextDecoration.Underline),
+              color = MaterialTheme.colorScheme.secondary,
+            )
+          }
+        }
       }
     }
 
-    Spacer(modifier = Modifier.height(DipeSpacing.lg))
+    Spacer(
+      modifier =
+        Modifier.height(
+          when {
+            !hasKnownTotal -> DipeSpacing.xs
+            isLandscape -> DipeSpacing.md
+            else -> DipeSpacing.lg
+          }
+        )
+    )
 
     if (isLandscape) {
       BoxWithConstraints(modifier = Modifier.fillMaxWidth().then(buttonsModifier)) {

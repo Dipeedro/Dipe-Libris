@@ -80,6 +80,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -106,6 +108,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
@@ -142,11 +145,24 @@ fun QuickProgressSheet(
   onSavePage: (page: Int, note: String?) -> Unit,
   onSavePercent: (percent: Float, note: String?) -> Unit = { _, _ -> },
   onMarkFinished: (note: String?) -> Unit,
+  focusTotalPagesOnOpen: Boolean = false,
+  requireTotalPagesIfMissing: Boolean = false,
+  onSavePageWithTotal: ((page: Int, note: String?, totalPages: Int?) -> Unit)? = null,
 ) {
   val language = LocalAppLanguage.current
   val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
   val scope = rememberCoroutineScope()
+
+  val needsTotalPagesInput = (totalPages == null || totalPages <= 0) && onSavePageWithTotal != null
+  var totalPagesInput by remember(bookTitle, totalPages) { mutableStateOf("") }
+  var isTotalFieldFocused by remember { mutableStateOf(false) }
+  val totalFocusRequester = remember { FocusRequester() }
+
+  val parsedEnteredTotal =
+    totalPagesInput.trim().toIntOrNull()?.takeIf { it in 1..50_000 }
+  val effectiveTotalPages = totalPages?.takeIf { it > 0 } ?: parsedEnteredTotal
+  val hasKnownTotal = effectiveTotalPages != null
 
   var currentPage by remember(initialPage) { mutableIntStateOf(initialPage.coerceAtLeast(0)) }
   var noteText by remember { mutableStateOf("") }
@@ -154,21 +170,28 @@ fun QuickProgressSheet(
   var showCompleteConfirmation by remember { mutableStateOf(false) }
   var isNoteFieldFocused by remember { mutableStateOf(false) }
 
+  val invalidTotalPagesMsg = stringResource(R.string.progress_validation_total_pages)
   val invalidNegativeMsg = stringResource(R.string.progress_validation_page_negative)
   val invalidExceedsMsg =
-    totalPages?.let {
+    effectiveTotalPages?.let {
       stringResource(
         R.string.progress_validation_page_exceeds,
         LocaleManager.formatInteger(it, language),
       )
     } ?: ""
 
+  if (needsTotalPagesInput && focusTotalPagesOnOpen) {
+    LaunchedEffect(Unit) {
+      runCatching { totalFocusRequester.requestFocus() }
+    }
+  }
+
   val livePreview =
-    remember(currentPage, totalPages, initialPercent) {
+    remember(currentPage, effectiveTotalPages, initialPercent) {
       ReadingProgressMath.calculateFromPage(
         page = currentPage.coerceAtLeast(0),
-        totalPages = totalPages,
-        fallbackPercent = initialPercent,
+        totalPages = effectiveTotalPages,
+        fallbackPercent = if (effectiveTotalPages != null) 0f else initialPercent,
       )
     }
 
@@ -193,15 +216,18 @@ fun QuickProgressSheet(
   val applyDelta: (Int) -> Unit = { delta ->
     errorText = null
     currentPage =
-      if (totalPages != null && totalPages > 0) (currentPage + delta).coerceIn(0, totalPages)
-      else (currentPage + delta).coerceAtLeast(0)
+      if (effectiveTotalPages != null && effectiveTotalPages > 0) {
+        (currentPage + delta).coerceIn(0, effectiveTotalPages)
+      } else {
+        (currentPage + delta).coerceAtLeast(0)
+      }
   }
 
   val roundedPercent = livePreview.progressPercent.roundToInt().coerceIn(0, 100)
   val formattedPercent = LocaleManager.formatPercent(livePreview.progressPercent, language)
   val pageUnitLabel = stringResource(R.string.progress_page_unit)
   val formattedTotalInline =
-    totalPages?.let {
+    effectiveTotalPages?.let {
       stringResource(
         R.string.progress_of_total_inline,
         LocaleManager.formatInteger(it, language),
@@ -529,7 +555,36 @@ fun QuickProgressSheet(
                 )
               }
 
-              // Borderless tonal Hero Visualizer with flush-left percent + fixed-right page text + rounded bar
+              if (needsTotalPagesInput) {
+                val totalFieldShape = RoundedCornerShape(14.dp)
+                val totalFieldBorderColor =
+                  if (isTotalFieldFocused) DipeTheme.colors.readingProgress.copy(alpha = 0.45f)
+                  else Color.Transparent
+                TextField(
+                  value = totalPagesInput,
+                  onValueChange = { raw ->
+                    totalPagesInput = raw.filter(Char::isDigit).take(6)
+                    errorText = null
+                  },
+                  label = { Text(stringResource(R.string.progress_field_total_pages)) },
+                  singleLine = true,
+                  shape = totalFieldShape,
+                  colors = borderlessFieldColors,
+                  keyboardOptions =
+                    KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = ImeAction.Done,
+                    ),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .border(width = 1.dp, color = totalFieldBorderColor, shape = totalFieldShape)
+                      .focusRequester(totalFocusRequester)
+                      .onFocusChanged { isTotalFieldFocused = it.isFocused }
+                      .testTag("progress_total_pages_input"),
+                )
+              }
+
+              // Borderless tonal Hero Visualizer with flush-left percent (when total is known) + page text
               Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -542,37 +597,62 @@ fun QuickProgressSheet(
                       .padding(horizontal = DipeSpacing.md, vertical = DipeSpacing.md),
                   verticalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
                 ) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
-                  ) {
-                    HeroPercentageDisplay(
-                      percent = roundedPercent,
-                      formattedDigits = LocaleManager.formatInteger(roundedPercent, language),
-                      accessibleText = formattedPercent,
-                      style = DipeTheme.typography.progressHeroNumber,
-                      color = DipeTheme.colors.readingProgress,
-                      reduceMotion = reduceMotion,
-                    )
+                  if (hasKnownTotal) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.Bottom,
+                    ) {
+                      HeroPercentageDisplay(
+                        percent = roundedPercent,
+                        formattedDigits = LocaleManager.formatInteger(roundedPercent, language),
+                        accessibleText = formattedPercent,
+                        style = DipeTheme.typography.progressHeroNumber,
+                        color = DipeTheme.colors.readingProgress,
+                        reduceMotion = reduceMotion,
+                      )
 
-                    PageContextDisplay(
-                      currentPage = livePreview.currentPage,
-                      pagePrefix = pageUnitLabel,
-                      formattedPageDigits =
-                        LocaleManager.formatInteger(livePreview.currentPage, language),
-                      totalInlineSuffix = formattedTotalInline,
-                      style = DipeTheme.typography.monoMetadata,
-                      color = DipeTheme.colors.textSecondary,
+                      PageContextDisplay(
+                        currentPage = livePreview.currentPage,
+                        pagePrefix = pageUnitLabel,
+                        formattedPageDigits =
+                          LocaleManager.formatInteger(livePreview.currentPage, language),
+                        totalInlineSuffix = formattedTotalInline,
+                        style = DipeTheme.typography.monoMetadata,
+                        color = DipeTheme.colors.textSecondary,
+                        reduceMotion = reduceMotion,
+                        modifier = Modifier.weight(1f).padding(bottom = DipeSpacing.sm),
+                      )
+                    }
+
+                    VisualOnlyProgressTrack(
+                      progressPercent = livePreview.progressPercent,
                       reduceMotion = reduceMotion,
-                      modifier = Modifier.weight(1f).padding(bottom = DipeSpacing.sm),
                     )
+                  } else {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Text(
+                        text = stringResource(R.string.progress_total_unknown_hint),
+                        style = DipeTheme.typography.monoMetadata,
+                        color = DipeTheme.colors.readingProgress,
+                      )
+
+                      PageContextDisplay(
+                        currentPage = livePreview.currentPage,
+                        pagePrefix = pageUnitLabel,
+                        formattedPageDigits =
+                          LocaleManager.formatInteger(livePreview.currentPage, language),
+                        totalInlineSuffix = null,
+                        style = DipeTheme.typography.monoMetadata,
+                        color = DipeTheme.colors.textSecondary,
+                        reduceMotion = reduceMotion,
+                      )
+                    }
                   }
-
-                  VisualOnlyProgressTrack(
-                    progressPercent = livePreview.progressPercent,
-                    reduceMotion = reduceMotion,
-                  )
                 }
               }
 
@@ -668,9 +748,18 @@ fun QuickProgressSheet(
                 Button(
                   onClick = {
                     val cleanNote = noteText.trim().takeIf { it.isNotEmpty() }
+                    val trimmedTotalInput = totalPagesInput.trim()
+                    val hasInvalidEnteredTotal =
+                      needsTotalPagesInput &&
+                        ((trimmedTotalInput.isNotEmpty() && parsedEnteredTotal == null) ||
+                          (requireTotalPagesIfMissing && trimmedTotalInput.isEmpty()))
                     when {
+                      hasInvalidEnteredTotal -> errorText = invalidTotalPagesMsg
                       currentPage < 0 -> errorText = invalidNegativeMsg
-                      totalPages != null && currentPage > totalPages -> errorText = invalidExceedsMsg
+                      effectiveTotalPages != null && currentPage > effectiveTotalPages ->
+                        errorText = invalidExceedsMsg
+                      onSavePageWithTotal != null ->
+                        onSavePageWithTotal(currentPage, cleanNote, parsedEnteredTotal)
                       else -> onSavePage(currentPage, cleanNote)
                     }
                   },

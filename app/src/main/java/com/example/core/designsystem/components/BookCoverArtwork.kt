@@ -1,5 +1,7 @@
 package com.example.core.designsystem.components
 
+import android.graphics.BlurMaskFilter
+import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,15 +30,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -125,7 +132,7 @@ fun BookCoverArtwork(
           .data(data)
           .size(targetWidthPx, targetHeightPx)
           .precision(Precision.INEXACT)
-          .crossfade(contentScale != ContentScale.Fit)
+          .crossfade(!elevated && contentScale != ContentScale.Fit)
           .build()
       }
     }
@@ -155,7 +162,7 @@ fun BookCoverArtwork(
       val drawable = (painterState as AsyncImagePainter.State.Success).result.drawable
       val w = drawable.intrinsicWidth
       val h = drawable.intrinsicHeight
-      if (w > 0 && h > 0) (w.toFloat() / h.toFloat()).coerceIn(0.48f, 0.95f) else 2f / 3f
+      if (w > 0 && h > 0) (w.toFloat() / h.toFloat()).coerceIn(0.35f, 2.0f) else 2f / 3f
     } else {
       2f / 3f
     }
@@ -163,36 +170,88 @@ fun BookCoverArtwork(
   val shadowModifier =
     if (elevated) {
       Modifier.drawWithCache {
-        val cornerPx = CornerRadius(6.dp.toPx(), 6.dp.toPx())
-        val ambientOffsetY = 3.dp.toPx()
-        val contactOffsetY = 1.5.dp.toPx()
-        val wideSpread = 5.dp.toPx()
-        val midSpread = 2.5.dp.toPx()
+        val startCornerPx = 2.dp.toPx()
+        val endCornerPx = 6.dp.toPx()
+        val leftCornerPx = if (layoutDirection == LayoutDirection.Rtl) endCornerPx else startCornerPx
+        val rightCornerPx = if (layoutDirection == LayoutDirection.Rtl) startCornerPx else endCornerPx
+        val radii =
+          floatArrayOf(
+            leftCornerPx, leftCornerPx,
+            rightCornerPx, rightCornerPx,
+            rightCornerPx, rightCornerPx,
+            leftCornerPx, leftCornerPx,
+          )
+        val ambientDy = 4.dp.toPx()
+        val contactDy = 1.dp.toPx()
+        val ambientBlurPx = 10.dp.toPx()
+        val contactBlurPx = 3.dp.toPx()
+        val ambientPath =
+          android.graphics.Path().apply {
+            addRoundRect(
+              0f,
+              ambientDy,
+              size.width,
+              size.height + ambientDy,
+              radii,
+              android.graphics.Path.Direction.CW,
+            )
+          }
+        val contactPath =
+          android.graphics.Path().apply {
+            addRoundRect(
+              0f,
+              contactDy,
+              size.width,
+              size.height + contactDy,
+              radii,
+              android.graphics.Path.Direction.CW,
+            )
+          }
+        val ambientPaint =
+          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.Black.copy(alpha = 0.22f).toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+              maskFilter = BlurMaskFilter(ambientBlurPx, BlurMaskFilter.Blur.NORMAL)
+            }
+          }
+        val contactPaint =
+          android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.Black.copy(alpha = 0.14f).toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+              maskFilter = BlurMaskFilter(contactBlurPx, BlurMaskFilter.Blur.NORMAL)
+            }
+          }
+        val fallbackPath =
+          Path().apply {
+            addRoundRect(
+              RoundRect(
+                left = 0f,
+                top = contactDy,
+                right = size.width,
+                bottom = size.height + contactDy,
+                topLeftCornerRadius = CornerRadius(leftCornerPx),
+                topRightCornerRadius = CornerRadius(rightCornerPx),
+                bottomRightCornerRadius = CornerRadius(rightCornerPx),
+                bottomLeftCornerRadius = CornerRadius(leftCornerPx),
+              )
+            )
+          }
         onDrawBehind {
-          drawRoundRect(
-            color = Color(0x0D000000),
-            topLeft = Offset(-wideSpread * 0.5f, ambientOffsetY - wideSpread * 0.25f),
-            size = Size(size.width + wideSpread, size.height + wideSpread),
-            cornerRadius = cornerPx,
-          )
-          drawRoundRect(
-            color = Color(0x14000000),
-            topLeft = Offset(-midSpread * 0.5f, contactOffsetY),
-            size = Size(size.width + midSpread, size.height + midSpread * 0.9f),
-            cornerRadius = cornerPx,
-          )
-          drawRoundRect(
-            color = Color(0x1A000000),
-            topLeft = Offset(0f, contactOffsetY),
-            size = size,
-            cornerRadius = cornerPx,
-          )
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            drawIntoCanvas { canvas ->
+              canvas.nativeCanvas.drawPath(ambientPath, ambientPaint)
+              canvas.nativeCanvas.drawPath(contactPath, contactPaint)
+            }
+          } else {
+            drawPath(path = fallbackPath, color = Color.Black.copy(alpha = 0.08f))
+          }
         }
       }
     } else {
       Modifier
     }
 
+  val showClothFrame = !hasLoadedPhoto
   Box(
     modifier =
       modifier
@@ -202,8 +261,14 @@ fun BookCoverArtwork(
         )
         .then(shadowModifier)
         .clip(BookCoverShape)
-        .background(palette.clothColor)
-        .border(0.75.dp, borderColor, BookCoverShape)
+        .then(
+          if (showClothFrame) {
+            Modifier.background(palette.clothColor)
+              .border(0.75.dp, borderColor, BookCoverShape)
+          } else {
+            Modifier
+          }
+        )
         .semantics { contentDescription = coverCd },
     contentAlignment = Alignment.Center,
   ) {

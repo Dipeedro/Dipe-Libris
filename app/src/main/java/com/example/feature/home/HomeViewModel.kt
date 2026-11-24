@@ -53,6 +53,7 @@ class HomeViewModel(
     page: Int,
     note: String? = null,
     markFinishedIfComplete: Boolean = true,
+    updatedTotalPages: Int? = null,
   ) {
     val journeyRepo = readingJourneyRepository ?: return
     viewModelScope.launch {
@@ -63,6 +64,7 @@ class HomeViewModel(
         page = page,
         note = note,
         markFinishedIfComplete = markFinishedIfComplete,
+        updatedTotalPages = updatedTotalPages,
       )
     }
   }

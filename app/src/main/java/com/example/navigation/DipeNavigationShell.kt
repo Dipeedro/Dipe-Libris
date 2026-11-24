@@ -281,8 +281,18 @@ fun DipeNavigationShell(
           )
         }
 
+        val safeEdgePadding = WindowInsets.systemBars.union(WindowInsets.displayCutout).asPaddingValues()
+        val effectiveEndPadding =
+          maxOf(
+            innerPadding.calculateEndPadding(layoutDirection),
+            safeEdgePadding.calculateEndPadding(layoutDirection),
+          )
         val contentStartPadding =
-          if (isTopLevel && useRail) 0.dp else innerPadding.calculateStartPadding(layoutDirection)
+          if (isTopLevel && useRail) 0.dp
+          else maxOf(
+            innerPadding.calculateStartPadding(layoutDirection),
+            safeEdgePadding.calculateStartPadding(layoutDirection),
+          )
         Box(
           modifier =
             Modifier.weight(1f)
@@ -290,7 +300,7 @@ fun DipeNavigationShell(
               .padding(
                 start = contentStartPadding,
                 top = innerPadding.calculateTopPadding(),
-                end = innerPadding.calculateEndPadding(layoutDirection),
+                end = effectiveEndPadding,
                 bottom = innerPadding.calculateBottomPadding(),
               )
         ) {
@@ -312,6 +322,15 @@ fun DipeNavigationShell(
                 onCatalogBook = { navController.navigate(BookSearchRoute()) },
                 onUpdateProgressByPage = { book, page, note ->
                   homeViewModel.updateProgressByPage(book = book, page = page, note = note)
+                  showProgressUpdatedSnackbar()
+                },
+                onUpdateProgressByPageWithTotal = { book, page, note, updatedTotal ->
+                  homeViewModel.updateProgressByPage(
+                    book = book,
+                    page = page,
+                    note = note,
+                    updatedTotalPages = updatedTotal,
+                  )
                   showProgressUpdatedSnackbar()
                 },
                 onUpdateProgressByPercent = { book, percent, note ->
@@ -873,68 +892,71 @@ private fun EditorialSideNavBar(
     tonalElevation = DipeElevation.flat,
     shadowElevation = DipeElevation.flat,
   ) {
-    Column(
-      modifier =
-        Modifier.fillMaxHeight()
-          .verticalScroll(rememberScrollState())
-          .padding(
-            start = startSafeInset + DipeSpacing.md,
-            end = DipeSpacing.md,
-            top = DipeSpacing.md,
-            bottom = bottomSafeInset + DipeSpacing.md,
-          )
-          .width(IntrinsicSize.Max)
-          .widthIn(min = 104.dp)
-          .selectableGroup(),
-      verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs, Alignment.CenterVertically),
-      horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-      TopLevelDestination.entries.forEach { dest ->
-        val selected = currentDestination?.hasRoute(dest.route::class) == true
-        val label = stringResource(dest.labelRes)
-        val pillColor by
-          animateColorAsState(
-            targetValue = if (selected) Color.White.copy(alpha = 0.16f) else Color.Transparent,
-            animationSpec = motion.standardTween(180),
-            label = "nav_rail_pill_${dest.routeKey}",
-          )
-        val contentColor =
-          if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
-        val labelStyle =
-          if (selected) DipeTheme.typography.navBarLabelActive
-          else DipeTheme.typography.navBarLabel
+    BoxWithConstraints(modifier = Modifier.fillMaxHeight()) {
+      val railUsefulHeight = maxHeight
+      Column(
+        modifier =
+          Modifier.verticalScroll(rememberScrollState())
+            .heightIn(min = railUsefulHeight)
+            .padding(
+              start = startSafeInset + DipeSpacing.md,
+              end = DipeSpacing.md,
+              top = DipeSpacing.md,
+              bottom = bottomSafeInset + DipeSpacing.md,
+            )
+            .width(IntrinsicSize.Max)
+            .widthIn(min = 104.dp)
+            .selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(DipeSpacing.compact, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        TopLevelDestination.entries.forEach { dest ->
+          val selected = currentDestination?.hasRoute(dest.route::class) == true
+          val label = stringResource(dest.labelRes)
+          val pillColor by
+            animateColorAsState(
+              targetValue = if (selected) Color.White.copy(alpha = 0.16f) else Color.Transparent,
+              animationSpec = motion.standardTween(180),
+              label = "nav_rail_pill_${dest.routeKey}",
+            )
+          val contentColor =
+            if (selected) DipeTheme.colors.navBarContent else DipeTheme.colors.navBarContentMuted
+          val labelStyle =
+            if (selected) DipeTheme.typography.navBarLabelActive
+            else DipeTheme.typography.navBarLabel
 
-        Column(
-          modifier =
-            Modifier.fillMaxWidth()
-              .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-              .clip(CircleShape)
-              .background(pillColor)
-              .selectable(
-                selected = selected,
-                onClick = { onNavigate(dest) },
-                role = Role.Tab,
-              )
-              .padding(horizontal = 14.dp, vertical = 10.dp)
-              .testTag("nav_rail_${dest.routeKey}"),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
-        ) {
-          Icon(
-            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(22.dp),
-          )
-          Text(
-            text = label,
-            style = labelStyle,
-            color = contentColor,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-          )
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .clip(CircleShape)
+                .background(pillColor)
+                .selectable(
+                  selected = selected,
+                  onClick = { onNavigate(dest) },
+                  role = Role.Tab,
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .testTag("nav_rail_${dest.routeKey}"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+          ) {
+            Icon(
+              imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+              contentDescription = label,
+              tint = contentColor,
+              modifier = Modifier.size(22.dp),
+            )
+            Text(
+              text = label,
+              style = labelStyle,
+              color = contentColor,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+              textAlign = TextAlign.Center,
+            )
+          }
         }
       }
     }

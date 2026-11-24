@@ -212,6 +212,8 @@
     <string name="journey_reread_label">%1$dª leitura</string>
     <string name="journey_page_of_total">p. %1$s de %2$s</string>
     <string name="journey_page_only">p. %1$s</string>
+    <string name="journey_page_total_unknown">p. %1$s · total não informado</string>
+    <string name="journey_define_total_action">Definir total</string>
     <string name="journey_other_edition_notice">Lendo em outra edição (%1$s)</string>
     <string name="journey_no_history">Nenhuma jornada de leitura registrada ainda.</string>
     <string name="journey_started_on">Iniciada em %1$s</string>
@@ -219,12 +221,14 @@
     <string name="progress_sheet_title">Progresso de leitura</string>
     <string name="progress_mode_page">Página</string>
     <string name="progress_mode_percent">Percentual</string>
+    <string name="progress_field_total_pages">Total de páginas</string>
     <string name="progress_field_page">Página atual</string>
     <string name="progress_field_page_entry">Digitar página</string>
     <string name="progress_field_percent">Percentual (%)</string>
     <string name="progress_field_percent_entry">Digitar percentual (%)</string>
     <string name="progress_field_note">Observação curta (opcional)</string>
     <string name="progress_of_total_inline">de %1$s</string>
+    <string name="progress_total_unknown_hint">Total não informado</string>
     <string name="progress_page_unit">p.</string>
     <string name="progress_complete_action">Concluir leitura (100%)</string>
     <string name="progress_complete_short">Concluir leitura</string>
@@ -234,6 +238,7 @@
     <string name="progress_completed_snackbar">“%1$s” marcada como concluída.</string>
     <string name="progress_updated_snackbar">Progresso atualizado.</string>
     <string name="action_undo">Desfazer</string>
+    <string name="progress_validation_total_pages">Informe um número inteiro maior que zero.</string>
     <string name="progress_validation_page_negative">Informe uma página igual ou maior que 0.</string>
     <string name="progress_validation_page_exceeds">A página não pode ultrapassar %1$s nesta edição.</string>
     <string name="progress_validation_percent">Informe um percentual entre 0 e 100.</string>
