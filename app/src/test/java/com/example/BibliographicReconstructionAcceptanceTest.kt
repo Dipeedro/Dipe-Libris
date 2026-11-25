@@ -879,11 +879,15 @@ class BibliographicReconstructionAcceptanceTest {
     composeTestRule.onNodeWithText(expectedSummary).assertIsDisplayed()
     composeTestRule.onNodeWithText("152", substring = true).assertDoesNotExist()
 
-    // Box badge + Apple Books attribution visible on primary card
+    // Primary closed card shows clean editorial work title & author without noisy technical badges/attribution
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
     composeTestRule.onNodeWithTag("search_work_card_0").assertIsDisplayed()
-    composeTestRule.onNodeWithText(context.getString(R.string.search_bundle_box_badge), substring = true).performScrollTo().assertIsDisplayed()
-    composeTestRule.onNodeWithText(context.getString(R.string.search_source_attribution_apple), substring = true).performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithText("Box Trilogia O Senhor dos Anéis").assertIsDisplayed()
+    composeTestRule.onNodeWithText("J. R. R. Tolkien").assertIsDisplayed()
+    composeTestRule.onNodeWithText(context.getString(R.string.search_bundle_box_badge), substring = true).assertDoesNotExist()
+    composeTestRule.onNodeWithText(context.getString(R.string.search_source_attribution_apple), substring = true).assertDoesNotExist()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_toggle"))
+    composeTestRule.onNodeWithTag("search_bottom_source_apple_books", useUnmergedTree = true).assertIsDisplayed()
 
     // Derivative drawer starts collapsed; academic item hidden until toggled
     composeTestRule.onNodeWithText("O Senhor dos Anéis: Análise Filosófica").assertDoesNotExist()

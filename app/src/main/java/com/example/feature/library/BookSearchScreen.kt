@@ -886,7 +886,10 @@ private fun LazyListScope.flattenedWorkGroupItems(
         !isExpansionExhausted
     val showActionsFooter =
       isExpanded &&
-        (remainingEditions > 0 || group.secondaryTierEditions.isNotEmpty() || canLoadMoreRemote)
+        (remainingEditions > 0 ||
+          group.secondaryTierEditions.isNotEmpty() ||
+          canLoadMoreRemote ||
+          displayedEditions.size > 4)
     val hasExpandedContentBelow =
       isExpanded && (displayedEditions.isNotEmpty() || showActionsFooter)
     val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
@@ -917,12 +920,15 @@ private fun LazyListScope.flattenedWorkGroupItems(
     }
 
     if (displayedEditions.isNotEmpty()) {
+      val editionRows = displayedEditions.chunked(4)
       itemsIndexed(
-        items = displayedEditions,
-        key = { edIdx, edition -> "${sectionPrefix}_ed_${uniqueKeySuffix}_${edition.candidateId}_$edIdx" },
-        contentType = { _, _ -> "search_edition_row" },
-      ) { editionIdx, edition ->
-        val isLastItemInGroup = !showActionsFooter && editionIdx == displayedEditions.lastIndex
+        items = editionRows,
+        key = { rowIdx, rowEds ->
+          "${sectionPrefix}_edrow_${uniqueKeySuffix}_${rowIdx}_${rowEds.firstOrNull()?.candidateId.orEmpty()}"
+        },
+        contentType = { _, _ -> "search_edition_gallery_row" },
+      ) { rowIdx, rowEditions ->
+        val isLastItemInGroup = !showActionsFooter && rowIdx == editionRows.lastIndex
         val itemMotionModifier =
           if (reduceMotion) {
             Modifier
@@ -933,11 +939,13 @@ private fun LazyListScope.flattenedWorkGroupItems(
               placementSpec = DipeTheme.motion.editorialSpring(),
             )
           }
-        SearchEditionRowItem(
-          edition = edition,
-          testTag = "search_edition_select_${groupIndex}_$editionIdx",
+        SearchEditionGalleryRowItem(
+          editions = rowEditions,
+          groupIndex = groupIndex,
+          rowStartIndex = rowIdx * 4,
+          isFirstGalleryRow = rowIdx == 0,
           isLastItemInGroup = isLastItemInGroup,
-          onClick = { onSelectEdition(edition) },
+          onSelectEdition = onSelectEdition,
           modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
       }
@@ -965,9 +973,11 @@ private fun LazyListScope.flattenedWorkGroupItems(
           isSecondaryEditionsExpanded = isSecondaryEditionsExpanded,
           canLoadMoreRemoteEditions = canLoadMoreRemote,
           isLoadingMore = isLoadingMore,
+          showCollapseAction = displayedEditions.size > 4,
           onShowMoreLocalEditions = { onShowMoreLocalEditions(group.groupId) },
           onToggleSecondaryEditions = { onToggleSecondaryEditions(group.groupId) },
           onLoadMoreRemoteEditions = { onLoadMoreEditions(group) },
+          onCollapseGroup = { onToggleExpand(group.groupId) },
           modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
       }

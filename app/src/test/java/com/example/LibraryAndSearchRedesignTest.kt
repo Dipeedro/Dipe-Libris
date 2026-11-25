@@ -146,12 +146,37 @@ class LibraryAndSearchRedesignTest {
     composeTestRule.onNodeWithTag("search_query_input").performImeAction()
     assertEquals(1, submittedCount)
 
-    // Results show full edition metadata, minimal language seal "BR", and full ISBN without "Selecionar e revisar"
+    // Results show editorial work card and 4-column edition gallery tile (publisher, pages, year; no ISBN/p./repeated title)
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
     composeTestRule.onNodeWithText("Selecionar e revisar").assertDoesNotExist()
-    composeTestRule.onNodeWithText("BR").assertIsDisplayed()
-    composeTestRule.onNodeWithText("9788532530783").assertIsDisplayed()
-    composeTestRule.onNodeWithText("288 p.").assertIsDisplayed()
+    composeTestRule.onNodeWithText("9788532530783").assertDoesNotExist()
+    composeTestRule.onNodeWithText("288 p.").assertDoesNotExist()
+    composeTestRule
+      .onNode(
+        hasText("Editora Rocco Ltda.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        hasText("288") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        hasText("2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        hasText("Harry Potter e o Prisioneiro de Azkaban") and
+          hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertDoesNotExist()
     composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
     assertEquals("ed_rocco", selectedEditionId)
 

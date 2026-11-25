@@ -384,6 +384,8 @@
     <string name="search_derivative_drawer_toggle">Estudos, resumos e obras relacionadas (%1$d)</string>
     <string name="search_derivative_only_notice">Nenhuma obra principal encontrada diretamente. Exibindo estudos, análises e títulos relacionados:</string>
     <string name="search_source_attribution_apple">Capa: Apple Books</string>
+    <string name="search_work_collapse_action">Recolher</string>
+    <string name="search_metadata_missing_placeholder">—</string>
     <string name="cd_scan_isbn">Escanear código de barras ISBN</string>
 
     <!-- ISBN Scanner -->

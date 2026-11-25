@@ -406,6 +406,8 @@
     <string name="search_derivative_drawer_toggle">Studies, summaries &amp; related (%1$d)</string>
     <string name="search_derivative_only_notice">No primary edition matched directly. Showing studies, analyses, and related titles:</string>
     <string name="search_source_attribution_apple">Cover: Apple Books</string>
+    <string name="search_work_collapse_action">Collapse</string>
+    <string name="search_metadata_missing_placeholder">—</string>
     <string name="cd_scan_isbn">Scan ISBN barcode</string>
 
     <!-- ISBN Scanner -->
