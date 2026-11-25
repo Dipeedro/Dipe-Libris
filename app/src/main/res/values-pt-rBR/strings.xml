@@ -392,7 +392,7 @@
     <string name="search_loading_progress">Consultando fontes bibliográficas…</string>
     <string name="search_secondary_languages_toggle">Outros idiomas e edições de Portugal (%1$d)</string>
     <string name="search_secondary_languages_only_notice">Nenhuma edição em português (Brasil) ou inglês encontrada. Exibindo outros idiomas:</string>
-    <string name="search_edition_show_secondary_langs">Ver edições em outros idiomas (%1$d)</string>
+    <string name="search_edition_show_secondary_langs">Edições em outros idiomas · %1$d</string>
     <string name="search_edition_hide_secondary_langs">Ocultar outros idiomas</string>
     <string name="search_edition_show_more_local">Mostrar mais edições (%1$d restantes)</string>
     <string name="search_action_load_more_results">Carregar mais resultados</string>

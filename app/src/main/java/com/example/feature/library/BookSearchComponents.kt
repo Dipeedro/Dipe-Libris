@@ -2,7 +2,11 @@ package com.example.feature.library
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,21 +18,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
@@ -41,11 +47,14 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,10 +77,12 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -90,13 +102,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.core.bibliographic.domain.CoverRanker
+import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.InterFontFamily
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.MicroMetadataItem
 import com.example.core.designsystem.components.MinimalLanguageBadge
 import com.example.core.model.CatalogBook
@@ -274,7 +286,6 @@ internal fun SearchLocalMatchCard(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SearchWorkHeaderItem(
   group: SearchWorkGroup,
@@ -292,7 +303,8 @@ internal fun SearchWorkHeaderItem(
           group.previewCoverUrl?.let { add(it) }
           addAll(group.previewFallbackCoverUrls)
         }.distinct()
-      CoverRanker.selectForDisplaySize(ordered, maxWidthDp = 92)
+      // >120.dp selects crisp higher-resolution cover art for the protagonist card cover
+      CoverRanker.selectForDisplaySize(ordered, maxWidthDp = 128)
     }
 
   val displayTitle =
@@ -311,6 +323,15 @@ internal fun SearchWorkHeaderItem(
         .minOrNull()
         ?: group.editions.firstNotNullOfOrNull { it.publicationYear }
     }
+  val primaryGenreLabel =
+    remember(genreLabel) {
+      genreLabel
+        ?.substringBefore(',')
+        ?.substringBefore('/')
+        ?.substringBefore('·')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+    }
 
   val displayFontFamily = LocalDipeTypography.current.displayFontFamily
   val closedMetaStyle =
@@ -328,14 +349,19 @@ internal fun SearchWorkHeaderItem(
       animationSpec = DipeTheme.motion.standardTween(200),
       label = "work_expand_chevron_rotation",
     )
-
-  val baseShape = MaterialTheme.shapes.medium
+  val bottomCornerDp by
+    animateDpAsState(
+      targetValue = if (hasExpandedContentBelow) 0.dp else DipeRadii.control,
+      animationSpec = DipeTheme.motion.standardTween(200),
+      label = "work_header_bottom_corner",
+    )
   val headerShape =
-    if (hasExpandedContentBelow) {
-      baseShape.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)
-    } else {
-      baseShape
-    }
+    RoundedCornerShape(
+      topStart = DipeRadii.control,
+      topEnd = DipeRadii.control,
+      bottomStart = bottomCornerDp,
+      bottomEnd = bottomCornerDp,
+    )
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -344,122 +370,135 @@ internal fun SearchWorkHeaderItem(
     modifier =
       modifier
         .fillMaxWidth()
-        .padding(top = 12.dp)
+        .padding(top = 14.dp)
         .testTag("search_work_card_$groupIndex"),
   ) {
-    Row(
+    BoxWithConstraints(
       modifier =
         Modifier.fillMaxWidth()
           .clip(headerShape)
-          .clickable(onClick = onToggleExpand)
-          .padding(horizontal = 14.dp, vertical = 14.dp),
-      horizontalArrangement = Arrangement.spacedBy(14.dp),
-      verticalAlignment = Alignment.Top,
+          .clickable(onClick = onToggleExpand),
     ) {
-      BookCoverArtwork(
-        title = group.canonicalTitle,
-        author = closedAuthorText,
-        isFavorite = false,
-        coverUri = cardCovers.firstOrNull(),
-        fallbackCoverUris = cardCovers.drop(1),
-        compact = false,
-        elevated = true,
-        shadowElevation = 6.dp,
-        widthHintDp = 92.dp,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.width(92.dp),
-      )
+      val coverSlotWidth =
+        when {
+          maxWidth < 300.dp -> 112.dp
+          maxWidth < 460.dp -> 126.dp
+          else -> 142.dp
+        }
+      val maxCoverHeight = coverSlotWidth * 1.56f
 
-      Column(
-        modifier = Modifier.weight(1f).heightIn(min = 126.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
       ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(
-            text = displayTitle,
-            style =
-              TextStyle(
-                fontFamily = displayFontFamily,
-                fontWeight = FontWeight.Medium,
-                fontSize = 18.sp,
-                lineHeight = 23.sp,
-                letterSpacing = (-0.15).sp,
-              ),
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
+        Box(
+          modifier =
+            Modifier.width(coverSlotWidth)
+              .heightIn(max = maxCoverHeight)
+              .testTag("search_work_cover_$groupIndex"),
+          contentAlignment = Alignment.TopCenter,
+        ) {
+          BookCoverArtwork(
+            title = group.canonicalTitle,
+            author = closedAuthorText,
+            isFavorite = false,
+            coverUri = cardCovers.firstOrNull(),
+            fallbackCoverUris = cardCovers.drop(1),
+            compact = false,
+            elevated = true,
+            shadowElevation = 5.dp,
+            widthHintDp = coverSlotWidth,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.widthIn(max = coverSlotWidth).heightIn(max = maxCoverHeight),
           )
-          if (closedAuthorText.isNotBlank()) {
-            Text(
-              text = closedAuthorText,
-              style =
-                TextStyle(
-                  fontFamily = InterFontFamily,
-                  fontWeight = FontWeight.Normal,
-                  fontSize = 13.5.sp,
-                  lineHeight = 18.sp,
-                ),
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
         }
 
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.Bottom,
+        Column(
+          modifier = Modifier.weight(1f).heightIn(min = (coverSlotWidth * 1.44f)),
+          verticalArrangement = Arrangement.SpaceBetween,
         ) {
-          FlowRow(
-            modifier = Modifier.weight(1f).padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            if (releaseYear != null) {
-              MicroMetadataItem(
-                icon = Icons.Outlined.CalendarToday,
-                text = releaseYear.toString(),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                textStyle = closedMetaStyle,
-                modifier = Modifier.align(Alignment.CenterVertically),
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = displayTitle,
+              style =
+                TextStyle(
+                  fontFamily = displayFontFamily,
+                  fontWeight = FontWeight.Medium,
+                  fontSize = 17.5.sp,
+                  lineHeight = 22.5.sp,
+                  letterSpacing = (-0.15).sp,
+                ),
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis,
+            )
+
+            if (closedAuthorText.isNotBlank()) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = closedAuthorText,
+                style =
+                  TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 13.sp,
+                    lineHeight = 17.5.sp,
+                  ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
               )
             }
-            if (genreLabel != null) {
-              MicroMetadataItem(
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                text = genreLabel,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                textStyle = closedMetaStyle,
-                modifier = Modifier.align(Alignment.CenterVertically),
-              )
+
+            if (releaseYear != null || primaryGenreLabel != null) {
+              Spacer(modifier = Modifier.height(12.dp))
+              Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                if (releaseYear != null) {
+                  ClosedCardMetadataRow(
+                    icon = Icons.Outlined.CalendarToday,
+                    text = releaseYear.toString(),
+                    textStyle = closedMetaStyle,
+                  )
+                }
+                if (primaryGenreLabel != null) {
+                  ClosedCardMetadataRow(
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    text = primaryGenreLabel,
+                    textStyle = closedMetaStyle,
+                  )
+                }
+              }
             }
           }
 
           Box(
-            modifier = Modifier.minimumInteractiveComponentSize(),
-            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            contentAlignment = Alignment.CenterEnd,
           ) {
-            Surface(
-              onClick = onToggleExpand,
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.secondary,
-              contentColor = MaterialTheme.colorScheme.onSecondary,
-              shadowElevation = 1.dp,
-              modifier = Modifier.size(34.dp).testTag("search_work_expand_$groupIndex"),
+            Box(
+              modifier = Modifier.minimumInteractiveComponentSize(),
+              contentAlignment = Alignment.Center,
             ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.Outlined.ExpandMore,
-                  contentDescription =
-                    stringResource(
-                      if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section
-                    ),
-                  modifier =
-                    Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
-                )
+              Surface(
+                onClick = onToggleExpand,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                shadowElevation = 1.dp,
+                modifier = Modifier.size(34.dp).testTag("search_work_expand_$groupIndex"),
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Icon(
+                    imageVector = Icons.Outlined.ExpandMore,
+                    contentDescription =
+                      stringResource(
+                        if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section
+                      ),
+                    modifier =
+                      Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
+                  )
+                }
               }
             }
           }
@@ -470,41 +509,113 @@ internal fun SearchWorkHeaderItem(
 }
 
 @Composable
+private fun ClosedCardMetadataRow(
+  icon: ImageVector,
+  text: String,
+  textStyle: TextStyle,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(7.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Icon(
+      imageVector = icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+      modifier = Modifier.size(13.dp),
+    )
+    Text(
+      text = text,
+      style = textStyle,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.weight(1f),
+    )
+  }
+}
+
+@Composable
 internal fun SearchEditionGalleryRowItem(
   editions: List<SearchEditionCandidate>,
   groupIndex: Int,
+  rowIndex: Int,
   rowStartIndex: Int,
   isFirstGalleryRow: Boolean,
   isLastItemInGroup: Boolean,
+  shouldAnimateEntrance: Boolean,
+  onEntranceFinished: () -> Unit,
   onSelectEdition: (SearchEditionCandidate) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val baseShape = MaterialTheme.shapes.medium
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val density = LocalDensity.current
+  val glideOffsetPx = remember(density) { with(density) { (-8).dp.toPx() } }
+  val revealProgress =
+    remember(groupIndex, rowIndex) {
+      Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
+    }
+
+  LaunchedEffect(shouldAnimateEntrance, reduceMotion) {
+    if (reduceMotion || !shouldAnimateEntrance) {
+      revealProgress.snapTo(1f)
+    } else if (revealProgress.value < 1f) {
+      revealProgress.animateTo(
+        targetValue = 1f,
+        animationSpec =
+          tween(
+            durationMillis = 200,
+            delayMillis = (rowIndex * 40).coerceAtMost(120),
+            easing = FastOutSlowInEasing,
+          ),
+      )
+      onEntranceFinished()
+    }
+  }
+
+  val rowHasLongPublisher =
+    remember(editions) { editions.any { (it.publisher?.trim()?.length ?: 0) > 11 } }
+  val publisherMinLines = if (rowHasLongPublisher) 2 else 1
+
   val itemShape =
     if (isLastItemInGroup) {
-      baseShape.copy(topStart = ZeroCornerSize, topEnd = ZeroCornerSize)
+      RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomStart = DipeRadii.control,
+        bottomEnd = DipeRadii.control,
+      )
     } else {
       RectangleShape
     }
 
   Surface(
-    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = itemShape,
     shadowElevation = 0.5.dp,
     modifier = modifier.fillMaxWidth(),
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
       if (isFirstGalleryRow) {
-        HairlineDivider(modifier = Modifier.padding(horizontal = 12.dp))
+        HorizontalDivider(
+          thickness = 0.75.dp,
+          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+        )
       }
       Row(
         modifier =
           Modifier.fillMaxWidth()
+            .graphicsLayer {
+              val p = if (reduceMotion) 1f else revealProgress.value
+              alpha = p
+              translationY = (1f - p) * glideOffsetPx
+            }
             .padding(
               start = 12.dp,
               end = 12.dp,
-              top = if (isFirstGalleryRow) 12.dp else 4.dp,
-              bottom = if (isLastItemInGroup) 12.dp else 8.dp,
+              top = if (isFirstGalleryRow) 14.dp else 6.dp,
+              bottom = if (isLastItemInGroup) 14.dp else 8.dp,
             ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
@@ -515,6 +626,7 @@ internal fun SearchEditionGalleryRowItem(
             val globalIdx = rowStartIndex + colIdx
             SearchEditionGalleryTile(
               edition = edition,
+              publisherMinLines = publisherMinLines,
               testTag = "search_edition_select_${groupIndex}_$globalIdx",
               onClick = { onSelectEdition(edition) },
               modifier = Modifier.weight(1f),
@@ -531,13 +643,14 @@ internal fun SearchEditionGalleryRowItem(
 @Composable
 private fun SearchEditionGalleryTile(
   edition: SearchEditionCandidate,
+  publisherMinLines: Int,
   testTag: String,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val compactEditionCovers =
     remember(edition.candidateId, edition.orderedCoverUrls) {
-      CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 76)
+      CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 88)
     }
   val missingLabel = stringResource(R.string.search_metadata_missing_placeholder)
   val publisherText =
@@ -557,43 +670,48 @@ private fun SearchEditionGalleryTile(
     TextStyle(
       fontFamily = InterFontFamily,
       fontWeight = FontWeight.Normal,
-      fontSize = 11.sp,
-      lineHeight = 14.sp,
+      fontSize = 10.5.sp,
+      lineHeight = 13.5.sp,
       fontFeatureSettings = "tnum",
     )
 
   Column(
     modifier =
       modifier
-        .clip(MaterialTheme.shapes.small)
+        .clip(RoundedCornerShape(6.dp))
         .clickable(onClickLabel = selectLabel, onClick = onClick)
         .padding(bottom = 4.dp)
         .testTag(testTag),
-    verticalArrangement = Arrangement.spacedBy(6.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    BookCoverArtwork(
-      title = edition.workTitle,
-      author = edition.primaryAuthorsText,
-      isFavorite = false,
-      coverUri = compactEditionCovers.firstOrNull(),
-      fallbackCoverUris = compactEditionCovers.drop(1),
-      compact = true,
-      elevated = true,
-      shadowElevation = 3.dp,
-      widthHintDp = 76.dp,
-      contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxWidth(),
-    )
+    // Uniform 2:3 gallery shelf slot with aspect-preserving Fit so square/wide covers never clip text
+    Box(
+      modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+      contentAlignment = Alignment.BottomCenter,
+    ) {
+      BookCoverArtwork(
+        title = edition.workTitle,
+        author = edition.primaryAuthorsText,
+        isFavorite = false,
+        coverUri = compactEditionCovers.firstOrNull(),
+        fallbackCoverUris = compactEditionCovers.drop(1),
+        compact = true,
+        elevated = true,
+        shadowElevation = 2.dp,
+        widthHintDp = 88.dp,
+        contentScale = ContentScale.Fit,
+      )
+    }
 
     Column(
       modifier = Modifier.fillMaxWidth().padding(horizontal = 1.dp),
-      verticalArrangement = Arrangement.spacedBy(3.dp),
+      verticalArrangement = Arrangement.spacedBy(2.5.dp),
     ) {
       EditionGalleryMetadataRow(
         icon = Icons.Outlined.Apartment,
         text = publisherText,
         textStyle = metaStyle,
-        minLines = 2,
+        minLines = publisherMinLines,
         maxLines = 2,
       )
       EditionGalleryMetadataRow(
@@ -622,7 +740,7 @@ private fun EditionGalleryMetadataRow(
   minLines: Int,
   maxLines: Int,
 ) {
-  val iconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+  val iconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
   Row(
     modifier = Modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -632,12 +750,12 @@ private fun EditionGalleryMetadataRow(
       imageVector = icon,
       contentDescription = null,
       tint = iconTint,
-      modifier = Modifier.padding(top = 1.5.dp).size(11.dp),
+      modifier = Modifier.padding(top = 1.5.dp).size(10.5.dp),
     )
     Text(
       text = text,
       style = textStyle,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
       minLines = minLines,
       maxLines = maxLines,
       overflow = TextOverflow.Ellipsis,
@@ -649,30 +767,63 @@ private fun EditionGalleryMetadataRow(
 @Composable
 internal fun SearchWorkActionsFooterItem(
   groupIndex: Int,
+  rowCount: Int,
   remainingEditions: Int,
   secondaryEditionsCount: Int,
   isSecondaryEditionsExpanded: Boolean,
   canLoadMoreRemoteEditions: Boolean,
   isLoadingMore: Boolean,
   showCollapseAction: Boolean,
+  shouldAnimateEntrance: Boolean,
+  onEntranceFinished: () -> Unit,
   onShowMoreLocalEditions: () -> Unit,
   onToggleSecondaryEditions: () -> Unit,
   onLoadMoreRemoteEditions: () -> Unit,
   onCollapseGroup: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val baseShape = MaterialTheme.shapes.medium
-  val footerShape = baseShape.copy(topStart = ZeroCornerSize, topEnd = ZeroCornerSize)
-  val actionTextStyle =
+  val reduceMotion = DipeTheme.motion.reduceMotion
+  val density = LocalDensity.current
+  val glideOffsetPx = remember(density) { with(density) { (-6).dp.toPx() } }
+  val revealProgress =
+    remember(groupIndex) {
+      Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
+    }
+
+  LaunchedEffect(shouldAnimateEntrance, reduceMotion) {
+    if (reduceMotion || !shouldAnimateEntrance) {
+      revealProgress.snapTo(1f)
+    } else if (revealProgress.value < 1f) {
+      revealProgress.animateTo(
+        targetValue = 1f,
+        animationSpec =
+          tween(
+            durationMillis = 190,
+            delayMillis = (rowCount * 40).coerceAtMost(140),
+            easing = FastOutSlowInEasing,
+          ),
+      )
+      onEntranceFinished()
+    }
+  }
+
+  val footerShape =
+    RoundedCornerShape(
+      topStart = 0.dp,
+      topEnd = 0.dp,
+      bottomStart = DipeRadii.control,
+      bottomEnd = DipeRadii.control,
+    )
+  val editorialActionTextStyle =
     TextStyle(
       fontFamily = InterFontFamily,
       fontWeight = FontWeight.Medium,
-      fontSize = 13.sp,
-      lineHeight = 18.sp,
+      fontSize = 12.5.sp,
+      lineHeight = 17.sp,
     )
 
   Surface(
-    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = footerShape,
     shadowElevation = 0.5.dp,
     modifier = modifier.fillMaxWidth(),
@@ -680,101 +831,140 @@ internal fun SearchWorkActionsFooterItem(
     Column(
       modifier =
         Modifier.fillMaxWidth()
+          .graphicsLayer {
+            val p = if (reduceMotion) 1f else revealProgress.value
+            alpha = p
+            translationY = (1f - p) * glideOffsetPx
+          }
           .animateContentSize(animationSpec = DipeTheme.motion.standardTween(200))
-          .padding(
-            start = 12.dp,
-            end = 12.dp,
-            bottom = 8.dp,
-          ),
+          .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      HairlineDivider()
+      HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
+        modifier = Modifier.padding(bottom = 2.dp),
+      )
 
       if (remainingEditions > 0) {
-        TextButton(
+        GalleryEditorialActionItem(
+          icon = Icons.Outlined.ExpandMore,
+          label = stringResource(R.string.search_edition_show_more_local, remainingEditions),
+          textStyle = editorialActionTextStyle,
+          accentColor = MaterialTheme.colorScheme.secondary,
           onClick = onShowMoreLocalEditions,
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .testTag("search_edition_show_more_$groupIndex"),
-        ) {
-          Text(
-            text = stringResource(R.string.search_edition_show_more_local, remainingEditions),
-            style = actionTextStyle,
-          )
-        }
+          testTag = "search_edition_show_more_$groupIndex",
+        )
       }
 
       if (secondaryEditionsCount > 0) {
-        TextButton(
+        GalleryEditorialActionItem(
+          icon = Icons.Outlined.Language,
+          label =
+            if (isSecondaryEditionsExpanded) {
+              stringResource(R.string.search_edition_hide_secondary_langs)
+            } else {
+              stringResource(
+                R.string.search_edition_show_secondary_langs,
+                secondaryEditionsCount,
+              )
+            },
+          textStyle = editorialActionTextStyle,
+          accentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+          iconTint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f),
           onClick = onToggleSecondaryEditions,
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .testTag("search_work_secondary_editions_toggle_$groupIndex"),
-        ) {
-          Text(
-            text =
-              if (isSecondaryEditionsExpanded) {
-                stringResource(R.string.search_edition_hide_secondary_langs)
-              } else {
-                stringResource(
-                  R.string.search_edition_show_secondary_langs,
-                  secondaryEditionsCount,
-                )
-              },
-            style = actionTextStyle,
-          )
-        }
+          testTag = "search_work_secondary_editions_toggle_$groupIndex",
+        )
       }
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        if (canLoadMoreRemoteEditions) {
-          TextButton(
-            onClick = onLoadMoreRemoteEditions,
-            enabled = !isLoadingMore,
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .testTag("search_edition_load_more_$groupIndex"),
-          ) {
-            if (isLoadingMore) {
-              CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 1.8.dp)
-              Spacer(modifier = Modifier.width(DipeSpacing.xs))
-            }
-            Text(
-              text = stringResource(R.string.search_edition_load_more),
-              style = actionTextStyle,
+      if (canLoadMoreRemoteEditions || showCollapseAction) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          if (canLoadMoreRemoteEditions) {
+            GalleryEditorialActionItem(
+              icon = Icons.Outlined.Search,
+              label = stringResource(R.string.search_edition_load_more),
+              textStyle = editorialActionTextStyle,
+              accentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+              iconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+              isLoading = isLoadingMore,
+              enabled = !isLoadingMore,
+              onClick = onLoadMoreRemoteEditions,
+              testTag = "search_edition_load_more_$groupIndex",
+              modifier = Modifier.weight(1f, fill = false),
             )
+          } else {
+            Spacer(modifier = Modifier.width(1.dp))
           }
-        } else {
-          Spacer(modifier = Modifier.width(1.dp))
-        }
 
-        if (showCollapseAction) {
-          TextButton(
-            onClick = onCollapseGroup,
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .testTag("search_work_collapse_$groupIndex"),
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.ExpandLess,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              text = stringResource(R.string.search_work_collapse_action),
-              style = actionTextStyle,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+          if (showCollapseAction) {
+            GalleryEditorialActionItem(
+              icon = Icons.Outlined.ExpandLess,
+              label = stringResource(R.string.search_work_collapse_action),
+              textStyle = editorialActionTextStyle,
+              accentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+              onClick = onCollapseGroup,
+              testTag = "search_work_collapse_$groupIndex",
             )
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun GalleryEditorialActionItem(
+  icon: ImageVector,
+  label: String,
+  textStyle: TextStyle,
+  accentColor: Color,
+  iconTint: Color = accentColor,
+  isLoading: Boolean = false,
+  enabled: Boolean = true,
+  onClick: () -> Unit,
+  testTag: String,
+  modifier: Modifier = Modifier,
+) {
+  Row(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(8.dp))
+        .clickable(
+          enabled = enabled,
+          role = Role.Button,
+          onClick = onClick,
+        )
+        .minimumInteractiveComponentSize()
+        .padding(horizontal = 6.dp, vertical = 6.dp)
+        .testTag(testTag),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    if (isLoading) {
+      CircularProgressIndicator(
+        modifier = Modifier.size(14.dp),
+        strokeWidth = 1.6.dp,
+        color = MaterialTheme.colorScheme.secondary,
+      )
+    } else {
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = iconTint,
+        modifier = Modifier.size(15.dp),
+      )
+    }
+    Text(
+      text = label,
+      style = textStyle,
+      color = accentColor,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
   }
 }
 

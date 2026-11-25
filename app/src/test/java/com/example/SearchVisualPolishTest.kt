@@ -394,7 +394,13 @@ class SearchVisualPolishTest {
         suggestedGenreSlug = "fantasy",
         sources = listOf(MetadataSource.GOOGLE_BOOKS, MetadataSource.OPEN_LIBRARY),
       )
-    val fantasyGenre = Genre(id = 10L, slug = "fantasy", nameEn = "Fantasy", namePt = "Fantasia")
+    val fantasyGenre =
+      Genre(
+        id = 10L,
+        slug = "fantasy",
+        nameEn = "Fantasy, Adventure",
+        namePt = "Fantasia, Aventura",
+      )
 
     composeTestRule.setContent {
       CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
@@ -437,11 +443,37 @@ class SearchVisualPolishTest {
 
     composeTestRule.waitForIdle()
     val cardTag = hasTestTag("search_work_card_0")
-    composeTestRule.onNode(hasText("O Senhor dos Anéis") and hasAnyAncestor(cardTag), useUnmergedTree = true).assertIsDisplayed()
+    val notInCover = !hasAnyAncestor(hasTestTag("search_work_cover_0"))
+    val titleNode =
+      composeTestRule.onNode(
+        hasText("O Senhor dos Anéis") and hasAnyAncestor(cardTag) and notInCover,
+        useUnmergedTree = true,
+      )
+    val yearNode =
+      composeTestRule.onNode(hasText("2001") and hasAnyAncestor(cardTag), useUnmergedTree = true)
+    val genreNode =
+      composeTestRule.onNode(hasText("Fantasia") and hasAnyAncestor(cardTag), useUnmergedTree = true)
+    val coverNode = composeTestRule.onNodeWithTag("search_work_cover_0", useUnmergedTree = true)
+
+    titleNode.assertIsDisplayed()
     composeTestRule.onNode(hasText("J. R. R. Tolkien, Alan Lee") and hasAnyAncestor(cardTag), useUnmergedTree = true).assertIsDisplayed()
-    composeTestRule.onNode(hasText("2001") and hasAnyAncestor(cardTag), useUnmergedTree = true).assertIsDisplayed()
-    composeTestRule.onNode(hasText("Fantasia") and hasAnyAncestor(cardTag), useUnmergedTree = true).assertIsDisplayed()
+    yearNode.assertIsDisplayed()
+    genreNode.assertIsDisplayed()
+    coverNode.assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).assertIsDisplayed()
+
+    // Protagonist cover bounds are substantial (>= 100dp wide, >= 140dp tall) and positioned left of text
+    val coverBounds = coverNode.getBoundsInRoot()
+    val titleBounds = titleNode.getBoundsInRoot()
+    val yearBounds = yearNode.getBoundsInRoot()
+    val genreBounds = genreNode.getBoundsInRoot()
+    assertTrue((coverBounds.right - coverBounds.left) >= 100.dp)
+    assertTrue((coverBounds.bottom - coverBounds.top) >= 140.dp)
+    assertTrue(titleBounds.left > coverBounds.right)
+
+    // Year and single primary genre occupy clearly separated vertical rows (never squashed on one line)
+    assertTrue(genreBounds.top > yearBounds.bottom)
+    composeTestRule.onNode(hasText("Fantasia, Aventura", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
 
     // Excluded noisy items on closed card
     composeTestRule.onNode(hasText("Terceiro Autor Oculto", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
@@ -572,7 +604,14 @@ class SearchVisualPolishTest {
     composeTestRule.waitForIdle()
 
     // Work title remains in header, NEVER repeated inside edition tiles
-    composeTestRule.onNode(hasText("Duna") and hasAnyAncestor(hasTestTag("search_work_card_0")), useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        hasText("Duna") and
+          hasAnyAncestor(hasTestTag("search_work_card_0")) and
+          !hasAnyAncestor(hasTestTag("search_work_cover_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
 
     // Row 0 (tiles 0..3): scroll into view and assert fixed 4-column horizontal alignment
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
@@ -727,5 +766,202 @@ class SearchVisualPolishTest {
     row0Lefts.zip(row1Lefts).forEach { (left0, left1) ->
       assertTrue(kotlin.math.abs((left0 - left1).value) <= 2f)
     }
+  }
+
+  @Test
+  fun expandedGallery_editorialActionsSecondaryLanguagesAndRemoteLoadMoreWorkCleanly() {
+    val primaryEditions =
+      listOf(
+        SearchEditionCandidate(
+          candidateId = "pt_1",
+          workTitle = "Vou te Receitar um Gato",
+          contributors = listOf(CandidateContributor("Syou Ishida", ContributorRole.AUTHOR)),
+          publisher = "Intrínseca",
+          publicationYear = 2024,
+          totalPages = 224,
+          canonicalLanguageTag = "pt-br",
+          languageTierRank = LanguageTier.PT_BR.rank,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        ),
+        SearchEditionCandidate(
+          candidateId = "pt_2",
+          workTitle = "Vou te Receitar um Gato",
+          contributors = listOf(CandidateContributor("Syou Ishida", ContributorRole.AUTHOR)),
+          publisher = "Companhia",
+          publicationYear = 2025,
+          totalPages = 240,
+          canonicalLanguageTag = "pt-br",
+          languageTierRank = LanguageTier.PT_BR.rank,
+          sources = listOf(MetadataSource.APPLE_BOOKS),
+        ),
+      )
+    val secondaryEditions =
+      listOf(
+        SearchEditionCandidate(
+          candidateId = "fr_1",
+          workTitle = "On vous prescrira un chat",
+          contributors = listOf(CandidateContributor("Syou Ishida", ContributorRole.AUTHOR)),
+          publisher = "Gallimard",
+          publicationYear = 2024,
+          totalPages = 256,
+          canonicalLanguageTag = "fr",
+          languageTierRank = LanguageTier.PT_PT_OR_OTHER.rank,
+          sources = listOf(MetadataSource.OPEN_LIBRARY),
+        ),
+        SearchEditionCandidate(
+          candidateId = "es_1",
+          workTitle = "Te Receto un Gato",
+          contributors = listOf(CandidateContributor("Syou Ishida", ContributorRole.AUTHOR)),
+          publisher = "Plaza",
+          publicationYear = 2024,
+          totalPages = 230,
+          canonicalLanguageTag = "es",
+          languageTierRank = LanguageTier.PT_PT_OR_OTHER.rank,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        ),
+      )
+    val group =
+      SearchWorkGroup(
+        groupId = "g_gato",
+        canonicalTitle = "Vou te Receitar um Gato",
+        primaryAuthors = listOf(CandidateContributor("Syou Ishida", ContributorRole.AUTHOR)),
+        editions = primaryEditions + secondaryEditions,
+        externalWorkKey = "OL123W",
+        sources = listOf(MetadataSource.GOOGLE_BOOKS, MetadataSource.OPEN_LIBRARY),
+      )
+
+    var expandedSecondaryIds by mutableStateOf(emptySet<String>())
+    var loadMoreCalled = false
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Vou te receitar um gato",
+                hasSearched = true,
+                expandedGroupIds = setOf("g_gato"),
+                expandedSecondaryEditionGroupIds = expandedSecondaryIds,
+                response =
+                  HybridSearchResponse(
+                    query = "Vou te receitar um gato",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(group),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 4)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onToggleGroupSecondaryEditions = { id ->
+              expandedSecondaryIds =
+                if (id in expandedSecondaryIds) expandedSecondaryIds - id else expandedSecondaryIds + id
+            },
+            onLoadMoreEditions = { loadMoreCalled = true },
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Editions in other languages · 2").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithText("Load more editions").performScrollTo().assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Hide other languages").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_2"))
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_3").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_load_more_0").performClick()
+    assertTrue(loadMoreCalled)
+  }
+
+  @Test
+  fun expandedGallery_repeatedExpandCollapseAndReduceMotionRenderCleanlyAcrossMultipleWorks() {
+    val work1 = sampleWorkGroup(groupId = "w1", title = "Dom Casmurro", author = "Machado de Assis")
+    val work2 = sampleWorkGroup(groupId = "w2", title = "Vidas Secas", author = "Graciliano Ramos")
+    var expandedGroupIds by mutableStateOf(emptySet<String>())
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = true) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Clássicos",
+                hasSearched = true,
+                expandedGroupIds = expandedGroupIds,
+                response =
+                  HybridSearchResponse(
+                    query = "Clássicos",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work1, work2),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 2)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = { id ->
+              expandedGroupIds = if (id in expandedGroupIds) expandedGroupIds - id else expandedGroupIds + id
+            },
+            onLoadMoreEditions = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_work_card_0").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_work_card_1").assertIsDisplayed()
+
+    // Expand -> collapse -> expand repeatedly under reduceMotion = true
+    repeat(2) {
+      composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).performClick()
+      composeTestRule.waitForIdle()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
+      composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).performClick()
+      composeTestRule.waitForIdle()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
+    }
+
+    composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_1"))
+    composeTestRule.onNodeWithTag("search_work_card_1").assertIsDisplayed()
   }
 }

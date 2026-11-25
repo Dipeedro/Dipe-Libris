@@ -188,6 +188,15 @@ fun BookSearchScreen(
         windowLimitFor(groupId) + BookSearchViewModel.EDITION_WINDOW_INCREMENT
     }
   }
+  val revealedGalleryPartsByGroup =
+    remember(displayResponse?.query, displayResponse?.isFromCache) {
+      mutableStateMapOf<String, Set<String>>()
+    }
+  LaunchedEffect(uiState.expandedGroupIds) {
+    val collapsedGroupIds =
+      revealedGalleryPartsByGroup.keys.filter { it !in uiState.expandedGroupIds }
+    collapsedGroupIds.forEach { revealedGalleryPartsByGroup.remove(it) }
+  }
 
   val secondaryButtonTextStyle =
     TextStyle(
@@ -458,6 +467,7 @@ fun BookSearchScreen(
               expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
               loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
               exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+              revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
               reduceMotion = reduceMotion,
               resultsAlphaProvider = { resultsAlpha },
               windowLimitFor = windowLimitFor,
@@ -539,6 +549,7 @@ fun BookSearchScreen(
                 expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
                 windowLimitFor = windowLimitFor,
@@ -642,6 +653,7 @@ fun BookSearchScreen(
                 expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
                 windowLimitFor = windowLimitFor,
@@ -851,6 +863,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
   expandedSecondaryEditionGroupIds: Set<String>,
   loadingMoreEditionsForGroups: Set<String>,
   exhaustedEditionGroupIds: Set<String>,
+  revealedGalleryPartsByGroup: MutableMap<String, Set<String>>,
   reduceMotion: Boolean,
   resultsAlphaProvider: () -> Float,
   windowLimitFor: (String) -> Int,
@@ -893,6 +906,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
     val hasExpandedContentBelow =
       isExpanded && (displayedEditions.isNotEmpty() || showActionsFooter)
     val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
+    val editionRowCount = if (displayedEditions.isNotEmpty()) (displayedEditions.size + 3) / 4 else 0
 
     item(
       key = "${sectionPrefix}_hdr_$uniqueKeySuffix",
@@ -903,8 +917,8 @@ private fun LazyListScope.flattenedWorkGroupItems(
           Modifier
         } else {
           Modifier.animateItem(
-            fadeInSpec = DipeTheme.motion.standardTween(190),
-            fadeOutSpec = DipeTheme.motion.standardTween(150),
+            fadeInSpec = DipeTheme.motion.standardTween(210),
+            fadeOutSpec = DipeTheme.motion.standardTween(160),
             placementSpec = DipeTheme.motion.editorialSpring(),
           )
         }
@@ -929,22 +943,30 @@ private fun LazyListScope.flattenedWorkGroupItems(
         contentType = { _, _ -> "search_edition_gallery_row" },
       ) { rowIdx, rowEditions ->
         val isLastItemInGroup = !showActionsFooter && rowIdx == editionRows.lastIndex
+        val rowPartKey = "${sectionPrefix}_row_${uniqueKeySuffix}_$rowIdx"
+        val alreadyRevealed = rowPartKey in revealedGalleryPartsByGroup[group.groupId].orEmpty()
         val itemMotionModifier =
           if (reduceMotion) {
             Modifier
           } else {
             Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(190),
-              fadeOutSpec = DipeTheme.motion.standardTween(150),
+              fadeInSpec = DipeTheme.motion.standardTween(210),
+              fadeOutSpec = DipeTheme.motion.standardTween(160),
               placementSpec = DipeTheme.motion.editorialSpring(),
             )
           }
         SearchEditionGalleryRowItem(
           editions = rowEditions,
           groupIndex = groupIndex,
+          rowIndex = rowIdx,
           rowStartIndex = rowIdx * 4,
           isFirstGalleryRow = rowIdx == 0,
           isLastItemInGroup = isLastItemInGroup,
+          shouldAnimateEntrance = !reduceMotion && !alreadyRevealed,
+          onEntranceFinished = {
+            revealedGalleryPartsByGroup[group.groupId] =
+              revealedGalleryPartsByGroup[group.groupId].orEmpty() + rowPartKey
+          },
           onSelectEdition = onSelectEdition,
           modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
@@ -956,24 +978,33 @@ private fun LazyListScope.flattenedWorkGroupItems(
         key = "${sectionPrefix}_act_$uniqueKeySuffix",
         contentType = "search_work_actions",
       ) {
+        val footerPartKey = "${sectionPrefix}_footer_$uniqueKeySuffix"
+        val footerAlreadyRevealed =
+          footerPartKey in revealedGalleryPartsByGroup[group.groupId].orEmpty()
         val itemMotionModifier =
           if (reduceMotion) {
             Modifier
           } else {
             Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(190),
-              fadeOutSpec = DipeTheme.motion.standardTween(150),
+              fadeInSpec = DipeTheme.motion.standardTween(210),
+              fadeOutSpec = DipeTheme.motion.standardTween(160),
               placementSpec = DipeTheme.motion.editorialSpring(),
             )
           }
         SearchWorkActionsFooterItem(
           groupIndex = groupIndex,
+          rowCount = editionRowCount,
           remainingEditions = remainingEditions,
           secondaryEditionsCount = group.secondaryTierEditions.size,
           isSecondaryEditionsExpanded = isSecondaryEditionsExpanded,
           canLoadMoreRemoteEditions = canLoadMoreRemote,
           isLoadingMore = isLoadingMore,
           showCollapseAction = displayedEditions.size > 4,
+          shouldAnimateEntrance = !reduceMotion && !footerAlreadyRevealed,
+          onEntranceFinished = {
+            revealedGalleryPartsByGroup[group.groupId] =
+              revealedGalleryPartsByGroup[group.groupId].orEmpty() + footerPartKey
+          },
           onShowMoreLocalEditions = { onShowMoreLocalEditions(group.groupId) },
           onToggleSecondaryEditions = { onToggleSecondaryEditions(group.groupId) },
           onLoadMoreRemoteEditions = { onLoadMoreEditions(group) },
