@@ -3,6 +3,7 @@ package com.example.core.data.local.media
 import android.content.Context
 import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.bibliographic.domain.HybridSearchOrchestrator
+import com.example.core.bibliographic.domain.SearchActivityCoordinator
 import com.example.core.bibliographic.network.ConnectivityChecker
 import com.example.core.data.local.db.BookDao
 import com.example.core.data.local.db.EditionDao
@@ -23,6 +24,7 @@ class CoverUpgradeCoordinator(
   private val orchestrator: HybridSearchOrchestrator,
   private val preferencesRepository: PreferencesRepository,
   private val connectivityChecker: ConnectivityChecker,
+  private val searchActivityCoordinator: SearchActivityCoordinator? = null,
 ) {
   private val hasStartedSession = AtomicBoolean(false)
 
@@ -34,6 +36,7 @@ class CoverUpgradeCoordinator(
         hasStartedSession.set(false)
         return@withContext
       }
+      searchActivityCoordinator?.awaitSearchIdle()
       val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
       val preferredLang =
         runCatching { preferencesRepository.preferences.first().language.tag }.getOrNull()
@@ -41,6 +44,7 @@ class CoverUpgradeCoordinator(
       val now = System.currentTimeMillis()
 
       for (edition in editions) {
+        searchActivityCoordinator?.awaitSearchIdle()
         if (!connectivityChecker.isOnline()) break
         val attemptKey = "edition_${edition.id}"
         try {
@@ -110,6 +114,7 @@ class CoverUpgradeCoordinator(
           }
 
           val requiredWidth = maxOf(TARGET_MIN_WIDTH_PX, currentWidth + 60)
+          searchActivityCoordinator?.awaitSearchIdle()
           val upgradedPath =
             coverStorageManager.downloadBestAvailableCover(
               imageUrls = allCandidateUrls,
@@ -135,6 +140,7 @@ class CoverUpgradeCoordinator(
             continue
           }
 
+          searchActivityCoordinator?.awaitSearchIdle()
           val latest: EditionEntity? = editionDao.getEditionById(edition.id)
           if (latest == null || latest.isCoverCustomized) {
             coverStorageManager.deleteCoverIfManaged(upgradedPath)

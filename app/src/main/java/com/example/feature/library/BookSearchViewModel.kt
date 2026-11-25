@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.bibliographic.domain.HybridSearchOrchestrator
+import com.example.core.bibliographic.domain.SearchActivityCoordinator
 import com.example.core.data.local.preferences.PreferencesRepository
 import com.example.core.data.repository.LibraryRepository
 import com.example.core.di.BibliographicDraftStore
@@ -16,6 +17,7 @@ import com.example.core.model.HybridSearchResponse
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +51,8 @@ data class BookSearchUiState(
   val expandedSecondaryEditionGroupIds: Set<String> = emptySet(),
   val exhaustedEditionGroupIds: Set<String> = emptySet(),
   val editionWindowLimits: Map<String, Int> = emptyMap(),
+  val hasPartialFailureWarning: Boolean = false,
+  val hasSearchError: Boolean = false,
 )
 
 class BookSearchViewModel(
@@ -57,6 +61,7 @@ class BookSearchViewModel(
   private val libraryRepository: LibraryRepository,
   private val preferencesRepository: PreferencesRepository,
   private val draftStore: BibliographicDraftStore,
+  private val searchActivityCoordinator: SearchActivityCoordinator? = null,
 ) : ViewModel() {
 
   private val query = MutableStateFlow(initialQuery?.trim().orEmpty())
@@ -73,6 +78,8 @@ class BookSearchViewModel(
   private val expandedSecondaryEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
   private val exhaustedEditionGroupIds = MutableStateFlow<Set<String>>(emptySet())
   private val editionWindowLimits = MutableStateFlow<Map<String, Int>>(emptyMap())
+  private val hasPartialFailureWarning = MutableStateFlow(false)
+  private val hasSearchError = MutableStateFlow(false)
 
   private val searchGenerationId = AtomicLong(0L)
   private var localSearchJob: Job? = null
@@ -85,8 +92,16 @@ class BookSearchViewModel(
       expandedSecondaryEditionGroupIds,
       exhaustedEditionGroupIds,
       editionWindowLimits,
-    ) { secEditions, exhausted, windowLimits ->
-      Triple(secEditions, exhausted, windowLimits)
+      hasPartialFailureWarning,
+      hasSearchError,
+    ) { secEditions, exhausted, windowLimits, partialWarning, searchError ->
+      EditionAndErrorState(
+        expandedSecondaryEditionGroupIds = secEditions,
+        exhaustedEditionGroupIds = exhausted,
+        editionWindowLimits = windowLimits,
+        hasPartialFailureWarning = partialWarning,
+        hasSearchError = searchError,
+      )
     }
 
   private val extraState =
@@ -102,9 +117,11 @@ class BookSearchViewModel(
         loadingMoreResults = loadingMore,
         secondaryExpanded = secondaryExpanded,
         derivativeExpanded = derivativeExpanded,
-        expandedSecondaryEditionGroupIds = expansion.first,
-        exhaustedEditionGroupIds = expansion.second,
-        editionWindowLimits = expansion.third,
+        expandedSecondaryEditionGroupIds = expansion.expandedSecondaryEditionGroupIds,
+        exhaustedEditionGroupIds = expansion.exhaustedEditionGroupIds,
+        editionWindowLimits = expansion.editionWindowLimits,
+        hasPartialFailureWarning = expansion.hasPartialFailureWarning,
+        hasSearchError = expansion.hasSearchError,
       )
     }
 
@@ -143,6 +160,8 @@ class BookSearchViewModel(
           expandedSecondaryEditionGroupIds = extra.expandedSecondaryEditionGroupIds,
           exhaustedEditionGroupIds = extra.exhaustedEditionGroupIds,
           editionWindowLimits = extra.editionWindowLimits,
+          hasPartialFailureWarning = extra.hasPartialFailureWarning,
+          hasSearchError = extra.hasSearchError,
         )
       }
       .stateIn(
@@ -158,6 +177,14 @@ class BookSearchViewModel(
     val duplicatePrompt: PendingDuplicatePrompt?,
   )
 
+  private data class EditionAndErrorState(
+    val expandedSecondaryEditionGroupIds: Set<String>,
+    val exhaustedEditionGroupIds: Set<String>,
+    val editionWindowLimits: Map<String, Int>,
+    val hasPartialFailureWarning: Boolean,
+    val hasSearchError: Boolean,
+  )
+
   private data class ExtraSearchState(
     val localMatches: List<CatalogBook>,
     val loadingMoreResults: Boolean,
@@ -166,6 +193,8 @@ class BookSearchViewModel(
     val expandedSecondaryEditionGroupIds: Set<String>,
     val exhaustedEditionGroupIds: Set<String>,
     val editionWindowLimits: Map<String, Int>,
+    val hasPartialFailureWarning: Boolean,
+    val hasSearchError: Boolean,
   )
 
   init {
@@ -217,10 +246,13 @@ class BookSearchViewModel(
     exhaustedEditionGroupIds.value = emptySet()
     editionWindowLimits.value = emptyMap()
     loadingMoreEditions.value = emptySet()
+    hasPartialFailureWarning.value = false
+    hasSearchError.value = false
 
     searchJob =
       viewModelScope.launch {
         isSearching.value = true
+        searchActivityCoordinator?.onSearchStarted()
         try {
           val preferredLang = preferencesRepository.preferences.first().language.tag
           orchestrator
@@ -233,6 +265,10 @@ class BookSearchViewModel(
               if (searchGenerationId.get() != activeGeneration) return@collect
               response.value = partialOrFinal
               hasSearched.value = true
+              hasSearchError.value = false
+              if (!partialOrFinal.isPartialResult) {
+                hasPartialFailureWarning.value = false
+              }
               localLiveMatches.value = partialOrFinal.localMatches
 
               // Auto-expand only on completion if there is 1 work group or ISBN lookup and user hasn't clicked yet
@@ -247,12 +283,36 @@ class BookSearchViewModel(
               }
               isSearching.value = partialOrFinal.isPartialResult
             }
+        } catch (ce: CancellationException) {
+          throw ce
+        } catch (_: Exception) {
+          if (searchGenerationId.get() == activeGeneration) {
+            val currentResp = response.value
+            val hasVisibleResults =
+              currentResp != null && (
+                currentResp.workGroups.isNotEmpty() ||
+                  currentResp.secondaryWorkGroups.isNotEmpty() ||
+                  currentResp.derivativeWorkGroups.isNotEmpty() ||
+                  currentResp.localMatches.isNotEmpty()
+                )
+            if (hasVisibleResults) {
+              hasPartialFailureWarning.value = true
+            } else {
+              hasSearchError.value = true
+              hasSearched.value = true
+            }
+          }
         } finally {
+          searchActivityCoordinator?.onSearchFinished()
           if (searchGenerationId.get() == activeGeneration) {
             isSearching.value = false
           }
         }
       }
+  }
+
+  fun dismissPartialFailureWarning() {
+    hasPartialFailureWarning.value = false
   }
 
   fun loadNextPage() {
@@ -263,6 +323,7 @@ class BookSearchViewModel(
     paginationJob =
       viewModelScope.launch {
         isLoadingMoreResults.value = true
+        searchActivityCoordinator?.onSearchStarted()
         try {
           val preferredLang = preferencesRepository.preferences.first().language.tag
           val updated =
@@ -273,8 +334,16 @@ class BookSearchViewModel(
             )
           if (searchGenerationId.get() == activeGeneration) {
             response.value = updated
+            hasPartialFailureWarning.value = false
+          }
+        } catch (ce: CancellationException) {
+          throw ce
+        } catch (_: Exception) {
+          if (searchGenerationId.get() == activeGeneration) {
+            hasPartialFailureWarning.value = true
           }
         } finally {
+          searchActivityCoordinator?.onSearchFinished()
           isLoadingMoreResults.value = false
         }
       }
@@ -352,6 +421,10 @@ class BookSearchViewModel(
             secondaryWorkGroups = updatedSecondary,
             derivativeWorkGroups = updatedDerivative,
           )
+      } catch (ce: CancellationException) {
+        throw ce
+      } catch (_: Exception) {
+        // Keep existing work group visible if edition expansion fails unexpectedly
       } finally {
         loadingMoreEditions.value = loadingMoreEditions.value - group.groupId
       }
@@ -368,32 +441,44 @@ class BookSearchViewModel(
     onReadyForReview: () -> Unit,
   ) {
     viewModelScope.launch {
-      val chosenTitle = candidate.editionTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle
-      val alternateTitle =
-        (candidate.originalTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle)
-          .takeIf { it != chosenTitle }
-      val assessment =
-        libraryRepository.assessDuplicates(
-          isbn13 = candidate.isbn13,
-          isbn10 = candidate.isbn10,
-          externalWorkKey = candidate.externalWorkKey,
-          title = chosenTitle,
-          author = candidate.primaryAuthorsText,
-          alternateTitle = alternateTitle,
-        )
-      when (assessment) {
-        DuplicateAssessment.NoMatch -> {
-          draftStore.setReviewDraft(
-            ReviewDraftPayload(
-              mode = BookReviewMode.IMPORTED,
-              candidate = candidate,
-            )
+      try {
+        val chosenTitle = candidate.editionTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle
+        val alternateTitle =
+          (candidate.originalTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle)
+            .takeIf { it != chosenTitle }
+        val assessment =
+          libraryRepository.assessDuplicates(
+            isbn13 = candidate.isbn13,
+            isbn10 = candidate.isbn10,
+            externalWorkKey = candidate.externalWorkKey,
+            title = chosenTitle,
+            author = candidate.primaryAuthorsText,
+            alternateTitle = alternateTitle,
           )
-          onReadyForReview()
+        when (assessment) {
+          DuplicateAssessment.NoMatch -> {
+            draftStore.setReviewDraft(
+              ReviewDraftPayload(
+                mode = BookReviewMode.IMPORTED,
+                candidate = candidate,
+              )
+            )
+            onReadyForReview()
+          }
+          else -> {
+            duplicatePrompt.value = PendingDuplicatePrompt(candidate = candidate, assessment = assessment)
+          }
         }
-        else -> {
-          duplicatePrompt.value = PendingDuplicatePrompt(candidate = candidate, assessment = assessment)
-        }
+      } catch (ce: CancellationException) {
+        throw ce
+      } catch (_: Exception) {
+        draftStore.setReviewDraft(
+          ReviewDraftPayload(
+            mode = BookReviewMode.IMPORTED,
+            candidate = candidate,
+          )
+        )
+        onReadyForReview()
       }
     }
   }

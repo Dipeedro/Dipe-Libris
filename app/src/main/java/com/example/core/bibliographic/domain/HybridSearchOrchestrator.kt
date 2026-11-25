@@ -78,7 +78,7 @@ private data class WorkExpansionCursor(
   val gbFetched: Boolean = false,
 )
 
-class HybridSearchOrchestrator(
+open class HybridSearchOrchestrator(
   private val openLibraryAdapter: BibliographicSourceAdapter,
   private val googleBooksAdapter: BibliographicSourceAdapter,
   private val crossrefAdapter: BibliographicSourceAdapter,
@@ -149,7 +149,7 @@ class HybridSearchOrchestrator(
       forceRefresh = forceRefresh,
     ).last()
 
-  fun searchProgressive(
+  open fun searchProgressive(
     rawQuery: String,
     preferredLanguage: String? = null,
     expandSecondary: Boolean = false,

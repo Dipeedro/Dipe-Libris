@@ -378,6 +378,7 @@ fun DipeNavigationShell(
                         libraryRepository = it.libraryRepository,
                         preferencesRepository = it.preferencesRepository,
                         draftStore = it.bibliographicDraftStore,
+                        searchActivityCoordinator = it.searchActivityCoordinator,
                       )
                     }
                 )

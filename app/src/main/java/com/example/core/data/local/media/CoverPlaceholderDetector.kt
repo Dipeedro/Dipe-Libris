@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
@@ -112,6 +113,36 @@ object CoverPlaceholderDetector {
    * - Small centered band of medium-gray text/border (1%..35% luminance in 75..204)
    */
   fun isKnownGooglePlaceholderBitmap(bitmap: Bitmap): Boolean {
+    if (bitmap.isRecycled) return false
+    val w = bitmap.width
+    val h = bitmap.height
+    if (w < MIN_VALID_DIMENSION_PX || h < MIN_VALID_DIMENSION_PX) return true
+
+    val isHardware =
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE
+    var tempSoftwareCopy: Bitmap? = null
+    val readableBitmap =
+      if (isHardware) {
+        tempSoftwareCopy =
+          runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return false
+        tempSoftwareCopy
+      } else {
+        bitmap
+      }
+
+    return try {
+      inspectSoftwareBitmapPixels(readableBitmap)
+    } catch (_: Throwable) {
+      false
+    } finally {
+      tempSoftwareCopy?.let { copy ->
+        if (!copy.isRecycled) copy.recycle()
+      }
+    }
+  }
+
+  internal fun inspectSoftwareBitmapPixels(bitmap: Bitmap): Boolean {
+    if (bitmap.isRecycled) return false
     val w = bitmap.width
     val h = bitmap.height
     if (w < MIN_VALID_DIMENSION_PX || h < MIN_VALID_DIMENSION_PX) return true

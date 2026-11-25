@@ -532,4 +532,8 @@
     <string name="library_row_action_remove">Remover</string>
     <string name="library_status_dialog_title">Mudar status</string>
     <string name="search_clear_query">Limpar busca</string>
+    <string name="search_partial_failure_warning">Exibindo resultados parciais — algumas fontes não concluíram o carregamento.</string>
+    <string name="search_action_retry">Tentar novamente</string>
+    <string name="search_error_title">Não foi possível concluir a busca</string>
+    <string name="search_error_body">Ocorreu uma falha inesperada ao carregar os resultados. Tente novamente em instantes.</string>
 </resources>

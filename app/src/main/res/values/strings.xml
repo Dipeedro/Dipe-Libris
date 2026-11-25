@@ -533,4 +533,8 @@
     <string name="library_row_action_remove">Remove</string>
     <string name="library_status_dialog_title">Change status</string>
     <string name="search_clear_query">Clear search</string>
+    <string name="search_partial_failure_warning">Showing partial results — some sources could not finish loading.</string>
+    <string name="search_action_retry">Retry</string>
+    <string name="search_error_title">Search could not be completed</string>
+    <string name="search_error_body">There was an unexpected error while loading results. Try again in a moment.</string>
 </resources>

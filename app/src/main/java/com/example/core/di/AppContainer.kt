@@ -2,6 +2,7 @@ package com.example.core.di
 
 import android.content.Context
 import com.example.core.bibliographic.domain.HybridSearchOrchestrator
+import com.example.core.bibliographic.domain.SearchActivityCoordinator
 import com.example.core.bibliographic.network.AndroidConnectivityChecker
 import com.example.core.bibliographic.network.AppleBooksAdapter
 import com.example.core.bibliographic.network.BrasilApiAdapter
@@ -38,6 +39,7 @@ interface AppContainer {
   val hybridSearchOrchestrator: HybridSearchOrchestrator
   val metadataUpdateRepository: MetadataUpdateRepository
   val bibliographicDraftStore: BibliographicDraftStore
+  val searchActivityCoordinator: SearchActivityCoordinator? get() = null
   val coverUpgradeCoordinator: CoverUpgradeCoordinator? get() = null
 }
 
@@ -47,6 +49,10 @@ class DefaultAppContainer(context: Context) : AppContainer {
 
   override val bibliographicDraftStore: BibliographicDraftStore by lazy {
     BibliographicDraftStore()
+  }
+
+  override val searchActivityCoordinator: SearchActivityCoordinator by lazy {
+    SearchActivityCoordinator()
   }
 
   override val preferencesRepository: PreferencesRepository by lazy {
@@ -135,6 +141,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
       orchestrator = hybridSearchOrchestrator,
       preferencesRepository = preferencesRepository,
       connectivityChecker = connectivityChecker,
+      searchActivityCoordinator = searchActivityCoordinator,
     )
   }
 }

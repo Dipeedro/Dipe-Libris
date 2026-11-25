@@ -171,7 +171,7 @@ object WorkGroupingEngine {
     val primaryGroups = literaryRanked.filter { it.primaryLanguageTierRank <= primaryCutoffRank }
     val secondaryGroups = literaryRanked.filter { it.primaryLanguageTierRank > primaryCutoffRank }
 
-    return GroupedSearchOutcome(
+    return ensureUniqueGroupIds(
       primaryGroups = primaryGroups,
       secondaryGroups = secondaryGroups,
       derivativeGroups = derivativeRanked,
@@ -395,12 +395,13 @@ object WorkGroupingEngine {
         val totalHints =
           allBucketEditions.maxOfOrNull { it.workEditionCount }?.takeIf { it > enrichedEditions.size }
         val repStruct = sortedItems.first().titleStructure
+        val subtitleForGroupId = subtitle ?: repStruct.subtitleNormalized.takeIf { it.isNotBlank() }
 
         val deterministicGroupId =
           buildDeterministicGroupId(
             externalWorkKey = externalWorkKey,
             canonicalTitle = canonicalTitle,
-            subtitle = subtitle,
+            subtitle = subtitleForGroupId,
             authorName = primaryAuthors.firstOrNull()?.name,
             volumeNumber = repStruct.volumeNumber,
             bundleKind = bestBundleKind,
@@ -522,6 +523,35 @@ object WorkGroupingEngine {
     )
   }
 
+  private fun ensureUniqueGroupIds(
+    primaryGroups: List<SearchWorkGroup>,
+    secondaryGroups: List<SearchWorkGroup>,
+    derivativeGroups: List<SearchWorkGroup>,
+  ): GroupedSearchOutcome {
+    val usedIds = HashSet<String>(primaryGroups.size + secondaryGroups.size + derivativeGroups.size)
+
+    fun dedupList(list: List<SearchWorkGroup>): List<SearchWorkGroup> =
+      list.map { group ->
+        if (usedIds.add(group.groupId)) {
+          group
+        } else {
+          var suffix = 2
+          var candidateId = "${group.groupId}_$suffix"
+          while (!usedIds.add(candidateId)) {
+            suffix++
+            candidateId = "${group.groupId}_$suffix"
+          }
+          group.copy(groupId = candidateId)
+        }
+      }
+
+    return GroupedSearchOutcome(
+      primaryGroups = dedupList(primaryGroups),
+      secondaryGroups = dedupList(secondaryGroups),
+      derivativeGroups = dedupList(derivativeGroups),
+    )
+  }
+
   private fun buildDeterministicGroupId(
     externalWorkKey: String?,
     canonicalTitle: String,
@@ -535,7 +565,7 @@ object WorkGroupingEngine {
       buildString {
         append(externalWorkKey ?: BibliographicMath.normalizeBaseTitle(canonicalTitle))
         append('|')
-        append(BibliographicMath.normalizeText(subtitle).take(40))
+        append(BibliographicMath.normalizeText(subtitle))
         append('|')
         append(BibliographicMath.normalizeAuthorSurname(authorName))
         append('|')

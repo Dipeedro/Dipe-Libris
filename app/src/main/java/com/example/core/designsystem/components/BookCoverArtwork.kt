@@ -210,7 +210,8 @@ fun BookCoverArtwork(
       (w in 1..48) ||
         (h in 1..48) ||
         (CoverPlaceholderDetector.isGoogleBooksHost(activeUri) &&
-          CoverPlaceholderDetector.isKnownGooglePlaceholderDrawable(drawable))
+          runCatching { CoverPlaceholderDetector.isKnownGooglePlaceholderDrawable(drawable) }
+            .getOrDefault(false))
     } else {
       false
     }

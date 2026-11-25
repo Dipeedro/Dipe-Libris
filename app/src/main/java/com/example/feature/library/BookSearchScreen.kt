@@ -254,6 +254,55 @@ fun BookSearchScreen(
         }
       }
 
+      if (uiState.hasPartialFailureWarning && hasAnyResponseWorks) {
+        EditorialSurfaceCard(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+          contentPadding =
+            PaddingValues(
+              horizontal = DipeSpacing.compact,
+              vertical = DipeSpacing.xs,
+            ),
+          modifier =
+            Modifier.fillMaxWidth()
+              .padding(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = DipeSpacing.compact,
+              )
+              .testTag("search_partial_warning_banner"),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.CloudOff,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.secondary,
+              modifier = Modifier.size(16.dp),
+            )
+            Text(
+              text = stringResource(R.string.search_partial_failure_warning),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.weight(1f),
+            )
+            TextButton(
+              onClick = onSubmitSearch,
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .testTag("search_partial_warning_retry"),
+            ) {
+              Text(
+                text = stringResource(R.string.search_action_retry),
+                color = MaterialTheme.colorScheme.secondary,
+              )
+            }
+          }
+        }
+      }
+
       LazyColumn(
         modifier =
           Modifier.weight(1f)
@@ -425,6 +474,7 @@ fun BookSearchScreen(
             }
           }
 
+
           if (response.localMatches.isNotEmpty()) {
             item(key = "search_local_header", contentType = "section_header") {
               EditorialSectionHeader(
@@ -557,6 +607,7 @@ fun BookSearchScreen(
             response.workGroups.isEmpty() &&
               response.derivativeWorkGroups.isEmpty() &&
               !uiState.isSearching &&
+              !uiState.hasSearchError &&
               response.localMatches.isEmpty()
           ) {
             item(key = "search_empty_results", contentType = "empty_state") {
@@ -716,6 +767,18 @@ fun BookSearchScreen(
               }
             }
           }
+        } else if (uiState.hasSearchError && !uiState.isSearching && uiState.localLiveMatches.isEmpty()) {
+          item(key = "search_error_state", contentType = "empty_state") {
+            EditorialEmptyState(
+              icon = Icons.Outlined.CloudOff,
+              title = stringResource(R.string.search_error_title),
+              body = stringResource(R.string.search_error_body),
+              actionLabel = stringResource(R.string.search_action_retry),
+              actionTestTag = "search_error_retry_button",
+              onAction = onSubmitSearch,
+              modifier = Modifier.padding(top = DipeSpacing.compact),
+            )
+          }
         } else if (!uiState.hasSearched && !uiState.isSearching && uiState.localLiveMatches.isEmpty()) {
           item(key = "search_initial_prompt", contentType = "empty_state") {
             EditorialEmptyState(
@@ -725,6 +788,20 @@ fun BookSearchScreen(
               actionLabel = stringResource(R.string.search_action_manual),
               actionTestTag = "search_manual_button",
               onAction = onManualCatalog,
+              modifier = Modifier.padding(top = DipeSpacing.compact),
+            )
+          }
+        }
+
+        if (uiState.hasSearchError && response != null && !hasAnyResponseWorks && !uiState.isSearching) {
+          item(key = "search_response_error_state", contentType = "empty_state") {
+            EditorialEmptyState(
+              icon = Icons.Outlined.CloudOff,
+              title = stringResource(R.string.search_error_title),
+              body = stringResource(R.string.search_error_body),
+              actionLabel = stringResource(R.string.search_action_retry),
+              actionTestTag = "search_error_retry_button",
+              onAction = onSubmitSearch,
               modifier = Modifier.padding(top = DipeSpacing.compact),
             )
           }
@@ -762,7 +839,11 @@ private fun LazyListScope.flattenedWorkGroupItems(
   onLoadMoreEditions: (SearchWorkGroup) -> Unit,
   onSelectEdition: (SearchEditionCandidate) -> Unit,
 ) {
+  val seenGroupIds = HashMap<String, Int>(groups.size)
   groups.forEachIndexed { localIdx, group ->
+    val occurrence = (seenGroupIds[group.groupId] ?: 0) + 1
+    seenGroupIds[group.groupId] = occurrence
+    val uniqueKeySuffix = if (occurrence == 1) group.groupId else "${group.groupId}__dup$occurrence"
     val groupIndex = indexOffset + localIdx
     val isExpanded = group.groupId in expandedGroupIds
     val isSecondaryEditionsExpanded = group.groupId in expandedSecondaryEditionGroupIds
@@ -790,7 +871,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
     val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
 
     item(
-      key = "${sectionPrefix}_hdr_${group.groupId}",
+      key = "${sectionPrefix}_hdr_$uniqueKeySuffix",
       contentType = "search_work_header",
     ) {
       SearchWorkHeaderItem(
@@ -806,7 +887,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
     if (displayedEditions.isNotEmpty()) {
       itemsIndexed(
         items = displayedEditions,
-        key = { edIdx, edition -> "${sectionPrefix}_ed_${group.groupId}_${edition.candidateId}_$edIdx" },
+        key = { edIdx, edition -> "${sectionPrefix}_ed_${uniqueKeySuffix}_${edition.candidateId}_$edIdx" },
         contentType = { _, _ -> "search_edition_row" },
       ) { editionIdx, edition ->
         val isLastItemInGroup = !showActionsFooter && editionIdx == displayedEditions.lastIndex
@@ -821,7 +902,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
 
     if (showActionsFooter) {
       item(
-        key = "${sectionPrefix}_act_${group.groupId}",
+        key = "${sectionPrefix}_act_$uniqueKeySuffix",
         contentType = "search_work_actions",
       ) {
         SearchWorkActionsFooterItem(
