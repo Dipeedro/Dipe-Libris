@@ -536,4 +536,17 @@
     <string name="search_action_retry">Tentar novamente</string>
     <string name="search_error_title">Não foi possível concluir a busca</string>
     <string name="search_error_body">Ocorreu uma falha inesperada ao carregar os resultados. Tente novamente em instantes.</string>
+    <string name="search_sources_slow_retry">Algumas fontes demoraram a responder · tentar de novo</string>
+    <string name="search_sources_issue_retry">Nem todas as fontes responderam · tentar de novo</string>
+    <plurals name="search_source_detail_found">
+        <item quantity="one">Encontrou %1$d edição</item>
+        <item quantity="other">Encontrou %1$d edições</item>
+    </plurals>
+    <string name="search_source_detail_empty">Nenhuma edição encontrada</string>
+    <string name="search_source_detail_timeout">Demorou para responder</string>
+    <string name="search_source_detail_error">Indisponível no momento</string>
+    <string name="search_source_detail_offline">Sem conexão</string>
+    <string name="search_source_detail_loading">Consultando agora</string>
+    <string name="cd_source_status_expand">Ver detalhes das fontes consultadas</string>
+    <string name="cd_source_status_collapse">Ocultar detalhes das fontes</string>
 </resources>

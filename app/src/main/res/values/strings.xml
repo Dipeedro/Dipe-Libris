@@ -537,4 +537,17 @@
     <string name="search_action_retry">Retry</string>
     <string name="search_error_title">Search could not be completed</string>
     <string name="search_error_body">There was an unexpected error while loading results. Try again in a moment.</string>
+    <string name="search_sources_slow_retry">Some sources took a while to respond · try again</string>
+    <string name="search_sources_issue_retry">Not all sources could respond · try again</string>
+    <plurals name="search_source_detail_found">
+        <item quantity="one">Found %1$d edition</item>
+        <item quantity="other">Found %1$d editions</item>
+    </plurals>
+    <string name="search_source_detail_empty">No editions found</string>
+    <string name="search_source_detail_timeout">Took too long to respond</string>
+    <string name="search_source_detail_error">Unavailable right now</string>
+    <string name="search_source_detail_offline">Offline</string>
+    <string name="search_source_detail_loading">Checking now</string>
+    <string name="cd_source_status_expand">Show consulted source details</string>
+    <string name="cd_source_status_collapse">Hide source details</string>
 </resources>

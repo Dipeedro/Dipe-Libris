@@ -913,13 +913,21 @@ class BibliographicDomainAndUiTest {
     composeTestRule.waitUntil(timeoutMillis = 5_000) {
       composeTestRule.onAllNodes(hasTestTag("search_work_card_0")).fetchSemanticsNodes().isNotEmpty()
     }
-    composeTestRule.onNodeWithText("Google Books (1)").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Google Books (1)").assertDoesNotExist()
     composeTestRule
       .onNode(hasText("Vou te receitar um gato") and hasAnyAncestor(hasTestTag("search_work_card_0")))
       .assertIsDisplayed()
     composeTestRule.onNodeWithText("Syou Ishida").assertIsDisplayed()
 
-    composeTestRule.onNodeWithTag("search_edition_select_0_0").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_toggle"))
+    composeTestRule.onNodeWithTag("search_sources_status_toggle").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_bottom_source_google_books", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_sources_status_toggle").performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_details"))
+    composeTestRule.onNodeWithTag("search_sources_status_details").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) { navigatedToReview }
     assertEquals("Vou te receitar um gato", draftStore.pendingReviewDraft.value?.candidate?.workTitle)
   }

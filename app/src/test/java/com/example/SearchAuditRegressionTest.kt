@@ -686,8 +686,8 @@ class SearchAuditRegressionTest {
     }
 
     composeTestRule.waitForIdle()
-    // Timeout diagnostic pill shown distinctly from generic error
-    composeTestRule.onNodeWithText("Google Books (timed out)").assertIsDisplayed()
+    // Top timeout diagnostic pill is removed in editorial UI polish
+    composeTestRule.onNodeWithText("Google Books (timed out)").assertDoesNotExist()
 
     // Windowed editions start at 6 instead of inflating all 15
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_0"))
@@ -710,6 +710,15 @@ class SearchAuditRegressionTest {
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_14"))
     composeTestRule.onNodeWithTag("search_edition_select_0_14").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_show_more_0").assertDoesNotExist()
+
+    // Bottom source status bar shows friendly timeout retry hint and details
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_toggle"))
+    composeTestRule.onNodeWithTag("search_bottom_source_google_books", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_retry_hint"))
+    composeTestRule.onNodeWithTag("search_sources_retry_hint").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_sources_status_toggle").performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_details"))
+    composeTestRule.onNodeWithTag("search_sources_status_details").assertIsDisplayed()
   }
 
   @Test
@@ -1130,7 +1139,16 @@ class SearchAuditRegressionTest {
     }
 
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithText("Google Books (timed out)").assertIsDisplayed()
+    composeTestRule.onNodeWithText("Google Books (timed out)").assertDoesNotExist()
     composeTestRule.onNodeWithText("Apple Books (timed out)").assertDoesNotExist()
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_toggle"))
+    composeTestRule.onNodeWithTag("search_bottom_source_open_library", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_bottom_source_google_books", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_bottom_source_apple_books", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_sources_status_toggle").performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_sources_status_details"))
+    composeTestRule.onNodeWithTag("search_sources_status_details").assertIsDisplayed()
+    Unit
   }
 }
