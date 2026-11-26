@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -397,9 +398,9 @@ class SearchVisualPolishTest {
     val fantasyGenre =
       Genre(
         id = 10L,
-        slug = "fantasy",
-        nameEn = "Fantasy, Adventure",
-        namePt = "Fantasia, Aventura",
+        slug = "fantasy-scifi",
+        nameEn = "Fantasy & Sci-Fi",
+        namePt = "Fantasia e ficção científica",
       )
 
     composeTestRule.setContent {
@@ -454,26 +455,36 @@ class SearchVisualPolishTest {
     val genreNode =
       composeTestRule.onNode(hasText("Fantasia") and hasAnyAncestor(cardTag), useUnmergedTree = true)
     val coverNode = composeTestRule.onNodeWithTag("search_work_cover_0", useUnmergedTree = true)
+    val expandNode = composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true)
 
     titleNode.assertIsDisplayed()
     composeTestRule.onNode(hasText("J. R. R. Tolkien, Alan Lee") and hasAnyAncestor(cardTag), useUnmergedTree = true).assertIsDisplayed()
     yearNode.assertIsDisplayed()
     genreNode.assertIsDisplayed()
     coverNode.assertIsDisplayed()
-    composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).assertIsDisplayed()
+    expandNode.assertIsDisplayed()
 
     // Protagonist cover bounds are substantial (>= 100dp wide, >= 140dp tall) and positioned left of text
+    val cardBounds = composeTestRule.onNodeWithTag("search_work_card_0").getBoundsInRoot()
     val coverBounds = coverNode.getBoundsInRoot()
     val titleBounds = titleNode.getBoundsInRoot()
     val yearBounds = yearNode.getBoundsInRoot()
     val genreBounds = genreNode.getBoundsInRoot()
+    val expandBounds = expandNode.getBoundsInRoot()
     assertTrue((coverBounds.right - coverBounds.left) >= 100.dp)
     assertTrue((coverBounds.bottom - coverBounds.top) >= 140.dp)
     assertTrue(titleBounds.left > coverBounds.right)
 
+    // Bottom expand chevron sits centered horizontally at the bottom of the main card
+    val cardCenterX = (cardBounds.left + cardBounds.right) / 2f
+    val expandCenterX = (expandBounds.left + expandBounds.right) / 2f
+    assertTrue(kotlin.math.abs((cardCenterX - expandCenterX).value) <= 4f)
+    assertTrue(expandBounds.bottom <= cardBounds.bottom)
+
     // Year and single primary genre occupy clearly separated vertical rows (never squashed on one line)
     assertTrue(genreBounds.top > yearBounds.bottom)
-    composeTestRule.onNode(hasText("Fantasia, Aventura", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
+    composeTestRule.onNode(hasText("Fantasia e ficção científica", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
+    composeTestRule.onNode(hasText("ficção", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
 
     // Excluded noisy items on closed card
     composeTestRule.onNode(hasText("Terceiro Autor Oculto", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
@@ -880,20 +891,34 @@ class SearchVisualPolishTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithText("Editions in other languages · 2").performScrollTo().assertIsDisplayed()
-    composeTestRule.onNodeWithText("Load more editions").performScrollTo().assertIsDisplayed()
+
+    // Footer uses icon-only actions with zero accompanying visible text
+    composeTestRule.onNodeWithText("Editions in other languages · 2").assertDoesNotExist()
+    composeTestRule.onNodeWithText("Load more editions").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_load_more_0").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_add_more_0").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithContentDescription("Editions in other languages · 2").assertIsDisplayed()
+
+    // + icon sits at the bottom-right corner of the editions card
+    val searchIconBounds = composeTestRule.onNodeWithTag("search_edition_load_more_0").getBoundsInRoot()
+    val langIconBounds = composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").getBoundsInRoot()
+    val addIconBounds = composeTestRule.onNodeWithTag("search_edition_add_more_0").getBoundsInRoot()
+    assertTrue(langIconBounds.left > searchIconBounds.left)
+    assertTrue(addIconBounds.left > langIconBounds.right)
 
     composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithText("Hide other languages").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithText("Hide other languages").assertDoesNotExist()
+    composeTestRule.onNodeWithContentDescription("Hide other languages").assertIsDisplayed()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_2"))
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_2").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_select_0_3").assertIsDisplayed()
 
-    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_add_more_0"))
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_load_more_0").performClick()
+    composeTestRule.onNodeWithTag("search_edition_add_more_0").performClick()
     assertTrue(loadMoreCalled)
   }
 

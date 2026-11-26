@@ -1,10 +1,8 @@
 package com.example.feature.library
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -38,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarToday
@@ -78,10 +77,14 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -100,6 +103,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.example.R
 import com.example.core.bibliographic.domain.CoverRanker
 import com.example.core.designsystem.DipeRadii
@@ -120,6 +124,9 @@ import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import com.example.core.model.TitleBundleKind
 import java.util.Locale
+
+private val GENRE_SEPARATOR_REGEX =
+  Regex("""\s+(?:e|and|&|-)\s+|[,/;·|—]""", RegexOption.IGNORE_CASE)
 
 private val MINOR_TITLE_CONNECTORS =
   setOf(
@@ -326,9 +333,8 @@ internal fun SearchWorkHeaderItem(
   val primaryGenreLabel =
     remember(genreLabel) {
       genreLabel
-        ?.substringBefore(',')
-        ?.substringBefore('/')
-        ?.substringBefore('·')
+        ?.split(GENRE_SEPARATOR_REGEX, limit = 2)
+        ?.firstOrNull()
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
     }
@@ -346,38 +352,27 @@ internal fun SearchWorkHeaderItem(
   val chevronRotation by
     animateFloatAsState(
       targetValue = if (isExpanded) 180f else 0f,
-      animationSpec = DipeTheme.motion.standardTween(200),
+      animationSpec = DipeTheme.motion.standardTween(220),
       label = "work_expand_chevron_rotation",
     )
-  val bottomCornerDp by
-    animateDpAsState(
-      targetValue = if (hasExpandedContentBelow) 0.dp else DipeRadii.control,
-      animationSpec = DipeTheme.motion.standardTween(200),
-      label = "work_header_bottom_corner",
-    )
-  val headerShape =
-    RoundedCornerShape(
-      topStart = DipeRadii.control,
-      topEnd = DipeRadii.control,
-      bottomStart = bottomCornerDp,
-      bottomEnd = bottomCornerDp,
-    )
+  val headerShape = RoundedCornerShape(DipeRadii.control)
+  val expandLabel =
+    stringResource(if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section)
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLowest,
     shape = headerShape,
-    shadowElevation = 0.5.dp,
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+    shadowElevation = if (hasExpandedContentBelow) 2.dp else 0.75.dp,
     modifier =
       modifier
+        .zIndex(2f)
         .fillMaxWidth()
         .padding(top = 14.dp)
         .testTag("search_work_card_$groupIndex"),
   ) {
     BoxWithConstraints(
-      modifier =
-        Modifier.fillMaxWidth()
-          .clip(headerShape)
-          .clickable(onClick = onToggleExpand),
+      modifier = Modifier.fillMaxWidth().clip(headerShape).clickable(onClick = onToggleExpand),
     ) {
       val coverSlotWidth =
         when {
@@ -387,38 +382,36 @@ internal fun SearchWorkHeaderItem(
         }
       val maxCoverHeight = coverSlotWidth * 1.56f
 
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.Top,
-      ) {
-        Box(
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
           modifier =
-            Modifier.width(coverSlotWidth)
-              .heightIn(max = maxCoverHeight)
-              .testTag("search_work_cover_$groupIndex"),
-          contentAlignment = Alignment.TopCenter,
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 0.dp),
+          horizontalArrangement = Arrangement.spacedBy(16.dp),
+          verticalAlignment = Alignment.Top,
         ) {
-          BookCoverArtwork(
-            title = group.canonicalTitle,
-            author = closedAuthorText,
-            isFavorite = false,
-            coverUri = cardCovers.firstOrNull(),
-            fallbackCoverUris = cardCovers.drop(1),
-            compact = false,
-            elevated = true,
-            shadowElevation = 5.dp,
-            widthHintDp = coverSlotWidth,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.widthIn(max = coverSlotWidth).heightIn(max = maxCoverHeight),
-          )
-        }
+          Box(
+            modifier =
+              Modifier.width(coverSlotWidth)
+                .heightIn(max = maxCoverHeight)
+                .testTag("search_work_cover_$groupIndex"),
+            contentAlignment = Alignment.TopCenter,
+          ) {
+            BookCoverArtwork(
+              title = group.canonicalTitle,
+              author = closedAuthorText,
+              isFavorite = false,
+              coverUri = cardCovers.firstOrNull(),
+              fallbackCoverUris = cardCovers.drop(1),
+              compact = false,
+              elevated = true,
+              shadowElevation = 5.dp,
+              widthHintDp = coverSlotWidth,
+              contentScale = ContentScale.Fit,
+              modifier = Modifier.widthIn(max = coverSlotWidth).heightIn(max = maxCoverHeight),
+            )
+          }
 
-        Column(
-          modifier = Modifier.weight(1f).heightIn(min = (coverSlotWidth * 1.44f)),
-          verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
               text = displayTitle,
               style =
@@ -471,36 +464,30 @@ internal fun SearchWorkHeaderItem(
               }
             }
           }
+        }
 
+        Box(
+          modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+          contentAlignment = Alignment.Center,
+        ) {
           Box(
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-            contentAlignment = Alignment.CenterEnd,
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .clip(CircleShape)
+                .clickable(
+                  role = Role.Button,
+                  onClickLabel = expandLabel,
+                  onClick = onToggleExpand,
+                )
+                .testTag("search_work_expand_$groupIndex"),
+            contentAlignment = Alignment.Center,
           ) {
-            Box(
-              modifier = Modifier.minimumInteractiveComponentSize(),
-              contentAlignment = Alignment.Center,
-            ) {
-              Surface(
-                onClick = onToggleExpand,
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-                shadowElevation = 1.dp,
-                modifier = Modifier.size(34.dp).testTag("search_work_expand_$groupIndex"),
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    imageVector = Icons.Outlined.ExpandMore,
-                    contentDescription =
-                      stringResource(
-                        if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section
-                      ),
-                    modifier =
-                      Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
-                  )
-                }
-              }
-            }
+            Icon(
+              imageVector = Icons.Outlined.ExpandMore,
+              contentDescription = expandLabel,
+              tint = MaterialTheme.colorScheme.outline,
+              modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = chevronRotation },
+            )
           }
         }
       }
@@ -536,6 +523,43 @@ private fun ClosedCardMetadataRow(
   }
 }
 
+private fun DrawScope.drawExpandedCardSegmentBorders(
+  color: Color,
+  strokeWidthPx: Float,
+  roundBottom: Boolean,
+  cornerRadiusPx: Float,
+) {
+  val halfStroke = strokeWidthPx * 0.5f
+  val rightX = size.width - halfStroke
+  if (!roundBottom) {
+    drawLine(
+      color = color,
+      start = Offset(halfStroke, 0f),
+      end = Offset(halfStroke, size.height),
+      strokeWidth = strokeWidthPx,
+    )
+    drawLine(
+      color = color,
+      start = Offset(rightX, 0f),
+      end = Offset(rightX, size.height),
+      strokeWidth = strokeWidthPx,
+    )
+  } else {
+    val bottomY = size.height - halfStroke
+    val r = cornerRadiusPx.coerceAtMost(size.width * 0.5f).coerceAtMost(size.height)
+    val path =
+      Path().apply {
+        moveTo(halfStroke, 0f)
+        lineTo(halfStroke, bottomY - r)
+        quadraticTo(halfStroke, bottomY, halfStroke + r, bottomY)
+        lineTo(rightX - r, bottomY)
+        quadraticTo(rightX, bottomY, rightX, bottomY - r)
+        lineTo(rightX, 0f)
+      }
+    drawPath(path = path, color = color, style = Stroke(width = strokeWidthPx))
+  }
+}
+
 @Composable
 internal fun SearchEditionGalleryRowItem(
   editions: List<SearchEditionCandidate>,
@@ -551,7 +575,12 @@ internal fun SearchEditionGalleryRowItem(
 ) {
   val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
-  val glideOffsetPx = remember(density) { with(density) { (-8).dp.toPx() } }
+  val drawerGlidePx = remember(density) { with(density) { (-14).dp.toPx() } }
+  val tileCascadeGlidePx = remember(density) { with(density) { (-10).dp.toPx() } }
+  val tuckOverlapPx =
+    remember(density, isFirstGalleryRow) {
+      if (isFirstGalleryRow) with(density) { DipeRadii.control.roundToPx() } else 0
+    }
   val revealProgress =
     remember(groupIndex, rowIndex) {
       Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
@@ -565,8 +594,8 @@ internal fun SearchEditionGalleryRowItem(
         targetValue = 1f,
         animationSpec =
           tween(
-            durationMillis = 200,
-            delayMillis = (rowIndex * 40).coerceAtMost(120),
+            durationMillis = 340,
+            delayMillis = (rowIndex * 85).coerceAtMost(170),
             easing = FastOutSlowInEasing,
           ),
       )
@@ -589,51 +618,87 @@ internal fun SearchEditionGalleryRowItem(
     } else {
       RectangleShape
     }
+  val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f)
+
+  val drawerModifier =
+    if (tuckOverlapPx > 0) {
+      modifier
+        .zIndex(0f)
+        .fillMaxWidth()
+        .layout { measurable, constraints ->
+          val placeable = measurable.measure(constraints)
+          val reportedHeight = (placeable.height - tuckOverlapPx).coerceAtLeast(0)
+          layout(placeable.width, reportedHeight) {
+            placeable.placeRelative(0, -tuckOverlapPx)
+          }
+        }
+    } else {
+      modifier.zIndex(0f).fillMaxWidth()
+    }
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = itemShape,
-    shadowElevation = 0.5.dp,
-    modifier = modifier.fillMaxWidth(),
+    shadowElevation = 0.75.dp,
+    modifier =
+      drawerModifier.graphicsLayer {
+        val raw = if (reduceMotion) 1f else revealProgress.value
+        val drawerP = FastOutSlowInEasing.transform((raw / 0.52f).coerceIn(0f, 1f))
+        alpha = drawerP
+        translationY = (1f - drawerP) * drawerGlidePx
+      },
   ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      if (isFirstGalleryRow) {
-        HorizontalDivider(
-          thickness = 0.75.dp,
-          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-        )
-      }
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .graphicsLayer {
-              val p = if (reduceMotion) 1f else revealProgress.value
-              alpha = p
-              translationY = (1f - p) * glideOffsetPx
-            }
-            .padding(
-              start = 12.dp,
-              end = 12.dp,
-              top = if (isFirstGalleryRow) 14.dp else 6.dp,
-              bottom = if (isLastItemInGroup) 14.dp else 8.dp,
-            ),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
-      ) {
-        for (colIdx in 0 until 4) {
-          val edition = editions.getOrNull(colIdx)
-          if (edition != null) {
-            val globalIdx = rowStartIndex + colIdx
-            SearchEditionGalleryTile(
-              edition = edition,
-              publisherMinLines = publisherMinLines,
-              testTag = "search_edition_select_${groupIndex}_$globalIdx",
-              onClick = { onSelectEdition(edition) },
-              modifier = Modifier.weight(1f),
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .drawBehind {
+            drawExpandedCardSegmentBorders(
+              color = borderColor,
+              strokeWidthPx = 0.65.dp.toPx(),
+              roundBottom = isLastItemInGroup,
+              cornerRadiusPx = DipeRadii.control.toPx(),
             )
-          } else {
-            Spacer(modifier = Modifier.weight(1f))
           }
+          .padding(
+            start = 12.dp,
+            end = 12.dp,
+            top = if (isFirstGalleryRow) DipeRadii.control + 14.dp else 6.dp,
+            bottom = if (isLastItemInGroup) 14.dp else 8.dp,
+          ),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.Top,
+    ) {
+      for (colIdx in 0 until 4) {
+        val edition = editions.getOrNull(colIdx)
+        if (edition != null) {
+          val globalIdx = rowStartIndex + colIdx
+          SearchEditionGalleryTile(
+            edition = edition,
+            publisherMinLines = publisherMinLines,
+            testTag = "search_edition_select_${groupIndex}_$globalIdx",
+            onClick = { onSelectEdition(edition) },
+            modifier =
+              Modifier.weight(1f).graphicsLayer {
+                if (reduceMotion) {
+                  alpha = 1f
+                  translationY = 0f
+                  scaleX = 1f
+                  scaleY = 1f
+                } else {
+                  val tileStart = colIdx * 0.13f
+                  val tileWindow = 0.55f
+                  val rawTile = ((revealProgress.value - tileStart) / tileWindow).coerceIn(0f, 1f)
+                  val tileP = FastOutSlowInEasing.transform(rawTile)
+                  alpha = tileP
+                  translationY = (1f - tileP) * tileCascadeGlidePx
+                  val scale = 0.96f + (0.04f * tileP)
+                  scaleX = scale
+                  scaleY = scale
+                }
+              },
+          )
+        } else {
+          Spacer(modifier = Modifier.weight(1f))
         }
       }
     }
@@ -784,7 +849,7 @@ internal fun SearchWorkActionsFooterItem(
 ) {
   val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
-  val glideOffsetPx = remember(density) { with(density) { (-6).dp.toPx() } }
+  val glideOffsetPx = remember(density) { with(density) { (-8).dp.toPx() } }
   val revealProgress =
     remember(groupIndex) {
       Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
@@ -798,8 +863,8 @@ internal fun SearchWorkActionsFooterItem(
         targetValue = 1f,
         animationSpec =
           tween(
-            durationMillis = 190,
-            delayMillis = (rowCount * 40).coerceAtMost(140),
+            durationMillis = 220,
+            delayMillis = (rowCount * 75).coerceAtMost(180),
             easing = FastOutSlowInEasing,
           ),
       )
@@ -814,100 +879,111 @@ internal fun SearchWorkActionsFooterItem(
       bottomStart = DipeRadii.control,
       bottomEnd = DipeRadii.control,
     )
-  val editorialActionTextStyle =
-    TextStyle(
-      fontFamily = InterFontFamily,
-      fontWeight = FontWeight.Medium,
-      fontSize = 12.5.sp,
-      lineHeight = 17.sp,
-    )
+  val uniformIconColor = MaterialTheme.colorScheme.outline
+  val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f)
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = footerShape,
-    shadowElevation = 0.5.dp,
-    modifier = modifier.fillMaxWidth(),
+    shadowElevation = 0.75.dp,
+    modifier = modifier.zIndex(0f).fillMaxWidth(),
   ) {
     Column(
       modifier =
         Modifier.fillMaxWidth()
+          .drawBehind {
+            drawExpandedCardSegmentBorders(
+              color = borderColor,
+              strokeWidthPx = 0.65.dp.toPx(),
+              roundBottom = true,
+              cornerRadiusPx = DipeRadii.control.toPx(),
+            )
+          }
           .graphicsLayer {
             val p = if (reduceMotion) 1f else revealProgress.value
             alpha = p
             translationY = (1f - p) * glideOffsetPx
           }
-          .animateContentSize(animationSpec = DipeTheme.motion.standardTween(200))
-          .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
+          .padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
     ) {
       HorizontalDivider(
         thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
-        modifier = Modifier.padding(bottom = 2.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
       )
 
-      if (remainingEditions > 0) {
-        GalleryEditorialActionItem(
-          icon = Icons.Outlined.ExpandMore,
-          label = stringResource(R.string.search_edition_show_more_local, remainingEditions),
-          textStyle = editorialActionTextStyle,
-          accentColor = MaterialTheme.colorScheme.secondary,
-          onClick = onShowMoreLocalEditions,
-          testTag = "search_edition_show_more_$groupIndex",
-        )
-      }
-
-      if (secondaryEditionsCount > 0) {
-        GalleryEditorialActionItem(
-          icon = Icons.Outlined.Language,
-          label =
-            if (isSecondaryEditionsExpanded) {
-              stringResource(R.string.search_edition_hide_secondary_langs)
-            } else {
-              stringResource(
-                R.string.search_edition_show_secondary_langs,
-                secondaryEditionsCount,
-              )
-            },
-          textStyle = editorialActionTextStyle,
-          accentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-          iconTint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f),
-          onClick = onToggleSecondaryEditions,
-          testTag = "search_work_secondary_editions_toggle_$groupIndex",
-        )
-      }
-
-      if (canLoadMoreRemoteEditions || showCollapseAction) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
         Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
+          horizontalArrangement = Arrangement.spacedBy(2.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           if (canLoadMoreRemoteEditions) {
-            GalleryEditorialActionItem(
+            GalleryEditorialIconAction(
               icon = Icons.Outlined.Search,
-              label = stringResource(R.string.search_edition_load_more),
-              textStyle = editorialActionTextStyle,
-              accentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-              iconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+              contentDescription = stringResource(R.string.search_edition_load_more),
+              tint = uniformIconColor,
               isLoading = isLoadingMore,
               enabled = !isLoadingMore,
               onClick = onLoadMoreRemoteEditions,
               testTag = "search_edition_load_more_$groupIndex",
-              modifier = Modifier.weight(1f, fill = false),
             )
-          } else {
-            Spacer(modifier = Modifier.width(1.dp))
           }
 
+          if (secondaryEditionsCount > 0) {
+            val secondaryDesc =
+              if (isSecondaryEditionsExpanded) {
+                stringResource(R.string.search_edition_hide_secondary_langs)
+              } else {
+                stringResource(
+                  R.string.search_edition_show_secondary_langs,
+                  secondaryEditionsCount,
+                )
+              }
+            GalleryEditorialIconAction(
+              icon = Icons.Outlined.Language,
+              contentDescription = secondaryDesc,
+              tint = uniformIconColor,
+              onClick = onToggleSecondaryEditions,
+              testTag = "search_work_secondary_editions_toggle_$groupIndex",
+            )
+          }
+        }
+
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(2.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
           if (showCollapseAction) {
-            GalleryEditorialActionItem(
+            GalleryEditorialIconAction(
               icon = Icons.Outlined.ExpandLess,
-              label = stringResource(R.string.search_work_collapse_action),
-              textStyle = editorialActionTextStyle,
-              accentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+              contentDescription = stringResource(R.string.search_work_collapse_action),
+              tint = uniformIconColor,
               onClick = onCollapseGroup,
               testTag = "search_work_collapse_$groupIndex",
+            )
+          }
+
+          if (remainingEditions > 0) {
+            GalleryEditorialIconAction(
+              icon = Icons.Outlined.Add,
+              contentDescription =
+                stringResource(R.string.search_edition_show_more_local, remainingEditions),
+              tint = uniformIconColor,
+              onClick = onShowMoreLocalEditions,
+              testTag = "search_edition_show_more_$groupIndex",
+            )
+          } else if (canLoadMoreRemoteEditions) {
+            GalleryEditorialIconAction(
+              icon = Icons.Outlined.Add,
+              contentDescription = stringResource(R.string.search_edition_load_more),
+              tint = uniformIconColor,
+              enabled = !isLoadingMore,
+              onClick = onLoadMoreRemoteEditions,
+              testTag = "search_edition_add_more_$groupIndex",
             )
           }
         }
@@ -917,54 +993,35 @@ internal fun SearchWorkActionsFooterItem(
 }
 
 @Composable
-private fun GalleryEditorialActionItem(
+private fun GalleryEditorialIconAction(
   icon: ImageVector,
-  label: String,
-  textStyle: TextStyle,
-  accentColor: Color,
-  iconTint: Color = accentColor,
+  contentDescription: String,
+  tint: Color,
   isLoading: Boolean = false,
   enabled: Boolean = true,
   onClick: () -> Unit,
   testTag: String,
   modifier: Modifier = Modifier,
 ) {
-  Row(
-    modifier =
-      modifier
-        .clip(RoundedCornerShape(8.dp))
-        .clickable(
-          enabled = enabled,
-          role = Role.Button,
-          onClick = onClick,
-        )
-        .minimumInteractiveComponentSize()
-        .padding(horizontal = 6.dp, vertical = 6.dp)
-        .testTag(testTag),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-    verticalAlignment = Alignment.CenterVertically,
+  IconButton(
+    onClick = onClick,
+    enabled = enabled,
+    modifier = modifier.minimumInteractiveComponentSize().testTag(testTag),
   ) {
     if (isLoading) {
       CircularProgressIndicator(
-        modifier = Modifier.size(14.dp),
+        modifier = Modifier.size(16.dp),
         strokeWidth = 1.6.dp,
-        color = MaterialTheme.colorScheme.secondary,
+        color = tint,
       )
     } else {
       Icon(
         imageVector = icon,
-        contentDescription = null,
-        tint = iconTint,
-        modifier = Modifier.size(15.dp),
+        contentDescription = contentDescription,
+        tint = tint,
+        modifier = Modifier.size(19.dp),
       )
     }
-    Text(
-      text = label,
-      style = textStyle,
-      color = accentColor,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-    )
   }
 }
 

@@ -233,21 +233,18 @@ fun BookCoverArtwork(
   val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isInvalidRemotePlaceholder
   val showTypographicCloth = activeUri == null || (!isPhotoLoading && !hasLoadedPhoto)
 
+  val wasInitiallyLoaded = remember(activeUri) { hasLoadedPhoto }
   val photoAlpha =
     remember(activeUri, reduceMotion) {
-      Animatable(if (reduceMotion || hasLoadedPhoto) 1f else 0f)
+      Animatable(if (reduceMotion || wasInitiallyLoaded) 1f else 0f)
     }
-  var sawAsyncLoading by remember(activeUri) { mutableStateOf(false) }
 
-  LaunchedEffect(activeUri, painterState, hasLoadedPhoto, reduceMotion) {
-    if (painterState is AsyncImagePainter.State.Loading) {
-      sawAsyncLoading = true
-    }
+  LaunchedEffect(activeUri, hasLoadedPhoto, reduceMotion) {
     if (hasLoadedPhoto && photoAlpha.value < 1f) {
-      if (reduceMotion || !sawAsyncLoading) {
+      if (reduceMotion || wasInitiallyLoaded) {
         photoAlpha.snapTo(1f)
       } else {
-        photoAlpha.animateTo(1f, tween(durationMillis = 150, easing = FastOutSlowInEasing))
+        photoAlpha.animateTo(1f, tween(durationMillis = 320, easing = FastOutSlowInEasing))
       }
     }
   }
@@ -358,8 +355,7 @@ fun BookCoverArtwork(
           contentScale = contentScale,
           modifier =
             Modifier.fillMaxSize().graphicsLayer {
-              alpha =
-                if (reduceMotion || (hasLoadedPhoto && !sawAsyncLoading)) 1f else photoAlpha.value
+              alpha = if (reduceMotion) 1f else photoAlpha.value
             },
         )
         if (hasLoadedPhoto) {
