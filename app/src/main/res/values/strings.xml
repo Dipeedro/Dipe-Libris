@@ -398,12 +398,8 @@
     <string name="search_edition_show_more_local">Show more editions (%1$d remaining)</string>
     <string name="search_action_load_more_results">Load more results</string>
     <string name="search_loading_more_results">Loading more results…</string>
-    <plurals name="search_results_count_summary">
-        <item quantity="one">%1$d work</item>
-        <item quantity="other">%1$d works</item>
-    </plurals>
+    <string name="search_results_count_summary">Showing %1$d work(s)</string>
     <string name="search_results_count_with_hint">Showing %1$d work(s) · ~%2$d reported by sources</string>
-    <string name="search_edition_pages_short">%1$d p.</string>
     <string name="search_live_local_matches_section">In your library</string>
     <string name="search_bundle_box_badge">Box / Collection</string>
     <string name="search_bundle_omnibus_badge">Single volume</string>

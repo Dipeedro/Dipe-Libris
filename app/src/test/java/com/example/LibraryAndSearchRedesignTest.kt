@@ -3,10 +3,7 @@ package com.example
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -21,7 +18,6 @@ import androidx.compose.ui.test.performTextInput
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.localization.LocalAppLanguage
-import com.example.core.localization.LocaleManager
 import com.example.core.model.AppLanguage
 import com.example.core.model.CandidateContributor
 import com.example.core.model.CatalogBook
@@ -90,16 +86,7 @@ class LibraryAndSearchRedesignTest {
     var showResults by mutableStateOf(false)
 
     composeTestRule.setContent {
-      val baseContext = LocalContext.current
-      val localizedContext = remember(baseContext) {
-        LocaleManager.createLocalizedContext(baseContext, AppLanguage.PORTUGUESE_BR)
-      }
-      val localizedConfig = remember(localizedContext) { localizedContext.resources.configuration }
-      CompositionLocalProvider(
-        LocalContext provides localizedContext,
-        LocalConfiguration provides localizedConfig,
-        LocalAppLanguage provides AppLanguage.PORTUGUESE_BR,
-      ) {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
         DipeLibrisTheme {
           BookSearchScreen(
             uiState =
@@ -159,12 +146,12 @@ class LibraryAndSearchRedesignTest {
     composeTestRule.onNodeWithTag("search_query_input").performImeAction()
     assertEquals(1, submittedCount)
 
-    // Results show editorial work card with plural work summary and 3-column edition gallery tile ("288 p. · 2017")
-    composeTestRule.onNodeWithText("1 obra").assertIsDisplayed()
+    // Results show editorial work card and 4-column edition gallery tile (publisher, pages, year; no ISBN/p./repeated title)
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("search_confirm_edition_button").assertDoesNotExist()
+    composeTestRule.onNodeWithText("Selecionar e revisar").assertDoesNotExist()
     composeTestRule.onNodeWithText("9788532530783").assertDoesNotExist()
+    composeTestRule.onNodeWithText("288 p.").assertDoesNotExist()
     composeTestRule
       .onNode(
         hasText("Editora Rocco Ltda.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
@@ -173,7 +160,13 @@ class LibraryAndSearchRedesignTest {
       .assertIsDisplayed()
     composeTestRule
       .onNode(
-        hasText("288 p. · 2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        hasText("288") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        hasText("2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
         useUnmergedTree = true,
       )
       .assertIsDisplayed()
@@ -184,21 +177,7 @@ class LibraryAndSearchRedesignTest {
         useUnmergedTree = true,
       )
       .assertDoesNotExist()
-
-    // Tapping an edition tile selects it and reveals "Selecionar e revisar"; tapping again deselects it
     composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
-    composeTestRule.waitForIdle()
-    assertEquals(null, selectedEditionId)
-    composeTestRule.onNodeWithTag("search_edition_select_0_0_selected_badge", useUnmergedTree = true).assertIsDisplayed()
-    composeTestRule.onNodeWithText("Selecionar e revisar").assertIsDisplayed()
-
-    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_confirm_edition_button").assertDoesNotExist()
-
-    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_confirm_edition_button").performClick()
     assertEquals("ed_rocco", selectedEditionId)
 
     // Manual catalog button is cleanly placed in the results footer

@@ -143,7 +143,6 @@ fun BookCoverArtwork(
   bottomProgressPercent: Float? = null,
   widthHintDp: Dp? = null,
   contentScale: ContentScale = ContentScale.Crop,
-  shape: Shape = BookCoverShape,
   onImageLoadError: (() -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
@@ -317,7 +316,7 @@ fun BookCoverArtwork(
     if (elevated) {
       BookCoverShadowLayer(
         elevation = shadowElevation,
-        shape = shape,
+        shape = BookCoverShape,
         progressProvider = progressProvider,
         shadowProgressProvider = shadowProgress,
         reduceMotion = reduceMotion,
@@ -336,12 +335,12 @@ fun BookCoverArtwork(
               Modifier
             }
           )
-          .clip(shape)
+          .clip(BookCoverShape)
           .then(
             when {
               showTypographicCloth ->
                 Modifier.background(palette.clothColor)
-                  .border(0.75.dp, borderColor, shape)
+                  .border(0.75.dp, borderColor, BookCoverShape)
               isPhotoLoading || (hasLoadedPhoto && photoAlpha.value < 1f) ->
                 Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
               else -> Modifier

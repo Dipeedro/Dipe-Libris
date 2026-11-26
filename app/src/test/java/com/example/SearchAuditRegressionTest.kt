@@ -696,15 +696,19 @@ class SearchAuditRegressionTest {
     composeTestRule.onNodeWithTag("search_edition_select_0_6").assertDoesNotExist()
 
     // Clicking "Show more editions" reveals next +8 window (total 14)
-    composeTestRule.onNodeWithTag("search_edition_show_more_0").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_show_more_0"))
+    composeTestRule.onNodeWithTag("search_edition_show_more_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_select_0_13").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_13"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_13").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_select_0_14").assertDoesNotExist()
 
-    // Second click reveals final 15th edition and hides show-more tag
-    composeTestRule.onNodeWithTag("search_edition_show_more_0").performScrollTo().performClick()
+    // Second click reveals final 15th edition and hides button
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_show_more_0"))
+    composeTestRule.onNodeWithTag("search_edition_show_more_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_select_0_14").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_14"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_14").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_show_more_0").assertDoesNotExist()
 
     // Bottom source status bar shows friendly timeout retry hint and details
