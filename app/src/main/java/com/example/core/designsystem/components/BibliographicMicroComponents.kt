@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
@@ -45,8 +46,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -294,10 +297,24 @@ private fun CompactEditorialSearchPillContent(
   trailingInsetPx: (() -> Float)?,
   placeholderOverflowClip: Boolean,
 ) {
+  var textFieldValueState by remember {
+    mutableStateOf(TextFieldValue(text = query, selection = TextRange.Zero))
+  }
+  val currentSelection =
+    if (textFieldValueState.text == query) {
+      textFieldValueState.selection
+    } else if (isFocused) {
+      TextRange(query.length)
+    } else {
+      TextRange.Zero
+    }
+  val currentTextFieldValue =
+    textFieldValueState.copy(text = query, selection = currentSelection)
+
   Row(
-    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp),
+    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     Icon(
       imageVector = Icons.Outlined.Search,
@@ -314,6 +331,7 @@ private fun CompactEditorialSearchPillContent(
       modifier =
         Modifier.weight(1f)
           .padding(vertical = 10.dp)
+          .clipToBounds()
           .layout { measurable, constraints ->
             val leftInset = (leadingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
             val rightInset = (trailingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
@@ -341,8 +359,13 @@ private fun CompactEditorialSearchPillContent(
         )
       }
       BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
+        value = currentTextFieldValue,
+        onValueChange = { newValue ->
+          textFieldValueState = newValue
+          if (newValue.text != query) {
+            onQueryChange(newValue.text)
+          }
+        },
         singleLine = true,
         textStyle =
           MaterialTheme.typography.bodyMedium.copy(
@@ -356,7 +379,13 @@ private fun CompactEditorialSearchPillContent(
           ),
         modifier =
           Modifier.fillMaxWidth()
-            .onFocusChanged { onFocusChange(it.isFocused) }
+            .onFocusChanged { focusState ->
+              val focusedNow = focusState.isFocused
+              onFocusChange(focusedNow)
+              if (!focusedNow) {
+                textFieldValueState = currentTextFieldValue.copy(selection = TextRange.Zero)
+              }
+            }
             .testTag(inputTestTag),
       )
     }

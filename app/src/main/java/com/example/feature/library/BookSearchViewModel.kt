@@ -53,6 +53,7 @@ data class BookSearchUiState(
   val editionWindowLimits: Map<String, Int> = emptyMap(),
   val hasPartialFailureWarning: Boolean = false,
   val hasSearchError: Boolean = false,
+  val selectedEdition: SearchEditionCandidate? = null,
 )
 
 class BookSearchViewModel(
@@ -80,6 +81,7 @@ class BookSearchViewModel(
   private val editionWindowLimits = MutableStateFlow<Map<String, Int>>(emptyMap())
   private val hasPartialFailureWarning = MutableStateFlow(false)
   private val hasSearchError = MutableStateFlow(false)
+  private val selectedEdition = MutableStateFlow<SearchEditionCandidate?>(null)
 
   private val searchGenerationId = AtomicLong(0L)
   private var localSearchJob: Job? = null
@@ -131,8 +133,9 @@ class BookSearchViewModel(
       loadingMoreEditions,
       libraryRepository.observeGenres(),
       duplicatePrompt,
-    ) { expanded, loadingMore, genres, dupPrompt ->
-      QuadState(expanded, loadingMore, genres.associateBy { it.slug }, dupPrompt)
+      selectedEdition,
+    ) { expanded, loadingMore, genres, dupPrompt, selected ->
+      QuadState(expanded, loadingMore, genres.associateBy { it.slug }, dupPrompt, selected)
     }
 
   val uiState: StateFlow<BookSearchUiState> =
@@ -162,6 +165,7 @@ class BookSearchViewModel(
           editionWindowLimits = extra.editionWindowLimits,
           hasPartialFailureWarning = extra.hasPartialFailureWarning,
           hasSearchError = extra.hasSearchError,
+          selectedEdition = quad.selectedEdition,
         )
       }
       .stateIn(
@@ -175,6 +179,7 @@ class BookSearchViewModel(
     val loadingMore: Set<String>,
     val genresBySlug: Map<String, Genre>,
     val duplicatePrompt: PendingDuplicatePrompt?,
+    val selectedEdition: SearchEditionCandidate?,
   )
 
   private data class EditionAndErrorState(
@@ -248,6 +253,7 @@ class BookSearchViewModel(
     loadingMoreEditions.value = emptySet()
     hasPartialFailureWarning.value = false
     hasSearchError.value = false
+    selectedEdition.value = null
 
     searchJob =
       viewModelScope.launch {
@@ -363,6 +369,11 @@ class BookSearchViewModel(
       expandedGroupIds.value.let { current ->
         if (groupId in current) current - groupId else current + groupId
       }
+  }
+
+  fun toggleSelectedEdition(candidate: SearchEditionCandidate) {
+    selectedEdition.value =
+      if (selectedEdition.value?.candidateId == candidate.candidateId) null else candidate
   }
 
   fun toggleGroupSecondaryEditionsExpanded(groupId: String) {

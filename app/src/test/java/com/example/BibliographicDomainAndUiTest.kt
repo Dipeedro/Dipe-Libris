@@ -928,6 +928,8 @@ class BibliographicDomainAndUiTest {
 
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
     composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_confirm_edition_button").assertIsDisplayed().performClick()
     composeTestRule.waitUntil(timeoutMillis = 5_000) { navigatedToReview }
     assertEquals("Vou te receitar um gato", draftStore.pendingReviewDraft.value?.candidate?.workTitle)
   }

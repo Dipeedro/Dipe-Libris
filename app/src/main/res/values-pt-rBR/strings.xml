@@ -397,8 +397,12 @@
     <string name="search_edition_show_more_local">Mostrar mais edições (%1$d restantes)</string>
     <string name="search_action_load_more_results">Carregar mais resultados</string>
     <string name="search_loading_more_results">Carregando mais resultados…</string>
-    <string name="search_results_count_summary">Exibindo %1$d obra(s)</string>
+    <plurals name="search_results_count_summary">
+        <item quantity="one">%1$d obra</item>
+        <item quantity="other">%1$d obras</item>
+    </plurals>
     <string name="search_results_count_with_hint">Exibindo %1$d obra(s) · ~%2$d ocorrências na fonte</string>
+    <string name="search_edition_pages_short">%1$d p.</string>
     <string name="search_live_local_matches_section">Na sua biblioteca</string>
     <string name="search_bundle_box_badge">Box / Coleção</string>
     <string name="search_bundle_omnibus_badge">Volume único</string>
