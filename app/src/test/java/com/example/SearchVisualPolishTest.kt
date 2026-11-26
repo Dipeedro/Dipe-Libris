@@ -475,14 +475,16 @@ class SearchVisualPolishTest {
     assertTrue((coverBounds.bottom - coverBounds.top) >= 140.dp)
     assertTrue(titleBounds.left > coverBounds.right)
 
-    // Bottom expand chevron sits centered horizontally at the bottom of the main card
-    val cardCenterX = (cardBounds.left + cardBounds.right) / 2f
-    val expandCenterX = (expandBounds.left + expandBounds.right) / 2f
-    assertTrue(kotlin.math.abs((cardCenterX - expandCenterX).value) <= 4f)
+    // Bottom-end expand control keeps a full >= 48dp accessible touch target inside the card
+    assertTrue((expandBounds.right - expandBounds.left) >= 47.dp)
+    assertTrue((expandBounds.bottom - expandBounds.top) >= 47.dp)
+    assertTrue(expandBounds.left >= titleBounds.left)
     assertTrue(expandBounds.bottom <= cardBounds.bottom)
+    assertTrue(expandBounds.right <= cardBounds.right)
 
-    // Year and single primary genre occupy clearly separated vertical rows (never squashed on one line)
-    assertTrue(genreBounds.top > yearBounds.bottom)
+    // Year and single primary genre share a clean inline baseline row
+    assertTrue(kotlin.math.abs((yearBounds.top - genreBounds.top).value) <= 6f)
+    assertTrue(genreBounds.left > yearBounds.right)
     composeTestRule.onNode(hasText("Fantasia e ficção científica", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
     composeTestRule.onNode(hasText("ficção", substring = true) and hasAnyAncestor(cardTag), useUnmergedTree = true).assertDoesNotExist()
 
@@ -496,7 +498,7 @@ class SearchVisualPolishTest {
   }
 
   @Test
-  fun expandedWorkCard_rendersFixed4ColumnGalleryHandlesMissingFieldsSelectionAndCollapse() {
+  fun expandedWorkCard_renders3ColumnCompactGalleryHandlesMissingFieldsSelectionAndCollapse() {
     val editions =
       listOf(
         SearchEditionCandidate(
@@ -564,7 +566,7 @@ class SearchVisualPolishTest {
       )
 
     var expandedGroupIds by mutableStateOf(emptySet<String>())
-    var selectedEditionId: String? = null
+    var selectedEditionId by mutableStateOf<String?>(null)
 
     composeTestRule.setContent {
       CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
@@ -575,6 +577,7 @@ class SearchVisualPolishTest {
                 query = "Duna",
                 hasSearched = true,
                 expandedGroupIds = expandedGroupIds,
+                selectedEditionId = selectedEditionId,
                 response =
                   HybridSearchResponse(
                     query = "Duna",
@@ -610,7 +613,7 @@ class SearchVisualPolishTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
 
-    // Expand via terracotta circular button
+    // Expand via card control
     composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).performClick()
     composeTestRule.waitForIdle()
 
@@ -624,16 +627,16 @@ class SearchVisualPolishTest {
       )
       .assertIsDisplayed()
 
-    // Row 0 (tiles 0..3): scroll into view and assert fixed 4-column horizontal alignment
+    // Row 0 (tiles 0..2): scroll into view and assert 3-column Compact horizontal alignment
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
-    for (idx in 0..3) {
+    for (idx in 0..2) {
       composeTestRule.onNodeWithTag("search_edition_select_0_$idx").assertIsDisplayed()
       composeTestRule
         .onNode(hasText("Duna") and hasAnyAncestor(hasTestTag("search_edition_select_0_$idx")), useUnmergedTree = true)
         .assertDoesNotExist()
     }
-    val row0Tops = (0..3).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
-    val row0Lefts = (0..3).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
+    val row0Tops = (0..2).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
+    val row0Lefts = (0..2).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
     assertTrue(row0Tops.all { kotlin.math.abs((it - row0Tops.first()).value) <= 2f })
     assertTrue(row0Lefts.zipWithNext().all { (a, b) -> b > a })
 
@@ -654,30 +657,55 @@ class SearchVisualPolishTest {
       )
     assertEquals(3, missingNodes.fetchSemanticsNodes().size)
 
-    // Tapping an edition tile triggers onSelectEdition
+    // Tapping an edition tile triggers onSelectEdition and surfaces the refined selection indicator
     composeTestRule.onNodeWithTag("search_edition_select_0_2").performClick()
+    composeTestRule.waitForIdle()
     assertEquals("ed_3", selectedEditionId)
+    composeTestRule
+      .onNode(
+        androidx.compose.ui.test.hasContentDescription("Selected edition") and
+          hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
 
-    // Row 1 (tiles 4..5): scroll into view, verify alignment and incomplete trailing slots have no fake tiles
-    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_4"))
-    for (idx in 4..5) {
+    // Selecting another edition transfers the selection indicator cleanly
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
+    composeTestRule.waitForIdle()
+    assertEquals("ed_1", selectedEditionId)
+    composeTestRule
+      .onNode(
+        androidx.compose.ui.test.hasContentDescription("Selected edition") and
+          hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(
+        androidx.compose.ui.test.hasContentDescription("Selected edition") and
+          hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
+        useUnmergedTree = true,
+      )
+      .assertDoesNotExist()
+
+    // Row 1 (tiles 3..5): scroll into view, verify 3-column alignment
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_3"))
+    for (idx in 3..5) {
       composeTestRule.onNodeWithTag("search_edition_select_0_$idx").assertIsDisplayed()
       composeTestRule
         .onNode(hasText("Duna") and hasAnyAncestor(hasTestTag("search_edition_select_0_$idx")), useUnmergedTree = true)
         .assertDoesNotExist()
     }
     composeTestRule.onNodeWithTag("search_edition_select_0_6").assertDoesNotExist()
-    val row1Top0 = composeTestRule.onNodeWithTag("search_edition_select_0_4").getBoundsInRoot().top
-    val row1Top1 = composeTestRule.onNodeWithTag("search_edition_select_0_5").getBoundsInRoot().top
-    val row1Left0 = composeTestRule.onNodeWithTag("search_edition_select_0_4").getBoundsInRoot().left
-    val row1Left1 = composeTestRule.onNodeWithTag("search_edition_select_0_5").getBoundsInRoot().left
-    assertTrue(kotlin.math.abs((row1Top0 - row1Top1).value) <= 2f)
-    assertTrue(row1Left1 > row1Left0)
-    // Verify column alignment matches Row 0 columns 0 and 1
-    assertTrue(kotlin.math.abs((row1Left0 - row0Lefts[0]).value) <= 2f)
-    assertTrue(kotlin.math.abs((row1Left1 - row0Lefts[1]).value) <= 2f)
+    val row1Tops = (3..5).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
+    val row1Lefts = (3..5).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
+    assertTrue(row1Tops.all { kotlin.math.abs((it - row1Tops.first()).value) <= 2f })
+    assertTrue(row1Lefts.zipWithNext().all { (a, b) -> b > a })
+    row0Lefts.zip(row1Lefts).forEach { (left0, left1) ->
+      assertTrue(kotlin.math.abs((left0 - left1).value) <= 2f)
+    }
 
-    // Bottom discreet collapse button collapses group (> 4 editions)
+    // Bottom discreet collapse button collapses group (> 3 editions)
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_collapse_0"))
     composeTestRule.onNodeWithTag("search_work_collapse_0").performClick()
     composeTestRule.waitForIdle()
@@ -685,7 +713,7 @@ class SearchVisualPolishTest {
   }
 
   @Test
-  fun expandedGallery_renders8EditionsInTwoAligned4ColumnRowsWithLongTitleAndPublishers() {
+  fun expandedGallery_renders8EditionsInAligned3ColumnRowsWithLongTitleAndPublishers() {
     val longTitle = "As Crônicas Extraordinárias de um Viajante Solitário Pelos Mares do Sul"
     val editions =
       (1..8).map { idx ->
@@ -750,33 +778,41 @@ class SearchVisualPolishTest {
 
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
-    for (idx in 0..3) {
+    for (idx in 0..2) {
       composeTestRule.onNodeWithTag("search_edition_select_0_$idx").assertIsDisplayed()
       composeTestRule
         .onNode(hasText(longTitle) and hasAnyAncestor(hasTestTag("search_edition_select_0_$idx")), useUnmergedTree = true)
         .assertDoesNotExist()
     }
-    val row0Tops = (0..3).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
-    val row0Lefts = (0..3).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
+    val row0Tops = (0..2).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
+    val row0Lefts = (0..2).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
     assertTrue(row0Tops.all { kotlin.math.abs((it - row0Tops.first()).value) <= 2f })
     assertTrue(row0Lefts.zipWithNext().all { (a, b) -> b > a })
 
-    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_4"))
-    for (idx in 4..7) {
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_3"))
+    for (idx in 3..5) {
       composeTestRule.onNodeWithTag("search_edition_select_0_$idx").assertIsDisplayed()
-      composeTestRule
-        .onNode(hasText(longTitle) and hasAnyAncestor(hasTestTag("search_edition_select_0_$idx")), useUnmergedTree = true)
-        .assertDoesNotExist()
     }
-    composeTestRule.onNodeWithTag("search_edition_select_0_8").assertDoesNotExist()
-
-    val row1Tops = (4..7).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
-    val row1Lefts = (4..7).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
+    val row1Tops = (3..5).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
+    val row1Lefts = (3..5).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
     assertTrue(row1Tops.all { kotlin.math.abs((it - row1Tops.first()).value) <= 2f })
-    assertTrue(row1Lefts.zipWithNext().all { (a, b) -> b > a })
     row0Lefts.zip(row1Lefts).forEach { (left0, left1) ->
       assertTrue(kotlin.math.abs((left0 - left1).value) <= 2f)
     }
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_6"))
+    for (idx in 6..7) {
+      composeTestRule.onNodeWithTag("search_edition_select_0_$idx").assertIsDisplayed()
+    }
+    composeTestRule.onNodeWithTag("search_edition_select_0_8").assertDoesNotExist()
+
+    val row2Top0 = composeTestRule.onNodeWithTag("search_edition_select_0_6").getBoundsInRoot().top
+    val row2Top1 = composeTestRule.onNodeWithTag("search_edition_select_0_7").getBoundsInRoot().top
+    val row2Left0 = composeTestRule.onNodeWithTag("search_edition_select_0_6").getBoundsInRoot().left
+    val row2Left1 = composeTestRule.onNodeWithTag("search_edition_select_0_7").getBoundsInRoot().left
+    assertTrue(kotlin.math.abs((row2Top0 - row2Top1).value) <= 2f)
+    assertTrue(kotlin.math.abs((row2Left0 - row0Lefts[0]).value) <= 2f)
+    assertTrue(kotlin.math.abs((row2Left1 - row0Lefts[1]).value) <= 2f)
   }
 
   @Test
@@ -892,33 +928,27 @@ class SearchVisualPolishTest {
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
     composeTestRule.waitForIdle()
 
-    // Footer uses icon-only actions with zero accompanying visible text
-    composeTestRule.onNodeWithText("Editions in other languages · 2").assertDoesNotExist()
-    composeTestRule.onNodeWithText("Load more editions").assertDoesNotExist()
+    // Non-redundant footer: single search/load-more pill + language toggle pill; duplicate "+" action removed
+    composeTestRule.onNodeWithTag("search_edition_add_more_0").assertDoesNotExist()
     composeTestRule.onNodeWithTag("search_edition_load_more_0").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performScrollTo().assertIsDisplayed()
-    composeTestRule.onNodeWithTag("search_edition_add_more_0").performScrollTo().assertIsDisplayed()
     composeTestRule.onNodeWithContentDescription("Editions in other languages · 2").assertIsDisplayed()
 
-    // + icon sits at the bottom-right corner of the editions card
-    val searchIconBounds = composeTestRule.onNodeWithTag("search_edition_load_more_0").getBoundsInRoot()
-    val langIconBounds = composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").getBoundsInRoot()
-    val addIconBounds = composeTestRule.onNodeWithTag("search_edition_add_more_0").getBoundsInRoot()
-    assertTrue(langIconBounds.left > searchIconBounds.left)
-    assertTrue(addIconBounds.left > langIconBounds.right)
+    val loadMoreBounds = composeTestRule.onNodeWithTag("search_edition_load_more_0").getBoundsInRoot()
+    val langPillBounds = composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").getBoundsInRoot()
+    assertTrue(langPillBounds.left > loadMoreBounds.right)
 
     composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithText("Hide other languages").assertDoesNotExist()
     composeTestRule.onNodeWithContentDescription("Hide other languages").assertIsDisplayed()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_2"))
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_2").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_edition_select_0_3").assertIsDisplayed()
 
-    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_add_more_0"))
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_load_more_0"))
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("search_edition_add_more_0").performClick()
+    composeTestRule.onNodeWithTag("search_edition_load_more_0").performClick()
     assertTrue(loadMoreCalled)
   }
 
@@ -988,5 +1018,174 @@ class SearchVisualPolishTest {
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_1"))
     composeTestRule.onNodeWithTag("search_work_card_1").assertIsDisplayed()
+  }
+
+  @Test
+  @Config(qualifiers = "w320dp-h640dp")
+  fun narrowScreen320dp_rendersSearchBarClosedCardAnd3ColumnEditionsWithoutOverflow() {
+    val editions =
+      (1..4).map { idx ->
+        SearchEditionCandidate(
+          candidateId = "narrow_ed_$idx",
+          workTitle = "Grande Sertão: Veredas",
+          contributors = listOf(CandidateContributor("João Guimarães Rosa", ContributorRole.AUTHOR)),
+          publisher = "Companhia das Letras Edição Especial",
+          publicationYear = 2019 + idx,
+          totalPages = 550 + idx,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        )
+      }
+    val group =
+      SearchWorkGroup(
+        groupId = "g_narrow",
+        canonicalTitle = "Grande Sertão: Veredas — Edição Anotada e Revisada",
+        primaryAuthors = listOf(CandidateContributor("João Guimarães Rosa", ContributorRole.AUTHOR)),
+        editions = editions,
+        suggestedGenreSlug = "fiction",
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
+      )
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Grande Sertão",
+                hasSearched = true,
+                expandedGroupIds = setOf("g_narrow"),
+                genresBySlug = mapOf("fiction" to Genre(1L, "fiction", "Fiction", "Ficção")),
+                response =
+                  HybridSearchResponse(
+                    query = "Grande Sertão",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(group),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 4)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    val scanBounds = composeTestRule.onNodeWithTag("search_scan_isbn_button").getBoundsInRoot()
+    assertTrue((scanBounds.right - scanBounds.left) >= 47.dp)
+    assertTrue((scanBounds.bottom - scanBounds.top) >= 47.dp)
+    composeTestRule.onNodeWithTag("search_query_input").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_work_card_0").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_work_expand_0", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_3"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_3").assertIsDisplayed()
+  }
+
+  @Test
+  @Config(qualifiers = "w840dp-h900dp")
+  fun expandedWidth_uses5EditionColumnsAndContextualDrawerHeaders() {
+    val editions =
+      (1..5).map { idx ->
+        SearchEditionCandidate(
+          candidateId = "exp_ed_$idx",
+          workTitle = "Memórias Póstumas de Brás Cubas",
+          contributors = listOf(CandidateContributor("Machado de Assis", ContributorRole.AUTHOR)),
+          publisher = "Penguin-Companhia $idx",
+          publicationYear = 2010 + idx,
+          totalPages = 320 + idx,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        )
+      }
+    val primary =
+      SearchWorkGroup(
+        groupId = "g_exp",
+        canonicalTitle = "Memórias Póstumas de Brás Cubas",
+        primaryAuthors = listOf(CandidateContributor("Machado de Assis", ContributorRole.AUTHOR)),
+        editions = editions,
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
+      )
+    val secondary = sampleWorkGroup(groupId = "sec_exp", title = "Posthumous Memoirs of Brás Cubas")
+    val derivative = sampleWorkGroup(groupId = "der_exp", title = "Guia de Leitura: Brás Cubas")
+
+    var secExpanded by mutableStateOf(false)
+    var derivExpanded by mutableStateOf(false)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Brás Cubas",
+                hasSearched = true,
+                expandedGroupIds = setOf("g_exp"),
+                isSecondaryLanguagesExpanded = secExpanded,
+                isDerivativeWorksExpanded = derivExpanded,
+                response =
+                  HybridSearchResponse(
+                    query = "Brás Cubas",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(primary),
+                    secondaryWorkGroups = listOf(secondary),
+                    derivativeWorkGroups = listOf(derivative),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 5)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.EXPANDED,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+            onToggleSecondaryLanguages = { secExpanded = !secExpanded },
+            onToggleDerivativeWorks = { derivExpanded = !derivExpanded },
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    val row0Tops = (0..4).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().top }
+    val row0Lefts = (0..4).map { composeTestRule.onNodeWithTag("search_edition_select_0_$it").getBoundsInRoot().left }
+    assertTrue(row0Tops.all { kotlin.math.abs((it - row0Tops.first()).value) <= 2f })
+    assertTrue(row0Lefts.zipWithNext().all { (a, b) -> b > a })
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_secondary_languages_toggle"))
+    composeTestRule.onNodeWithTag("search_secondary_languages_toggle").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_1"))
+    composeTestRule.onNodeWithTag("search_work_card_1").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_derivative_works_toggle"))
+    composeTestRule.onNodeWithTag("search_derivative_works_toggle").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_2"))
+    composeTestRule.onNodeWithTag("search_work_card_2").assertIsDisplayed()
   }
 }

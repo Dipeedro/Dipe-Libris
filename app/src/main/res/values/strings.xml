@@ -408,6 +408,11 @@
     <string name="search_source_attribution_apple">Cover: Apple Books</string>
     <string name="search_work_collapse_action">Collapse</string>
     <string name="search_metadata_missing_placeholder">—</string>
+    <string name="search_secondary_languages_section_title">Other languages &amp; Portugal editions</string>
+    <string name="search_derivative_section_title">Studies, summaries &amp; related</string>
+    <string name="search_edition_more_local_short">More (%1$d)</string>
+    <string name="search_edition_load_more_short">More editions</string>
+    <string name="cd_edition_selected">Selected edition</string>
     <string name="cd_scan_isbn">Scan ISBN barcode</string>
 
     <!-- ISBN Scanner -->

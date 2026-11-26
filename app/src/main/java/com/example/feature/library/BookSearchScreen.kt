@@ -1,5 +1,6 @@
 package com.example.feature.library
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,6 +10,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,15 +34,13 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -188,6 +189,20 @@ fun BookSearchScreen(
         windowLimitFor(groupId) + BookSearchViewModel.EDITION_WINDOW_INCREMENT
     }
   }
+  var localSelectedEditionId by remember(displayResponse?.query) { mutableStateOf<String?>(null) }
+  val effectiveSelectedEditionId = uiState.selectedEditionId ?: localSelectedEditionId
+  val handleSelectEdition: (SearchEditionCandidate) -> Unit = { candidate ->
+    localSelectedEditionId = candidate.candidateId
+    onSelectEdition(candidate)
+  }
+
+  val editionColumns =
+    when (widthClass) {
+      WindowWidthClass.COMPACT -> 3
+      WindowWidthClass.MEDIUM -> 4
+      WindowWidthClass.EXPANDED -> 5
+    }
+
   val revealedGalleryPartsByGroup =
     remember(displayResponse?.query, displayResponse?.isFromCache) {
       mutableStateMapOf<String, Set<String>>()
@@ -205,7 +220,6 @@ fun BookSearchScreen(
       fontSize = 13.5.sp,
       lineHeight = 18.sp,
     )
-  val secondaryButtonBorder = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant)
 
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(modifier = Modifier.widthIn(max = 880.dp).fillMaxSize()) {
@@ -250,14 +264,43 @@ fun BookSearchScreen(
               modifier = Modifier.weight(1f),
             )
 
+            val cameraInteractionSource = remember { MutableInteractionSource() }
+            val cameraPressed by cameraInteractionSource.collectIsPressedAsState()
+            val cameraBg by
+              animateColorAsState(
+                targetValue =
+                  if (cameraPressed) MaterialTheme.colorScheme.surfaceContainer
+                  else MaterialTheme.colorScheme.surfaceContainerLow,
+                animationSpec = DipeTheme.motion.standardTween(120),
+                label = "search_camera_bg",
+              )
+            val cameraBorder by
+              animateColorAsState(
+                targetValue =
+                  if (cameraPressed) MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f)
+                  else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
+                animationSpec = DipeTheme.motion.standardTween(120),
+                label = "search_camera_border",
+              )
+            val cameraTint by
+              animateColorAsState(
+                targetValue =
+                  if (cameraPressed) MaterialTheme.colorScheme.secondary
+                  else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = DipeTheme.motion.standardTween(120),
+                label = "search_camera_tint",
+              )
+
             Surface(
               onClick = onOpenScanner,
+              interactionSource = cameraInteractionSource,
               shape = CircleShape,
-              color = MaterialTheme.colorScheme.secondaryContainer,
-              contentColor = MaterialTheme.colorScheme.secondary,
+              color = cameraBg,
+              contentColor = cameraTint,
+              border = BorderStroke(0.75.dp, cameraBorder),
               modifier =
                 Modifier.minimumInteractiveComponentSize()
-                  .size(44.dp)
+                  .size(48.dp)
                   .testTag("search_scan_isbn_button"),
             ) {
               Box(contentAlignment = Alignment.Center) {
@@ -461,12 +504,14 @@ fun BookSearchScreen(
               sectionPrefix = "pri",
               groups = displayResponse.workGroups,
               indexOffset = 0,
+              editionColumns = editionColumns,
               genresBySlug = uiState.genresBySlug,
               language = language,
               expandedGroupIds = uiState.expandedGroupIds,
               expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
               loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
               exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+              selectedEditionId = effectiveSelectedEditionId,
               revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
               reduceMotion = reduceMotion,
               resultsAlphaProvider = { resultsAlpha },
@@ -475,7 +520,7 @@ fun BookSearchScreen(
               onShowMoreLocalEditions = handleShowMoreLocalEditions,
               onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
               onLoadMoreEditions = onLoadMoreEditions,
-              onSelectEdition = onSelectEdition,
+              onSelectEdition = handleSelectEdition,
             )
           }
 
@@ -486,36 +531,15 @@ fun BookSearchScreen(
             val indexOffset = displayResponse.workGroups.size
 
             item(key = "search_secondary_languages_header", contentType = "drawer_toggle") {
-              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact)) {
+              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md)) {
                 if (hasPrimary) {
-                  OutlinedButton(
-                    onClick = onToggleSecondaryLanguages,
-                    shape = MaterialTheme.shapes.medium,
-                    border = secondaryButtonBorder,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                    modifier =
-                      Modifier.fillMaxWidth()
-                        .minimumInteractiveComponentSize()
-                        .testTag("search_secondary_languages_toggle"),
-                  ) {
-                    Text(
-                      text =
-                        stringResource(
-                          R.string.search_secondary_languages_toggle,
-                          displayResponse.secondaryWorkGroups.size,
-                        ),
-                      style = secondaryButtonTextStyle,
-                      color = MaterialTheme.colorScheme.onSurface,
-                      modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                      imageVector =
-                        if (uiState.isSecondaryLanguagesExpanded) Icons.Outlined.ExpandLess
-                        else Icons.Outlined.ExpandMore,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
+                  SearchContextualDrawerHeader(
+                    title = stringResource(R.string.search_secondary_languages_section_title),
+                    count = displayResponse.secondaryWorkGroups.size,
+                    isExpanded = uiState.isSecondaryLanguagesExpanded,
+                    testTag = "search_secondary_languages_toggle",
+                    onToggle = onToggleSecondaryLanguages,
+                  )
                 } else {
                   EditorialSurfaceCard(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -543,12 +567,14 @@ fun BookSearchScreen(
                 sectionPrefix = "sec",
                 groups = displayResponse.secondaryWorkGroups,
                 indexOffset = indexOffset,
+                editionColumns = editionColumns,
                 genresBySlug = uiState.genresBySlug,
                 language = language,
                 expandedGroupIds = uiState.expandedGroupIds,
                 expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                selectedEditionId = effectiveSelectedEditionId,
                 revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
@@ -557,7 +583,7 @@ fun BookSearchScreen(
                 onShowMoreLocalEditions = handleShowMoreLocalEditions,
                 onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
                 onLoadMoreEditions = onLoadMoreEditions,
-                onSelectEdition = onSelectEdition,
+                onSelectEdition = handleSelectEdition,
               )
             }
           } else if (
@@ -590,36 +616,15 @@ fun BookSearchScreen(
               displayResponse.workGroups.size + displayResponse.secondaryWorkGroups.size
 
             item(key = "search_derivative_works_header", contentType = "drawer_toggle") {
-              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.compact)) {
+              Box(modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.md)) {
                 if (hasLiterary) {
-                  OutlinedButton(
-                    onClick = onToggleDerivativeWorks,
-                    shape = MaterialTheme.shapes.medium,
-                    border = secondaryButtonBorder,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                    modifier =
-                      Modifier.fillMaxWidth()
-                        .minimumInteractiveComponentSize()
-                        .testTag("search_derivative_works_toggle"),
-                  ) {
-                    Text(
-                      text =
-                        stringResource(
-                          R.string.search_derivative_drawer_toggle,
-                          displayResponse.derivativeWorkGroups.size,
-                        ),
-                      style = secondaryButtonTextStyle,
-                      color = MaterialTheme.colorScheme.onSurface,
-                      modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                      imageVector =
-                        if (uiState.isDerivativeWorksExpanded) Icons.Outlined.ExpandLess
-                        else Icons.Outlined.ExpandMore,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
+                  SearchContextualDrawerHeader(
+                    title = stringResource(R.string.search_derivative_section_title),
+                    count = displayResponse.derivativeWorkGroups.size,
+                    isExpanded = uiState.isDerivativeWorksExpanded,
+                    testTag = "search_derivative_works_toggle",
+                    onToggle = onToggleDerivativeWorks,
+                  )
                 } else {
                   EditorialSurfaceCard(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -647,12 +652,14 @@ fun BookSearchScreen(
                 sectionPrefix = "deriv",
                 groups = displayResponse.derivativeWorkGroups,
                 indexOffset = derivOffset,
+                editionColumns = editionColumns,
                 genresBySlug = uiState.genresBySlug,
                 language = language,
                 expandedGroupIds = uiState.expandedGroupIds,
                 expandedSecondaryEditionGroupIds = uiState.expandedSecondaryEditionGroupIds,
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
+                selectedEditionId = effectiveSelectedEditionId,
                 revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
@@ -661,7 +668,7 @@ fun BookSearchScreen(
                 onShowMoreLocalEditions = handleShowMoreLocalEditions,
                 onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
                 onLoadMoreEditions = onLoadMoreEditions,
-                onSelectEdition = onSelectEdition,
+                onSelectEdition = handleSelectEdition,
               )
             }
           }
@@ -717,22 +724,39 @@ fun BookSearchScreen(
               !uiState.isSearching
           ) {
             item(key = "search_expand_sources", contentType = "footer_button") {
-              OutlinedButton(
-                onClick = onExpandSecondarySources,
-                shape = MaterialTheme.shapes.medium,
-                border = secondaryButtonBorder,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                modifier =
-                  Modifier.fillMaxWidth()
-                    .padding(top = DipeSpacing.sm)
-                    .minimumInteractiveComponentSize()
-                    .testTag("search_expand_sources_button"),
+              Box(
+                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.sm),
+                contentAlignment = Alignment.Center,
               ) {
-                Text(
-                  text = stringResource(R.string.search_action_expand_sources),
-                  style = secondaryButtonTextStyle,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                TextButton(
+                  onClick = onExpandSecondarySources,
+                  shape = CircleShape,
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                  modifier =
+                    Modifier.minimumInteractiveComponentSize()
+                      .testTag("search_expand_sources_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.ManageSearch,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f),
+                    modifier = Modifier.size(17.dp),
+                  )
+                  Spacer(modifier = Modifier.width(7.dp))
+                  Text(
+                    text = stringResource(R.string.search_action_expand_sources),
+                    style =
+                      TextStyle(
+                        fontFamily = InterFontFamily,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                      ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
               }
             }
           }
@@ -857,12 +881,14 @@ private fun LazyListScope.flattenedWorkGroupItems(
   sectionPrefix: String,
   groups: List<SearchWorkGroup>,
   indexOffset: Int,
+  editionColumns: Int,
   genresBySlug: Map<String, Genre>,
   language: AppLanguage,
   expandedGroupIds: Set<String>,
   expandedSecondaryEditionGroupIds: Set<String>,
   loadingMoreEditionsForGroups: Set<String>,
   exhaustedEditionGroupIds: Set<String>,
+  selectedEditionId: String?,
   revealedGalleryPartsByGroup: MutableMap<String, Set<String>>,
   reduceMotion: Boolean,
   resultsAlphaProvider: () -> Float,
@@ -902,11 +928,10 @@ private fun LazyListScope.flattenedWorkGroupItems(
         (remainingEditions > 0 ||
           group.secondaryTierEditions.isNotEmpty() ||
           canLoadMoreRemote ||
-          displayedEditions.size > 4)
+          displayedEditions.size > editionColumns)
     val hasExpandedContentBelow =
       isExpanded && (displayedEditions.isNotEmpty() || showActionsFooter)
     val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
-    val editionRowCount = if (displayedEditions.isNotEmpty()) (displayedEditions.size + 3) / 4 else 0
 
     item(
       key = "${sectionPrefix}_hdr_$uniqueKeySuffix",
@@ -917,8 +942,8 @@ private fun LazyListScope.flattenedWorkGroupItems(
           Modifier
         } else {
           Modifier.animateItem(
-            fadeInSpec = DipeTheme.motion.standardTween(210),
-            fadeOutSpec = DipeTheme.motion.standardTween(160),
+            fadeInSpec = DipeTheme.motion.standardTween(180),
+            fadeOutSpec = DipeTheme.motion.standardTween(130),
             placementSpec = DipeTheme.motion.editorialSpring(),
           )
         }
@@ -934,7 +959,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
     }
 
     if (displayedEditions.isNotEmpty()) {
-      val editionRows = displayedEditions.chunked(4)
+      val editionRows = displayedEditions.chunked(editionColumns)
       itemsIndexed(
         items = editionRows,
         key = { rowIdx, rowEds ->
@@ -950,18 +975,20 @@ private fun LazyListScope.flattenedWorkGroupItems(
             Modifier
           } else {
             Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(210),
-              fadeOutSpec = DipeTheme.motion.standardTween(160),
+              fadeInSpec = DipeTheme.motion.standardTween(180),
+              fadeOutSpec = DipeTheme.motion.standardTween(130),
               placementSpec = DipeTheme.motion.editorialSpring(),
             )
           }
         SearchEditionGalleryRowItem(
           editions = rowEditions,
+          columnsCount = editionColumns,
           groupIndex = groupIndex,
           rowIndex = rowIdx,
-          rowStartIndex = rowIdx * 4,
+          rowStartIndex = rowIdx * editionColumns,
           isFirstGalleryRow = rowIdx == 0,
           isLastItemInGroup = isLastItemInGroup,
+          selectedEditionId = selectedEditionId,
           shouldAnimateEntrance = !reduceMotion && !alreadyRevealed,
           onEntranceFinished = {
             revealedGalleryPartsByGroup[group.groupId] =
@@ -986,20 +1013,19 @@ private fun LazyListScope.flattenedWorkGroupItems(
             Modifier
           } else {
             Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(210),
-              fadeOutSpec = DipeTheme.motion.standardTween(160),
+              fadeInSpec = DipeTheme.motion.standardTween(180),
+              fadeOutSpec = DipeTheme.motion.standardTween(130),
               placementSpec = DipeTheme.motion.editorialSpring(),
             )
           }
         SearchWorkActionsFooterItem(
           groupIndex = groupIndex,
-          rowCount = editionRowCount,
           remainingEditions = remainingEditions,
           secondaryEditionsCount = group.secondaryTierEditions.size,
           isSecondaryEditionsExpanded = isSecondaryEditionsExpanded,
           canLoadMoreRemoteEditions = canLoadMoreRemote,
           isLoadingMore = isLoadingMore,
-          showCollapseAction = displayedEditions.size > 4,
+          showCollapseAction = displayedEditions.size > editionColumns,
           shouldAnimateEntrance = !reduceMotion && !footerAlreadyRevealed,
           onEntranceFinished = {
             revealedGalleryPartsByGroup[group.groupId] =

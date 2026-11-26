@@ -439,6 +439,7 @@ fun DipeNavigationShell(
                 onToggleDerivativeWorks = searchViewModel::toggleDerivativeWorksExpanded,
                 onToggleGroupSecondaryEditions = searchViewModel::toggleGroupSecondaryEditionsExpanded,
                 onShowMoreLocalEditions = searchViewModel::expandLocalEditionsWindow,
+                onToggleEditionSelection = searchViewModel::toggleSelectedEdition,
               )
             }
 

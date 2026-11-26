@@ -875,7 +875,7 @@ class BibliographicReconstructionAcceptanceTest {
 
     composeTestRule.waitForIdle()
     // Clean summary without noisy ~152 raw hint
-    val expectedSummary = context.getString(R.string.search_results_count_summary, 1)
+    val expectedSummary = context.resources.getQuantityString(R.plurals.search_results_count_summary, 1, 1)
     composeTestRule.onNodeWithText(expectedSummary).assertIsDisplayed()
     composeTestRule.onNodeWithText("152", substring = true).assertDoesNotExist()
 

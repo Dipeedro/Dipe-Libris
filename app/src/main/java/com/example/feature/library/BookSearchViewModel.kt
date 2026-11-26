@@ -53,6 +53,7 @@ data class BookSearchUiState(
   val editionWindowLimits: Map<String, Int> = emptyMap(),
   val hasPartialFailureWarning: Boolean = false,
   val hasSearchError: Boolean = false,
+  val selectedEditionId: String? = null,
 )
 
 class BookSearchViewModel(
@@ -80,6 +81,7 @@ class BookSearchViewModel(
   private val editionWindowLimits = MutableStateFlow<Map<String, Int>>(emptyMap())
   private val hasPartialFailureWarning = MutableStateFlow(false)
   private val hasSearchError = MutableStateFlow(false)
+  private val selectedEditionId = MutableStateFlow<String?>(null)
 
   private val searchGenerationId = AtomicLong(0L)
   private var localSearchJob: Job? = null
@@ -141,9 +143,13 @@ class BookSearchViewModel(
         isSearching,
         hasSearched,
         response,
-        combine(detailState, extraState) { quad, extra -> quad to extra },
-      ) { currentQuery, searching, searched, searchResponse, combinedPair ->
-        val (quad, extra) = combinedPair
+        combine(
+          detailState,
+          extraState,
+          selectedEditionId,
+        ) { quad, extra, selectedId -> Triple(quad, extra, selectedId) },
+      ) { currentQuery, searching, searched, searchResponse, combinedTriple ->
+        val (quad, extra, selectedId) = combinedTriple
         BookSearchUiState(
           query = currentQuery,
           isSearching = searching,
@@ -162,6 +168,7 @@ class BookSearchViewModel(
           editionWindowLimits = extra.editionWindowLimits,
           hasPartialFailureWarning = extra.hasPartialFailureWarning,
           hasSearchError = extra.hasSearchError,
+          selectedEditionId = selectedId,
         )
       }
       .stateIn(
@@ -248,6 +255,7 @@ class BookSearchViewModel(
     loadingMoreEditions.value = emptySet()
     hasPartialFailureWarning.value = false
     hasSearchError.value = false
+    selectedEditionId.value = null
 
     searchJob =
       viewModelScope.launch {
@@ -440,6 +448,7 @@ class BookSearchViewModel(
     candidate: SearchEditionCandidate,
     onReadyForReview: () -> Unit,
   ) {
+    selectedEditionId.value = candidate.candidateId
     viewModelScope.launch {
       try {
         val chosenTitle = candidate.editionTitle?.takeIf { it.isNotBlank() } ?: candidate.workTitle

@@ -1,5 +1,12 @@
 package com.example.core.designsystem.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import com.example.R
 import com.example.core.designsystem.DipeSpacing
+import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.model.AppLanguage
@@ -198,13 +207,29 @@ fun CompactEditorialSearchPill(
   placeholderOverflowClip: Boolean = false,
 ) {
   var isFocused by remember { mutableStateOf(false) }
-  val fillColor =
-    if (isFocused) MaterialTheme.colorScheme.surfaceContainerLowest
-    else MaterialTheme.colorScheme.surfaceContainerLow
-  val borderColor =
-    if (isFocused) MaterialTheme.colorScheme.secondary
-    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-  val borderStrokeWidth = if (isFocused) 1.dp else 0.5.dp
+  val motion = DipeTheme.motion
+  val fillColor by
+    animateColorAsState(
+      targetValue =
+        if (isFocused) MaterialTheme.colorScheme.surfaceContainerLowest
+        else MaterialTheme.colorScheme.surfaceContainerLow,
+      animationSpec = motion.standardTween(160),
+      label = "search_pill_fill",
+    )
+  val borderColor by
+    animateColorAsState(
+      targetValue =
+        if (isFocused) MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f)
+        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
+      animationSpec = motion.standardTween(160),
+      label = "search_pill_border",
+    )
+  val borderStrokeWidth by
+    animateDpAsState(
+      targetValue = if (isFocused) 1.25.dp else 0.75.dp,
+      animationSpec = motion.standardTween(160),
+      label = "search_pill_border_width",
+    )
 
   if (leadingInsetPx == null && trailingInsetPx == null) {
     Surface(
@@ -294,17 +319,25 @@ private fun CompactEditorialSearchPillContent(
   trailingInsetPx: (() -> Float)?,
   placeholderOverflowClip: Boolean,
 ) {
+  val motion = DipeTheme.motion
+  val searchIconTint by
+    animateColorAsState(
+      targetValue =
+        if (isFocused) MaterialTheme.colorScheme.secondary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+      animationSpec = motion.standardTween(160),
+      label = "search_pill_icon_tint",
+    )
+
   Row(
-    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp),
+    modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(DipeSpacing.sm),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     Icon(
       imageVector = Icons.Outlined.Search,
       contentDescription = null,
-      tint =
-        if (isFocused) MaterialTheme.colorScheme.secondary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
+      tint = searchIconTint,
       modifier =
         Modifier.size(18.dp).graphicsLayer {
           translationX = leadingInsetPx?.invoke() ?: 0f
@@ -313,7 +346,7 @@ private fun CompactEditorialSearchPillContent(
     Box(
       modifier =
         Modifier.weight(1f)
-          .padding(vertical = 10.dp)
+          .padding(vertical = 12.dp)
           .layout { measurable, constraints ->
             val leftInset = (leadingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
             val rightInset = (trailingInsetPx?.invoke() ?: 0f).roundToInt().coerceAtLeast(0)
@@ -334,7 +367,10 @@ private fun CompactEditorialSearchPillContent(
         Text(
           text = placeholder,
           style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color =
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(
+              alpha = if (isFocused) 0.62f else 0.82f,
+            ),
           maxLines = 1,
           softWrap = false,
           overflow = if (placeholderOverflowClip) TextOverflow.Clip else TextOverflow.Ellipsis,
@@ -360,19 +396,34 @@ private fun CompactEditorialSearchPillContent(
             .testTag(inputTestTag),
       )
     }
-    if (query.isNotEmpty()) {
+    AnimatedVisibility(
+      visible = query.isNotEmpty(),
+      enter =
+        fadeIn(animationSpec = motion.standardTween(130)) +
+          expandHorizontally(
+            animationSpec = motion.standardTween(130),
+            expandFrom = Alignment.End,
+          ),
+      exit =
+        fadeOut(animationSpec = motion.standardTween(100)) +
+          shrinkHorizontally(
+            animationSpec = motion.standardTween(100),
+            shrinkTowards = Alignment.End,
+          ),
+    ) {
       IconButton(
         onClick = { onQueryChange("") },
         modifier =
-          Modifier.size(48.dp)
+          Modifier.minimumInteractiveComponentSize()
+            .size(44.dp)
             .graphicsLayer { translationX = -(trailingInsetPx?.invoke() ?: 0f) }
             .testTag("${inputTestTag}_clear"),
       ) {
         Icon(
           imageVector = Icons.Outlined.Clear,
           contentDescription = clearContentDescription,
-          tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(18.dp),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+          modifier = Modifier.size(17.dp),
         )
       }
     }

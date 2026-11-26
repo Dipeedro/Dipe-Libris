@@ -407,6 +407,11 @@
     <string name="search_source_attribution_apple">Capa: Apple Books</string>
     <string name="search_work_collapse_action">Recolher</string>
     <string name="search_metadata_missing_placeholder">—</string>
+    <string name="search_secondary_languages_section_title">Outros idiomas e edições de Portugal</string>
+    <string name="search_derivative_section_title">Estudos, resumos e obras relacionadas</string>
+    <string name="search_edition_more_local_short">Mais (%1$d)</string>
+    <string name="search_edition_load_more_short">Mais edições</string>
+    <string name="cd_edition_selected">Edição selecionada</string>
     <string name="cd_scan_isbn">Escanear código de barras ISBN</string>
 
     <!-- ISBN Scanner -->
