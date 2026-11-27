@@ -1,6 +1,9 @@
 package com.example.feature.library
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -46,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +83,10 @@ import com.example.core.model.Genre
 import com.example.core.model.HybridSearchResponse
 import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
+import kotlinx.coroutines.launch
+
+private val SearchDrawerExpandEasing = CubicBezierEasing(0.22f, 0.0f, 0.16f, 1.0f)
+private val SearchDrawerCollapseEasing = CubicBezierEasing(0.26f, 0.0f, 0.18f, 1.0f)
 
 private fun hasAnyWorks(response: HybridSearchResponse?): Boolean =
   response != null && (
@@ -208,14 +216,69 @@ fun BookSearchScreen(
       WindowWidthClass.EXPANDED -> 5
     }
 
-  val revealedGalleryPartsByGroup =
+  val unconsumedInitialExpandedIds =
     remember(displayResponse?.query, displayResponse?.isFromCache) {
-      mutableStateMapOf<String, Set<String>>()
+      uiState.expandedGroupIds.toMutableSet()
     }
-  LaunchedEffect(uiState.expandedGroupIds) {
-    val collapsedGroupIds =
-      revealedGalleryPartsByGroup.keys.filter { it !in uiState.expandedGroupIds }
-    collapsedGroupIds.forEach { revealedGalleryPartsByGroup.remove(it) }
+  val groupExpansionAnims =
+    remember(displayResponse?.query, displayResponse?.isFromCache) {
+      HashMap<String, Animatable<Float, AnimationVector1D>>()
+    }
+  val activeAnimatedGroupIds =
+    remember(displayResponse?.query, displayResponse?.isFromCache) {
+      mutableStateMapOf<String, Boolean>().apply {
+        uiState.expandedGroupIds.forEach { put(it, true) }
+      }
+    }
+  val expandedGroupIdsSnapshot = uiState.expandedGroupIds
+  LaunchedEffect(expandedGroupIdsSnapshot, reduceMotion, displayResponse?.query, displayResponse?.isFromCache) {
+    if (reduceMotion) {
+      groupExpansionAnims.forEach { (id, anim) ->
+        if (id in expandedGroupIdsSnapshot) {
+          anim.snapTo(1f)
+          activeAnimatedGroupIds[id] = true
+        } else {
+          anim.snapTo(0f)
+          activeAnimatedGroupIds.remove(id)
+        }
+      }
+      activeAnimatedGroupIds.keys.toList().forEach { id ->
+        if (id !in expandedGroupIdsSnapshot) activeAnimatedGroupIds.remove(id)
+      }
+    } else {
+      expandedGroupIdsSnapshot.forEach { id ->
+        activeAnimatedGroupIds[id] = true
+        val startAtFull = unconsumedInitialExpandedIds.remove(id)
+        val anim = groupExpansionAnims.getOrPut(id) { Animatable(if (startAtFull) 1f else 0f) }
+        if (anim.targetValue != 1f) {
+          launch {
+            anim.animateTo(
+              targetValue = 1f,
+              animationSpec = tween(durationMillis = 240, easing = SearchDrawerExpandEasing),
+            )
+          }
+        }
+      }
+      val collapsingIds = activeAnimatedGroupIds.keys.filter { it !in expandedGroupIdsSnapshot }
+      collapsingIds.forEach { id ->
+        val anim = groupExpansionAnims[id]
+        if (anim == null || anim.value <= 0.001f) {
+          activeAnimatedGroupIds.remove(id)
+          groupExpansionAnims.remove(id)
+        } else if (anim.targetValue != 0f) {
+          launch {
+            anim.animateTo(
+              targetValue = 0f,
+              animationSpec = tween(durationMillis = 195, easing = SearchDrawerCollapseEasing),
+            )
+            if (id !in uiState.expandedGroupIds) {
+              activeAnimatedGroupIds.remove(id)
+              groupExpansionAnims.remove(id)
+            }
+          }
+        }
+      }
+    }
   }
 
   val secondaryButtonTextStyle =
@@ -509,7 +572,9 @@ fun BookSearchScreen(
               loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
               exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
               selectedEditionId = effectiveSelectedEditionId,
-              revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
+              activeAnimatedGroupIds = activeAnimatedGroupIds,
+              groupExpansionAnims = groupExpansionAnims,
+              unconsumedInitialExpandedIds = unconsumedInitialExpandedIds,
               reduceMotion = reduceMotion,
               resultsAlphaProvider = { resultsAlpha },
               windowLimitFor = windowLimitFor,
@@ -573,7 +638,9 @@ fun BookSearchScreen(
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
                 selectedEditionId = effectiveSelectedEditionId,
-                revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
+                activeAnimatedGroupIds = activeAnimatedGroupIds,
+                groupExpansionAnims = groupExpansionAnims,
+                unconsumedInitialExpandedIds = unconsumedInitialExpandedIds,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
                 windowLimitFor = windowLimitFor,
@@ -659,7 +726,9 @@ fun BookSearchScreen(
                 loadingMoreEditionsForGroups = uiState.loadingMoreEditionsForGroups,
                 exhaustedEditionGroupIds = uiState.exhaustedEditionGroupIds,
                 selectedEditionId = effectiveSelectedEditionId,
-                revealedGalleryPartsByGroup = revealedGalleryPartsByGroup,
+                activeAnimatedGroupIds = activeAnimatedGroupIds,
+                groupExpansionAnims = groupExpansionAnims,
+                unconsumedInitialExpandedIds = unconsumedInitialExpandedIds,
                 reduceMotion = reduceMotion,
                 resultsAlphaProvider = { resultsAlpha },
                 windowLimitFor = windowLimitFor,
@@ -886,7 +955,9 @@ private fun LazyListScope.flattenedWorkGroupItems(
   loadingMoreEditionsForGroups: Set<String>,
   exhaustedEditionGroupIds: Set<String>,
   selectedEditionId: String?,
-  revealedGalleryPartsByGroup: MutableMap<String, Set<String>>,
+  activeAnimatedGroupIds: Map<String, Boolean>,
+  groupExpansionAnims: MutableMap<String, Animatable<Float, AnimationVector1D>>,
+  unconsumedInitialExpandedIds: MutableSet<String>,
   reduceMotion: Boolean,
   resultsAlphaProvider: () -> Float,
   windowLimitFor: (String) -> Int,
@@ -904,6 +975,21 @@ private fun LazyListScope.flattenedWorkGroupItems(
     val uniqueKeySuffix = if (occurrence == 1) group.groupId else "${group.groupId}__dup$occurrence"
     val groupIndex = indexOffset + localIdx
     val isExpanded = group.groupId in expandedGroupIds
+    val isVisuallyRendered =
+      if (reduceMotion) isExpanded else (isExpanded || group.groupId in activeAnimatedGroupIds)
+    val expansionAnim =
+      if (isVisuallyRendered) {
+        groupExpansionAnims.getOrPut(group.groupId) {
+          val startFull = reduceMotion || unconsumedInitialExpandedIds.remove(group.groupId)
+          Animatable(if (startFull) 1f else 0f)
+        }
+      } else {
+        groupExpansionAnims[group.groupId]
+      }
+    val expansionProgressProvider: () -> Float = {
+      if (reduceMotion) (if (isExpanded) 1f else 0f) else (expansionAnim?.value ?: 0f)
+    }
+
     val isSecondaryEditionsExpanded = group.groupId in expandedSecondaryEditionGroupIds
     val isLoadingMore = group.groupId in loadingMoreEditionsForGroups
     val isExpansionExhausted = group.groupId in exhaustedEditionGroupIds
@@ -914,34 +1000,43 @@ private fun LazyListScope.flattenedWorkGroupItems(
         group.primaryTierEditions
       }
     val editionLimit = windowLimitFor(group.groupId)
-    val displayedEditions = if (isExpanded) visibleEditions.take(editionLimit) else emptyList()
+    val displayedEditions = if (isVisuallyRendered) visibleEditions.take(editionLimit) else emptyList()
     val remainingEditions =
-      if (isExpanded) (visibleEditions.size - displayedEditions.size).coerceAtLeast(0) else 0
+      if (isVisuallyRendered) (visibleEditions.size - displayedEditions.size).coerceAtLeast(0) else 0
     val canLoadMoreRemote =
-      isExpanded &&
+      isVisuallyRendered &&
         (group.externalWorkKey != null || group.displayAuthors.isNotBlank()) &&
         !isExpansionExhausted
     val selectedEditionInGroup =
-      if (isExpanded && selectedEditionId != null) {
+      if (isVisuallyRendered && selectedEditionId != null) {
         displayedEditions.firstOrNull { it.candidateId == selectedEditionId }
       } else {
         null
       }
     val showActionsFooter =
-      isExpanded &&
+      isVisuallyRendered &&
         (selectedEditionInGroup != null ||
           remainingEditions > 0 ||
           group.secondaryTierEditions.isNotEmpty() ||
           canLoadMoreRemote ||
           displayedEditions.size > editionColumns)
-    val hasExpandedContentBelow =
-      isExpanded && (displayedEditions.isNotEmpty() || showActionsFooter)
     val genreName = group.suggestedGenreSlug?.let { genresBySlug[it]?.localizedName(language) }
 
     item(
       key = "${sectionPrefix}_hdr_$uniqueKeySuffix",
       contentType = "search_work_header",
     ) {
+      val hasExpandedContentBelow by remember(group.groupId, isVisuallyRendered, displayedEditions.size, showActionsFooter, reduceMotion) {
+        derivedStateOf {
+          if (!isVisuallyRendered || (displayedEditions.isEmpty() && !showActionsFooter)) {
+            false
+          } else if (reduceMotion) {
+            isExpanded
+          } else {
+            (expansionAnim?.value ?: 0f) > 0.02f
+          }
+        }
+      }
       val itemMotionModifier =
         if (reduceMotion) {
           Modifier
@@ -973,18 +1068,6 @@ private fun LazyListScope.flattenedWorkGroupItems(
         contentType = { _, _ -> "search_edition_gallery_row" },
       ) { rowIdx, rowEditions ->
         val isLastItemInGroup = !showActionsFooter && rowIdx == editionRows.lastIndex
-        val rowPartKey = "${sectionPrefix}_row_${uniqueKeySuffix}_$rowIdx"
-        val alreadyRevealed = rowPartKey in revealedGalleryPartsByGroup[group.groupId].orEmpty()
-        val itemMotionModifier =
-          if (reduceMotion) {
-            Modifier
-          } else {
-            Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(180),
-              fadeOutSpec = DipeTheme.motion.standardTween(130),
-              placementSpec = DipeTheme.motion.editorialSpring(),
-            )
-          }
         SearchEditionGalleryRowItem(
           editions = rowEditions,
           columnsCount = editionColumns,
@@ -994,13 +1077,9 @@ private fun LazyListScope.flattenedWorkGroupItems(
           isFirstGalleryRow = rowIdx == 0,
           isLastItemInGroup = isLastItemInGroup,
           selectedEditionId = selectedEditionId,
-          shouldAnimateEntrance = !reduceMotion && !alreadyRevealed,
-          onEntranceFinished = {
-            revealedGalleryPartsByGroup[group.groupId] =
-              revealedGalleryPartsByGroup[group.groupId].orEmpty() + rowPartKey
-          },
+          expansionProgressProvider = expansionProgressProvider,
           onSelectEdition = onToggleEdition,
-          modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
+          modifier = Modifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
       }
     }
@@ -1010,19 +1089,6 @@ private fun LazyListScope.flattenedWorkGroupItems(
         key = "${sectionPrefix}_act_$uniqueKeySuffix",
         contentType = "search_work_actions",
       ) {
-        val footerPartKey = "${sectionPrefix}_footer_$uniqueKeySuffix"
-        val footerAlreadyRevealed =
-          footerPartKey in revealedGalleryPartsByGroup[group.groupId].orEmpty()
-        val itemMotionModifier =
-          if (reduceMotion) {
-            Modifier
-          } else {
-            Modifier.animateItem(
-              fadeInSpec = DipeTheme.motion.standardTween(180),
-              fadeOutSpec = DipeTheme.motion.standardTween(130),
-              placementSpec = DipeTheme.motion.editorialSpring(),
-            )
-          }
         SearchWorkActionsFooterItem(
           groupIndex = groupIndex,
           remainingEditions = remainingEditions,
@@ -1032,17 +1098,13 @@ private fun LazyListScope.flattenedWorkGroupItems(
           isLoadingMore = isLoadingMore,
           showCollapseAction = displayedEditions.size > editionColumns,
           selectedEdition = selectedEditionInGroup,
-          shouldAnimateEntrance = !reduceMotion && !footerAlreadyRevealed,
-          onEntranceFinished = {
-            revealedGalleryPartsByGroup[group.groupId] =
-              revealedGalleryPartsByGroup[group.groupId].orEmpty() + footerPartKey
-          },
+          expansionProgressProvider = expansionProgressProvider,
           onConfirmSelectedEdition = onConfirmSelectedEdition,
           onShowMoreLocalEditions = { onShowMoreLocalEditions(group.groupId) },
           onToggleSecondaryEditions = { onToggleSecondaryEditions(group.groupId) },
           onLoadMoreRemoteEditions = { onLoadMoreEditions(group) },
           onCollapseGroup = { onToggleExpand(group.groupId) },
-          modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
+          modifier = Modifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
       }
     }

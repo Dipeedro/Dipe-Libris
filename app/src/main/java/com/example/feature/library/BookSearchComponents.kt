@@ -3,6 +3,7 @@ package com.example.feature.library
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -73,6 +74,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,20 +84,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -128,10 +139,10 @@ import com.example.core.designsystem.DipeRadii
 import com.example.core.designsystem.DipeSpacing
 import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.InterFontFamily
+import com.example.core.designsystem.LocalDipeCoverTokens
 import com.example.core.designsystem.LocalDipeTypography
 import com.example.core.designsystem.components.BookCoverArtwork
 import com.example.core.designsystem.components.EditorialSurfaceCard
-import com.example.core.designsystem.components.HairlineDivider
 import com.example.core.designsystem.components.MicroMetadataItem
 import com.example.core.designsystem.components.MinimalLanguageBadge
 import com.example.core.model.CatalogBook
@@ -143,6 +154,8 @@ import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -574,30 +587,13 @@ internal fun SearchEditionGalleryRowItem(
   isFirstGalleryRow: Boolean,
   isLastItemInGroup: Boolean,
   selectedEditionId: String?,
-  shouldAnimateEntrance: Boolean,
-  onEntranceFinished: () -> Unit,
+  expansionProgressProvider: () -> Float,
   onSelectEdition: (SearchEditionCandidate) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val reduceMotion = DipeTheme.motion.reduceMotion
   val density = LocalDensity.current
-  val glidePx = remember(density) { with(density) { (-6).dp.toPx() } }
-  val revealProgress =
-    remember(groupIndex, rowIndex) {
-      Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
-    }
-
-  LaunchedEffect(shouldAnimateEntrance, reduceMotion) {
-    if (reduceMotion || !shouldAnimateEntrance) {
-      revealProgress.snapTo(1f)
-    } else if (revealProgress.value < 1f) {
-      revealProgress.animateTo(
-        targetValue = 1f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-      )
-      onEntranceFinished()
-    }
-  }
+  val glidePx = remember(density) { with(density) { (-5).dp.toPx() } }
 
   val itemShape =
     if (isLastItemInGroup) {
@@ -612,23 +608,36 @@ internal fun SearchEditionGalleryRowItem(
     }
 
   Surface(
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    color = MaterialTheme.colorScheme.surfaceContainer,
     shape = itemShape,
     shadowElevation = 0.dp,
-    modifier = modifier.fillMaxWidth().clip(itemShape),
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .clip(itemShape)
+        .clipToBounds()
+        .layout { measurable, constraints ->
+          val placeable = measurable.measure(constraints)
+          val p = if (reduceMotion) 1f else expansionProgressProvider().coerceIn(0f, 1f)
+          val heightPx = (placeable.height * p).roundToInt().coerceAtLeast(0)
+          layout(placeable.width, heightPx) {
+            placeable.placeRelative(0, 0)
+          }
+        },
   ) {
     Row(
       modifier =
         Modifier.fillMaxWidth()
           .graphicsLayer {
-            val p = if (reduceMotion) 1f else revealProgress.value
-            alpha = p
+            val p = if (reduceMotion) 1f else expansionProgressProvider().coerceIn(0f, 1f)
+            val contentAlpha = smoothstep01(0.14f, 0.88f, p)
+            alpha = contentAlpha
             translationY = (1f - p) * glidePx
           }
           .padding(
             start = 14.dp,
             end = 14.dp,
-            top = if (isFirstGalleryRow) 4.dp else 6.dp,
+            top = if (isFirstGalleryRow) 10.dp else 6.dp,
             bottom = if (isLastItemInGroup) 14.dp else 6.dp,
           ),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -653,14 +662,58 @@ internal fun SearchEditionGalleryRowItem(
   }
 }
 
+internal data class BookThicknessSpec(
+  val thicknessDp: Dp,
+  val normalizedThickness: Float,
+)
+
+private const val THICKNESS_MIN_DP = 4.5f
+private const val THICKNESS_MAX_DP = 14.5f
+private const val THICKNESS_DEFAULT_DP = 8.2f
+private const val THICKNESS_MIN_PAGES = 60f
+private const val THICKNESS_MAX_PAGES = 950f
+
+/**
+ * Centralized progressive, non-linear physical book thickness mapping from edition page count.
+ * Enforces cohesive visual bounds and uses a neutral mid-weight fallback when pages are missing.
+ */
+internal fun calculateBookThicknessSpec(totalPages: Int?): BookThicknessSpec {
+  if (totalPages == null || totalPages <= 0) {
+    val defaultNorm = (THICKNESS_DEFAULT_DP - THICKNESS_MIN_DP) / (THICKNESS_MAX_DP - THICKNESS_MIN_DP)
+    return BookThicknessSpec(
+      thicknessDp = THICKNESS_DEFAULT_DP.dp,
+      normalizedThickness = defaultNorm.coerceIn(0f, 1f),
+    )
+  }
+  val clampedPages = totalPages.toFloat().coerceIn(THICKNESS_MIN_PAGES, THICKNESS_MAX_PAGES)
+  val scale = 140f
+  val normalized =
+    (ln(1f + (clampedPages - THICKNESS_MIN_PAGES) / scale) /
+      ln(1f + (THICKNESS_MAX_PAGES - THICKNESS_MIN_PAGES) / scale))
+      .coerceIn(0f, 1f)
+  val thicknessDp = THICKNESS_MIN_DP + (THICKNESS_MAX_DP - THICKNESS_MIN_DP) * normalized
+  return BookThicknessSpec(
+    thicknessDp = thicknessDp.dp,
+    normalizedThickness = normalized,
+  )
+}
+
+private fun smoothstep01(edge0: Float, edge1: Float, x: Float): Float {
+  if (edge1 <= edge0) return if (x >= edge1) 1f else 0f
+  val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+  return t * t * (3f - 2f * t)
+}
+
 private val EditionFrontShape =
   RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
 private val EditionBackShape =
   RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 2.dp, bottomEnd = 2.dp)
 private val EditionCoverShadowColor = Color(0xFF211A14)
-private const val HOLD_TO_FLIP_MS = 210L
-private const val FLIP_REVEAL_DURATION_MS = 400
-private const val FLIP_RETURN_MAX_DURATION_MS = 260
+private val EditionFlipRevealEasing = CubicBezierEasing(0.24f, 0.0f, 0.16f, 1.0f)
+private val EditionFlipReturnEasing = CubicBezierEasing(0.20f, 0.0f, 0.14f, 1.0f)
+private const val HOLD_TO_FLIP_MS = 190L
+private const val FLIP_REVEAL_DURATION_MS = 420
+private const val FLIP_RETURN_MAX_DURATION_MS = 250
 
 @Composable
 private fun SearchEditionGalleryTile(
@@ -673,6 +726,7 @@ private fun SearchEditionGalleryTile(
   val motion = DipeTheme.motion
   val reduceMotion = motion.reduceMotion
   val density = LocalDensity.current
+  val coverTokens = LocalDipeCoverTokens.current
   val hapticFeedback = LocalHapticFeedback.current
   val viewConfiguration = LocalViewConfiguration.current
   val windowInfo = LocalWindowInfo.current
@@ -709,8 +763,8 @@ private fun SearchEditionGalleryTile(
         targetValue = 1f,
         animationSpec =
           tween(
-            durationMillis = if (reduceMotion) 150 else FLIP_REVEAL_DURATION_MS,
-            easing = FastOutSlowInEasing,
+            durationMillis = if (reduceMotion) 140 else FLIP_REVEAL_DURATION_MS,
+            easing = EditionFlipRevealEasing,
           ),
       )
       if (isHoldingFlip && !hasFiredHapticForCurrentFlip && flipProgress.value >= 0.96f) {
@@ -722,15 +776,15 @@ private fun SearchEditionGalleryTile(
       if (flipProgress.value > 0f) {
         val returnMs =
           if (reduceMotion) {
-            130
+            120
           } else {
             (FLIP_RETURN_MAX_DURATION_MS * flipProgress.value)
               .roundToInt()
-              .coerceIn(110, FLIP_RETURN_MAX_DURATION_MS)
+              .coerceIn(115, FLIP_RETURN_MAX_DURATION_MS)
           }
         flipProgress.animateTo(
           targetValue = 0f,
-          animationSpec = tween(durationMillis = returnMs, easing = FastOutSlowInEasing),
+          animationSpec = tween(durationMillis = returnMs, easing = EditionFlipReturnEasing),
         )
       }
     }
@@ -740,6 +794,14 @@ private fun SearchEditionGalleryTile(
     remember(edition.candidateId, edition.orderedCoverUrls) {
       CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 120)
     }
+  val thicknessSpec =
+    remember(edition.totalPages) { calculateBookThicknessSpec(edition.totalPages) }
+  val thicknessPx = remember(thicknessSpec, density) { with(density) { thicknessSpec.thicknessDp.toPx() } }
+  val coverPalette =
+    remember(edition.workTitle, edition.primaryAuthorsText, coverTokens) {
+      coverTokens.paletteFor(title = edition.workTitle, author = edition.primaryAuthorsText)
+    }
+
   val publisherText =
     remember(edition.publisher) { edition.publisher?.trim()?.takeIf { it.isNotEmpty() } }
   val yearValue =
@@ -763,40 +825,19 @@ private fun SearchEditionGalleryTile(
       stringResource(R.string.cd_edition_verso_no_details)
     }
 
-  val flipFraction = flipProgress.value.coerceIn(0f, 1f)
-  val angle = if (reduceMotion) 0f else flipFraction * 180f
-  val isShowingBack = if (reduceMotion) flipFraction >= 0.5f else angle > 90f
-  val angleRad = (angle * PI / 180.0).toFloat()
-  val edgeTurnFactor = if (reduceMotion) 0f else sin(angleRad).coerceIn(0f, 1f)
-
-  val targetCompressionScale =
-    when {
-      reduceMotion -> 1f
-      isHoldingFlip -> 0.985f
-      isPressed -> 0.968f
-      else -> 1f
+  // Only recompose on crossing the 90-deg threshold; per-frame motion runs in graphicsLayer/Canvas
+  val isShowingBack by remember(reduceMotion, edition.candidateId) {
+    derivedStateOf {
+      val f = flipProgress.value.coerceIn(0f, 1f)
+      if (reduceMotion) f >= 0.5f else f > 0.5f
     }
-  val animatedCompressionScale by
+  }
+
+  val pressProgress by
     animateFloatAsState(
-      targetValue = targetCompressionScale,
-      animationSpec = tween(durationMillis = 85, easing = FastOutSlowInEasing),
-      label = "edition_tile_compression_scale",
-    )
-  val turnLiftScale = if (reduceMotion) 1f else 1f + (0.024f * edgeTurnFactor)
-  val combinedScale = animatedCompressionScale * turnLiftScale
-
-  val restShadow = if (isSelected) 4.dp else 2.5.dp
-  val targetShadowElevation =
-    when {
-      isHoldingFlip -> 3.5.dp + (2.5.dp * edgeTurnFactor)
-      isPressed -> 1.5.dp
-      else -> restShadow
-    }
-  val animatedShadowElevation by
-    animateDpAsState(
-      targetValue = targetShadowElevation,
-      animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-      label = "edition_tile_shadow_elevation",
+      targetValue = if (!reduceMotion && isPressed && !isHoldingFlip) 1f else 0f,
+      animationSpec = tween(durationMillis = 75, easing = FastOutSlowInEasing),
+      label = "edition_tile_press_progress",
     )
 
   val cameraDist = remember(density) { 14f * density.density }
@@ -810,9 +851,35 @@ private fun SearchEditionGalleryTile(
     )
   val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.25f
   val versoBackground =
-    if (isDarkTheme) MaterialTheme.colorScheme.surfaceContainer
+    if (isDarkTheme) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceContainerLowest
-  val versoBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+  val pageEdgeToneLight =
+    if (isDarkTheme) Color(0xFF4F483E) else coverTokens.pageEdgeLight
+  val pageEdgeToneMid =
+    if (isDarkTheme) Color(0xFF3E3830) else lerp(coverTokens.pageEdgeLight, coverTokens.pageEdgeShadow, 0.45f)
+  val pageEdgeToneShadow =
+    if (isDarkTheme) Color(0xFF2B2620) else coverTokens.pageEdgeShadow
+  val boardTone =
+    if (compactEditionCovers.isEmpty()) coverPalette.clothColor
+    else if (isDarkTheme) Color(0xFF342F28)
+    else lerp(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.outline, 0.22f)
+
+  val contrastPaint = remember { Paint() }
+  val contrastMatrix = remember { ColorMatrix() }
+  val saturationMatrix = remember { ColorMatrix() }
+
+  val baseRestShadowDp = if (isSelected) 3.5f else 2.2f
+  val liftOffsetMaxPx = remember(density) { with(density) { 2.5.dp.toPx() } }
+
+  val frontMetrics: () -> Triple<Float, Float, Float> = {
+    val f = flipProgress.value.coerceIn(0f, 1f)
+    val angle = if (reduceMotion) 0f else f * 180f
+    val rad = (angle * PI / 180.0).toFloat()
+    val edgeTurn = if (reduceMotion) 0f else sin(rad).coerceIn(0f, 1f)
+    val pressScale = 1f - (0.028f * pressProgress)
+    val turnLiftScale = if (reduceMotion) 1f else 1f + (0.026f * edgeTurn) + (0.012f * smoothstep01(0.05f, 0.9f, f))
+    Triple(angle, edgeTurn, pressScale * turnLiftScale)
+  }
 
   Box(
     modifier =
@@ -912,28 +979,130 @@ private fun SearchEditionGalleryTile(
         .testTag(testTag),
     contentAlignment = Alignment.BottomCenter,
   ) {
+    // Dynamic 3D Page-Block / Book Thickness Slab synchronized with rigid-body kinematics
+    if (!reduceMotion && measuredCoverSize.width > 0 && measuredCoverSize.height > 0) {
+      val slabWidthDp = with(density) { measuredCoverSize.width.toDp() }
+      val slabHeightDp = with(density) { measuredCoverSize.height.toDp() }
+      Canvas(modifier = Modifier.width(slabWidthDp).height(slabHeightDp)) {
+        val f = flipProgress.value.coerceIn(0f, 1f)
+        if (f > 0.005f && f < 0.995f) {
+          val angle = f * 180f
+          val rad = (angle * PI / 180.0).toFloat()
+          val edgeTurn = sin(rad).coerceIn(0f, 1f)
+          if (edgeTurn > 0.015f) {
+            val (_, _, combinedScale) = frontMetrics()
+            val liftY = -liftOffsetMaxPx * edgeTurn
+            val camZ = cameraDist * 72f
+            val hw = size.width * 0.5f
+            val hh = size.height * 0.5f
+            val cx = hw
+            val cy = hh
+            val halfT = thicknessPx * 0.5f
+
+            val cosA = cos(rad)
+            val sinA = sin(rad)
+            val frontRimX3d = hw * cosA - halfT * sinA
+            val frontRimZ3d = -hw * sinA - halfT * cosA
+            val backRimX3d = hw * cosA + halfT * sinA
+            val backRimZ3d = -hw * sinA + halfT * cosA
+
+            val fScale = camZ / (camZ + frontRimZ3d).coerceAtLeast(camZ * 0.35f)
+            val bScale = camZ / (camZ + backRimZ3d).coerceAtLeast(camZ * 0.35f)
+
+            val sxFront = cx + frontRimX3d * combinedScale * fScale
+            val sxBack = cx + backRimX3d * combinedScale * bScale
+            val slabSpan = sxBack - sxFront
+            if (slabSpan > 0.4f) {
+              val boardInset = 1.dp.toPx() * edgeTurn
+              val syFrontTop = cy - hh * combinedScale * fScale + liftY + boardInset
+              val syFrontBot = cy + hh * combinedScale * fScale + liftY - boardInset
+              val syBackTop = cy - hh * combinedScale * bScale + liftY + boardInset
+              val syBackBot = cy + hh * combinedScale * bScale + liftY - boardInset
+
+              val slabPath =
+                Path().apply {
+                  moveTo(sxFront, syFrontTop)
+                  lineTo(sxBack, syBackTop)
+                  lineTo(sxBack, syBackBot)
+                  lineTo(sxFront, syFrontBot)
+                  close()
+                }
+              val paperBrush =
+                Brush.horizontalGradient(
+                  0.0f to boardTone,
+                  0.12f to pageEdgeToneLight,
+                  0.58f to pageEdgeToneMid,
+                  0.90f to pageEdgeToneShadow,
+                  1.0f to lerp(pageEdgeToneShadow, boardTone, 0.55f),
+                  startX = sxFront,
+                  endX = sxBack,
+                )
+              drawPath(path = slabPath, brush = paperBrush)
+
+              // Subtle stacked-page grain lines (proportional to visible thickness)
+              if (slabSpan > 3.dp.toPx()) {
+                val grainAlpha = (0.15f * edgeTurn).coerceIn(0f, 0.16f)
+                val lineColor = pageEdgeToneShadow.copy(alpha = grainAlpha)
+                val lineStroke = 0.5.dp.toPx()
+                for (step in 1..3) {
+                  val t = 0.16f + step * 0.21f
+                  val xTop = sxFront + slabSpan * t
+                  val yTop = syFrontTop + (syBackTop - syFrontTop) * t
+                  val yBot = syFrontBot + (syBackBot - syFrontBot) * t
+                  drawLine(
+                    color = lineColor,
+                    start = Offset(xTop, yTop + 2.dp.toPx()),
+                    end = Offset(xTop, yBot - 2.dp.toPx()),
+                    strokeWidth = lineStroke,
+                  )
+                }
+              }
+
+              // Soft joint contact shadow where pages meet turning board edge
+              drawLine(
+                color = Color.Black.copy(alpha = 0.16f * edgeTurn),
+                start = Offset(sxFront, syFrontTop),
+                end = Offset(sxFront, syFrontBot),
+                strokeWidth = 0.75.dp.toPx(),
+              )
+            }
+          }
+        }
+      }
+    }
+
     // Front Cover Face (kept mounted during flip to prevent Coil image reload/flicker)
     Box(
       modifier =
         Modifier.graphicsLayer {
+          val f = flipProgress.value.coerceIn(0f, 1f)
+          val (angle, edgeTurn, combinedScale) = frontMetrics()
+          val rad = (angle * PI / 180.0).toFloat()
+          val shadowDp =
+            if (isShowingBack) 0f
+            else {
+              val liftShadow = baseRestShadowDp + 4.8f * edgeTurn - 0.6f * pressProgress
+              liftShadow.coerceAtLeast(1.4f)
+            }
+
           scaleX = combinedScale
           scaleY = combinedScale
           rotationY = angle
           cameraDistance = cameraDist
+          translationX = if (reduceMotion) 0f else -(thicknessPx * 0.5f) * sin(rad) * combinedScale
+          translationY = if (reduceMotion) 0f else -liftOffsetMaxPx * edgeTurn
+          shadowElevation = with(density) { shadowDp.dp.toPx() }
+          shape = EditionFrontShape
+          clip = false
+          ambientShadowColor = EditionCoverShadowColor.copy(alpha = 0.16f + 0.08f * edgeTurn)
+          spotShadowColor = EditionCoverShadowColor.copy(alpha = 0.24f + 0.14f * edgeTurn)
           alpha =
             when {
-              reduceMotion -> 1f - flipFraction
+              reduceMotion -> 1f - f
               isShowingBack -> 0f
               else -> 1f
             }
-        }
-          .shadow(
-            elevation = if (isShowingBack) 0.dp else animatedShadowElevation,
-            shape = EditionFrontShape,
-            clip = false,
-            ambientColor = EditionCoverShadowColor.copy(alpha = 0.18f),
-            spotColor = EditionCoverShadowColor.copy(alpha = 0.28f),
-          ),
+        },
       contentAlignment = Alignment.Center,
     ) {
       Box(
@@ -941,6 +1110,51 @@ private fun SearchEditionGalleryTile(
           Modifier.onSizeChanged { measuredCoverSize = it }
             .clip(EditionFrontShape)
             .indication(interactionSource, ripple(bounded = true))
+            .drawWithContent {
+              val f = flipProgress.value.coerceIn(0f, 1f)
+              val edgeTurn = if (reduceMotion) 0f else sin((f * 180f) * PI / 180.0).toFloat().coerceIn(0f, 1f)
+              if (!reduceMotion && edgeTurn > 0.01f && !isShowingBack) {
+                val contrast = 1f + 0.08f * edgeTurn
+                val translate = 128f * (1f - contrast) + 4f * edgeTurn
+                contrastMatrix.set(
+                  ColorMatrix(
+                    floatArrayOf(
+                      contrast, 0f, 0f, 0f, translate,
+                      0f, contrast, 0f, 0f, translate,
+                      0f, 0f, contrast, 0f, translate,
+                      0f, 0f, 0f, 1f, 0f,
+                    )
+                  )
+                )
+                saturationMatrix.setToSaturation(1f - 0.12f * edgeTurn)
+                contrastMatrix.timesAssign(saturationMatrix)
+                contrastPaint.colorFilter = ColorFilter.colorMatrix(contrastMatrix)
+
+                drawIntoCanvas { canvas ->
+                  canvas.saveLayer(Rect(0f, 0f, size.width, size.height), contrastPaint)
+                  try {
+                    drawContent()
+                  } finally {
+                    canvas.restore()
+                  }
+                }
+
+                // Synchronized directional chiaroscuro lighting (warm leading sheen + receding shadow)
+                val leadingSheen = Color(0xFFFFFBF2).copy(alpha = 0.18f * edgeTurn)
+                val trailingShade = Color(0xFF1A140E).copy(alpha = 0.24f * edgeTurn)
+                drawRect(
+                  brush =
+                    Brush.horizontalGradient(
+                      0.0f to trailingShade,
+                      0.45f to Color.Transparent,
+                      0.82f to leadingSheen.copy(alpha = leadingSheen.alpha * 0.55f),
+                      1.0f to leadingSheen,
+                    ),
+                )
+              } else {
+                drawContent()
+              }
+            }
             .then(
               if (isSelected) {
                 Modifier.border(1.5.dp, selectedBorderColor, EditionFrontShape)
@@ -961,19 +1175,6 @@ private fun SearchEditionGalleryTile(
           contentScale = ContentScale.Fit,
           shape = EditionFrontShape,
         )
-
-        if (edgeTurnFactor > 0.005f) {
-          Box(
-            modifier =
-              Modifier.matchParentSize()
-                .background(
-                  Brush.horizontalGradient(
-                    0.0f to Color.Black.copy(alpha = 0.05f * edgeTurnFactor),
-                    1.0f to Color.Black.copy(alpha = 0.24f * edgeTurnFactor),
-                  )
-                )
-          )
-        }
       }
 
       AnimatedVisibility(
@@ -1008,7 +1209,7 @@ private fun SearchEditionGalleryTile(
         else Dp.Unspecified
       val backHeightDp =
         if (measuredCoverSize.height > 0 && measuredCoverSize.width > 0) {
-          val minReadablePx = (measuredCoverSize.width * 1.15f).roundToInt()
+          val minReadablePx = (measuredCoverSize.width * 1.18f).roundToInt()
           with(density) { maxOf(measuredCoverSize.height, minReadablePx).toDp() }
         } else {
           Dp.Unspecified
@@ -1027,28 +1228,36 @@ private fun SearchEditionGalleryTile(
         modifier =
           backSizeModifier
             .graphicsLayer {
+              val f = flipProgress.value.coerceIn(0f, 1f)
+              val (angle, edgeTurn, combinedScale) = frontMetrics()
+              val rad = (angle * PI / 180.0).toFloat()
+              val settledShadowDp =
+                if (reduceMotion) 3.5f
+                else 3.8f + (3.4f * edgeTurn)
+
               scaleX = combinedScale
               scaleY = combinedScale
               rotationY = if (reduceMotion) 0f else angle - 180f
               cameraDistance = cameraDist
-              alpha = if (reduceMotion) flipFraction else 1f
+              translationX = if (reduceMotion) 0f else (thicknessPx * 0.5f) * sin(rad) * combinedScale
+              translationY = if (reduceMotion) 0f else -liftOffsetMaxPx * edgeTurn
+              shadowElevation = with(density) { settledShadowDp.dp.toPx() }
+              shape = EditionBackShape
+              clip = true
+              ambientShadowColor = EditionCoverShadowColor.copy(alpha = 0.16f + 0.08f * edgeTurn)
+              spotShadowColor = EditionCoverShadowColor.copy(alpha = 0.26f + 0.12f * edgeTurn)
+              alpha = if (reduceMotion) f else 1f
             }
-            .shadow(
-              elevation = animatedShadowElevation,
-              shape = EditionBackShape,
-              clip = false,
-              ambientColor = EditionCoverShadowColor.copy(alpha = 0.18f),
-              spotColor = EditionCoverShadowColor.copy(alpha = 0.28f),
-            )
-            .clip(EditionBackShape)
-            .border(0.5.dp, versoBorderColor, EditionBackShape)
             .testTag("${testTag}_back_face"),
       ) {
         Box(modifier = Modifier.fillMaxSize()) {
+          // Upper editorial colophon layout so metadata clears the lower-center holding thumb
           Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            modifier =
+              Modifier.fillMaxSize()
+                .padding(start = 10.dp, end = 10.dp, top = 11.dp, bottom = 10.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top,
           ) {
             if (publisherText != null) {
               Text(
@@ -1059,26 +1268,19 @@ private fun SearchEditionGalleryTile(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.5.sp,
                     lineHeight = 14.sp,
+                    letterSpacing = (-0.05).sp,
                   ),
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                maxLines = 3,
+                textAlign = TextAlign.Start,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
               )
             }
 
-            if (publisherText != null && (yearValue != null || pagesText != null)) {
-              Spacer(modifier = Modifier.height(6.dp))
-              Box(
-                modifier =
-                  Modifier.width(18.dp)
-                    .height(0.75.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
-              )
-              Spacer(modifier = Modifier.height(6.dp))
-            }
-
             if (yearValue != null) {
+              if (publisherText != null) {
+                Spacer(modifier = Modifier.height(5.dp))
+              }
               Text(
                 text = yearValue.toString(),
                 style =
@@ -1086,11 +1288,11 @@ private fun SearchEditionGalleryTile(
                     fontFamily = InterFontFamily,
                     fontWeight = FontWeight.Medium,
                     fontSize = 11.5.sp,
-                    lineHeight = 14.5.sp,
+                    lineHeight = 14.sp,
                     fontFeatureSettings = "tnum",
                   ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 maxLines = 1,
               )
             }
@@ -1098,6 +1300,8 @@ private fun SearchEditionGalleryTile(
             if (pagesText != null) {
               if (yearValue != null) {
                 Spacer(modifier = Modifier.height(2.dp))
+              } else if (publisherText != null) {
+                Spacer(modifier = Modifier.height(5.dp))
               }
               Text(
                 text = pagesText,
@@ -1106,50 +1310,42 @@ private fun SearchEditionGalleryTile(
                     fontFamily = InterFontFamily,
                     fontWeight = FontWeight.Normal,
                     fontSize = 11.sp,
-                    lineHeight = 14.sp,
+                    lineHeight = 13.5.sp,
                     fontFeatureSettings = "tnum",
                   ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                textAlign = TextAlign.Start,
                 maxLines = 1,
               )
             }
-
-            if (publisherText == null && yearValue == null && pagesText == null) {
-              Box(
-                modifier =
-                  Modifier.width(16.dp)
-                    .height(0.75.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-              )
-            }
           }
 
-          // Subtle spine-crease lighting along right edge of physical back cover
+          // Subtle spine-crease lighting along right edge + directional turn gradient
           Box(
             modifier =
-              Modifier.fillMaxSize()
-                .background(
-                  Brush.horizontalGradient(
-                    0.90f to Color.Transparent,
-                    0.95f to Color.White.copy(alpha = if (isDarkTheme) 0.04f else 0.16f),
-                    1.0f to Color.Black.copy(alpha = if (isDarkTheme) 0.22f else 0.08f),
-                  )
-                )
-          )
-
-          if (edgeTurnFactor > 0.005f) {
-            Box(
-              modifier =
-                Modifier.fillMaxSize()
-                  .background(
+              Modifier.fillMaxSize().drawBehind {
+                val f = flipProgress.value.coerceIn(0f, 1f)
+                val edgeTurn = if (reduceMotion) 0f else sin((f * 180f) * PI / 180.0).toFloat().coerceIn(0f, 1f)
+                drawRect(
+                  brush =
                     Brush.horizontalGradient(
-                      0.0f to Color.Black.copy(alpha = 0.18f * edgeTurnFactor),
-                      1.0f to Color.Black.copy(alpha = 0.04f * edgeTurnFactor),
-                    )
+                      0.90f to Color.Transparent,
+                      0.95f to Color.White.copy(alpha = if (isDarkTheme) 0.04f else 0.16f),
+                      1.0f to Color.Black.copy(alpha = if (isDarkTheme) 0.22f else 0.07f),
+                    ),
+                )
+                if (edgeTurn > 0.005f) {
+                  drawRect(
+                    brush =
+                      Brush.horizontalGradient(
+                        0.0f to Color.Black.copy(alpha = 0.16f * edgeTurn),
+                        0.55f to Color.Transparent,
+                        1.0f to Color.White.copy(alpha = 0.08f * edgeTurn),
+                      ),
                   )
-            )
-          }
+                }
+              }
+          )
         }
       }
     }
@@ -1166,8 +1362,7 @@ internal fun SearchWorkActionsFooterItem(
   isLoadingMore: Boolean,
   showCollapseAction: Boolean,
   selectedEdition: SearchEditionCandidate?,
-  shouldAnimateEntrance: Boolean,
-  onEntranceFinished: () -> Unit,
+  expansionProgressProvider: () -> Float,
   onConfirmSelectedEdition: (SearchEditionCandidate) -> Unit,
   onShowMoreLocalEditions: () -> Unit,
   onToggleSecondaryEditions: () -> Unit,
@@ -1178,23 +1373,7 @@ internal fun SearchWorkActionsFooterItem(
   val motion = DipeTheme.motion
   val reduceMotion = motion.reduceMotion
   val density = LocalDensity.current
-  val glideOffsetPx = remember(density) { with(density) { (-5).dp.toPx() } }
-  val revealProgress =
-    remember(groupIndex) {
-      Animatable(if (reduceMotion || !shouldAnimateEntrance) 1f else 0f)
-    }
-
-  LaunchedEffect(shouldAnimateEntrance, reduceMotion) {
-    if (reduceMotion || !shouldAnimateEntrance) {
-      revealProgress.snapTo(1f)
-    } else if (revealProgress.value < 1f) {
-      revealProgress.animateTo(
-        targetValue = 1f,
-        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-      )
-      onEntranceFinished()
-    }
-  }
+  val glideOffsetPx = remember(density) { with(density) { (-4).dp.toPx() } }
 
   val footerShape =
     RoundedCornerShape(
@@ -1215,17 +1394,29 @@ internal fun SearchWorkActionsFooterItem(
     remainingEditions > 0 || canLoadMoreRemoteEditions || secondaryEditionsCount > 0 || showCollapseAction
 
   Surface(
-    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    color = MaterialTheme.colorScheme.surfaceContainer,
     shape = footerShape,
     shadowElevation = 0.dp,
-    modifier = modifier.fillMaxWidth().clip(footerShape),
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .clip(footerShape)
+        .clipToBounds()
+        .layout { measurable, constraints ->
+          val placeable = measurable.measure(constraints)
+          val p = if (reduceMotion) 1f else expansionProgressProvider().coerceIn(0f, 1f)
+          val heightPx = (placeable.height * p).roundToInt().coerceAtLeast(0)
+          layout(placeable.width, heightPx) {
+            placeable.placeRelative(0, 0)
+          }
+        },
   ) {
     Column(
       modifier =
         Modifier.fillMaxWidth()
           .graphicsLayer {
-            val p = if (reduceMotion) 1f else revealProgress.value
-            alpha = p
+            val p = if (reduceMotion) 1f else expansionProgressProvider().coerceIn(0f, 1f)
+            alpha = smoothstep01(0.18f, 0.90f, p)
             translationY = (1f - p) * glideOffsetPx
           }
           .padding(
@@ -1304,7 +1495,7 @@ internal fun SearchWorkActionsFooterItem(
               Surface(
                 onClick = onShowMoreLocalEditions,
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
@@ -1334,7 +1525,7 @@ internal fun SearchWorkActionsFooterItem(
                 onClick = onLoadMoreRemoteEditions,
                 enabled = !isLoadingMore,
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
@@ -1384,7 +1575,7 @@ internal fun SearchWorkActionsFooterItem(
                     if (isSecondaryEditionsExpanded) {
                       MaterialTheme.colorScheme.secondaryContainer
                     } else {
-                      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f)
+                      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
                     },
                   animationSpec = motion.standardTween(150),
                   label = "secondary_lang_pill_bg",

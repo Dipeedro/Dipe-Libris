@@ -41,6 +41,7 @@ import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import com.example.feature.library.BookSearchScreen
 import com.example.feature.library.BookSearchUiState
+import com.example.feature.library.calculateBookThicknessSpec
 import com.example.feature.library.formatEditorialDisplayTitle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -1479,5 +1480,281 @@ class SearchVisualPolishTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
     assertEquals(null, selectedId)
+  }
+
+  @Test
+  fun bookThicknessSpec_progressiveBoundedAndFallbackBehavior() {
+    val missingSpec = calculateBookThicknessSpec(null)
+    val zeroSpec = calculateBookThicknessSpec(0)
+    val negativeSpec = calculateBookThicknessSpec(-25)
+    assertEquals(8.2f, missingSpec.thicknessDp.value, 0.01f)
+    assertEquals(missingSpec.thicknessDp.value, zeroSpec.thicknessDp.value, 0.001f)
+    assertEquals(missingSpec.thicknessDp.value, negativeSpec.thicknessDp.value, 0.001f)
+
+    val minFloor = calculateBookThicknessSpec(20)
+    val floorBoundary = calculateBookThicknessSpec(60)
+    assertEquals(4.5f, minFloor.thicknessDp.value, 0.01f)
+    assertEquals(minFloor.thicknessDp.value, floorBoundary.thicknessDp.value, 0.001f)
+
+    val maxCeiling = calculateBookThicknessSpec(1800)
+    val ceilingBoundary = calculateBookThicknessSpec(950)
+    assertEquals(14.5f, maxCeiling.thicknessDp.value, 0.01f)
+    assertEquals(maxCeiling.thicknessDp.value, ceilingBoundary.thicknessDp.value, 0.001f)
+
+    val p80 = calculateBookThicknessSpec(80).thicknessDp.value
+    val p220 = calculateBookThicknessSpec(220).thicknessDp.value
+    val p480 = calculateBookThicknessSpec(480).thicknessDp.value
+    val p900 = calculateBookThicknessSpec(900).thicknessDp.value
+    assertTrue(p80 < p220 && p220 < p480 && p480 < p900)
+
+    // Progressive logarithmic curve gives stronger differentiation in common 80..280p range than 700..900p
+    val lowDelta = calculateBookThicknessSpec(280).thicknessDp.value - p80
+    val highDelta = p900 - calculateBookThicknessSpec(700).thicknessDp.value
+    assertTrue(lowDelta > highDelta)
+  }
+
+  @Test
+  @Config(qualifiers = "w411dp-h915dp-420dpi")
+  fun edition3dHold_versoMetadataRendersInThumbSafeUpperBand() {
+    val work = sampleWorkGroup(groupId = "w_thumb", title = "A Hora da Estrela", author = "Clarice Lispector")
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = false) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Clarice",
+                hasSearched = true,
+                expandedGroupIds = setOf("w_thumb"),
+                response =
+                  HybridSearchResponse(
+                    query = "Clarice",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 1)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+
+    val tileBounds = composeTestRule.onNodeWithTag("search_edition_select_0_0").getBoundsInRoot()
+    val tileHeight = tileBounds.bottom - tileBounds.top
+    val upperSafeLimit = tileBounds.top + tileHeight * 0.58f
+
+    val publisherBounds =
+      composeTestRule
+        .onNode(hasText("Rocco") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+        .getBoundsInRoot()
+    val yearBounds =
+      composeTestRule
+        .onNode(hasText("2020") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+        .getBoundsInRoot()
+    val pagesBounds =
+      composeTestRule
+        .onNode(hasText("88", substring = true) and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+        .getBoundsInRoot()
+
+    val diag = "tile=$tileBounds limit=$upperSafeLimit pub=$publisherBounds year=$yearBounds pages=$pagesBounds"
+    assertTrue("publisher bottom out of upper band: $diag", publisherBounds.bottom <= upperSafeLimit)
+    assertTrue("year bottom out of upper band: $diag", yearBounds.bottom <= upperSafeLimit)
+    assertTrue("pages bottom out of upper band: $diag", pagesBounds.bottom <= upperSafeLimit)
+    assertTrue("vertical order invalid: $diag", publisherBounds.top < yearBounds.top && yearBounds.top < pagesBounds.top)
+
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(350)
+    composeTestRule.waitForIdle()
+  }
+
+  @Test
+  fun workDrawer_expandsCollapsesSmoothlyAndRecoversFromMidCloseInterruption() {
+    val work =
+      SearchWorkGroup(
+        groupId = "w_drawer",
+        canonicalTitle = "Grande Sertão: Veredas",
+        primaryAuthors = listOf(CandidateContributor("João Guimarães Rosa", ContributorRole.AUTHOR)),
+        editions =
+          listOf(
+            SearchEditionCandidate(
+              candidateId = "w_drawer_ed_1",
+              workTitle = "Grande Sertão: Veredas",
+              contributors = listOf(CandidateContributor("João Guimarães Rosa", ContributorRole.AUTHOR)),
+              publisher = "Companhia das Letras",
+              publicationYear = 2019,
+              totalPages = 560,
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.GOOGLE_BOOKS),
+            ),
+            SearchEditionCandidate(
+              candidateId = "w_drawer_ed_2",
+              workTitle = "Grande Sertão: Veredas",
+              contributors = listOf(CandidateContributor("João Guimarães Rosa", ContributorRole.AUTHOR)),
+              publisher = "Nova Fronteira",
+              publicationYear = 2006,
+              totalPages = 624,
+              language = "pt",
+              canonicalLanguageTag = "pt-br",
+              languageTierRank = LanguageTier.PT_BR.rank,
+              sources = listOf(MetadataSource.OPEN_LIBRARY),
+            ),
+          ),
+        sources = listOf(MetadataSource.GOOGLE_BOOKS, MetadataSource.OPEN_LIBRARY),
+        matchTierName = MatchTier.EXACT_WORK.name,
+      )
+    var expandedIds by mutableStateOf(emptySet<String>())
+    var selectedId by mutableStateOf<String?>(null)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = false) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Grande Sertão",
+                hasSearched = true,
+                expandedGroupIds = expandedIds,
+                selectedEditionId = selectedId,
+                response =
+                  HybridSearchResponse(
+                    query = "Grande Sertão",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 2)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = { id ->
+              expandedIds = if (id in expandedIds) expandedIds - id else expandedIds + id
+            },
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = { candidate ->
+              selectedId = if (selectedId == candidate.candidateId) null else candidate.candidateId
+            },
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
+
+    // Expand drawer smoothly
+    composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
+    composeTestRule.mainClock.advanceTimeBy(300)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_1").assertIsDisplayed()
+
+    // Start collapse and interrupt mid-flight (~90ms in) by re-expanding
+    composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
+    composeTestRule.mainClock.advanceTimeBy(90)
+    composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
+    composeTestRule.mainClock.advanceTimeBy(300)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
+    composeTestRule.waitForIdle()
+    assertEquals("w_drawer_ed_1", selectedId)
+
+    // Complete full collapse and verify clean unmount
+    composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
+    composeTestRule.mainClock.advanceTimeBy(260)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
+  }
+
+  @Test
+  fun workDrawer_reduceMotionCollapsesImmediatelyWithoutDanglingRows() {
+    val work = sampleWorkGroup(groupId = "w_rm_drawer", title = "Vidas Secas", author = "Graciliano Ramos")
+    var expandedIds by mutableStateOf(setOf("w_rm_drawer"))
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = true) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Vidas Secas",
+                hasSearched = true,
+                expandedGroupIds = expandedIds,
+                response =
+                  HybridSearchResponse(
+                    query = "Vidas Secas",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 1)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = { id ->
+              expandedIds = if (id in expandedIds) expandedIds - id else expandedIds + id
+            },
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
   }
 }
