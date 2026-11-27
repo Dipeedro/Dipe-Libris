@@ -53,6 +53,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Color as AndroidColor
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.os.Build
+import android.util.LruCache
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
@@ -65,6 +75,10 @@ import com.example.core.designsystem.DipeTheme
 import com.example.core.designsystem.LocalDipeCoverTokens
 import com.example.core.designsystem.LocalDipeTypography
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val BookCoverShape =
   RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
@@ -73,6 +87,153 @@ private val BookSpineShape = RoundedCornerShape(DipeRadii.sharp)
 private val CoverShadowColor = Color(0xFF211A14)
 private val WHITESPACE_SPLIT_REGEX = Regex("\\s+")
 private const val COVER_ENTRANCE_DURATION_MS = 600
+
+@Immutable
+data class BookCoverEdgePalette(
+  val top: Color,
+  val mid: Color,
+  val bottom: Color,
+)
+
+internal fun harmonizeCoverEdgePalette(
+  top: Color,
+  mid: Color,
+  bottom: Color,
+): BookCoverEdgePalette {
+  val avg =
+    Color(
+      red = (top.red + mid.red + bottom.red) / 3f,
+      green = (top.green + mid.green + bottom.green) / 3f,
+      blue = (top.blue + mid.blue + bottom.blue) / 3f,
+      alpha = 1f,
+    )
+  fun temper(raw: Color): Color {
+    val blended = lerp(raw, avg, 0.10f)
+    // Ensure stark white covers still keep a tactile matte board edge distinct from cream pages
+    return if (blended.luminance() > 0.93f) lerp(blended, Color(0xFFE3DBCD), 0.34f) else blended
+  }
+  return BookCoverEdgePalette(
+    top = temper(top),
+    mid = temper(mid),
+    bottom = temper(bottom),
+  )
+}
+
+internal object CoverEdgeColorExtractor {
+  private val cache = LruCache<String, BookCoverEdgePalette>(64)
+
+  fun getCached(key: String?): BookCoverEdgePalette? = key?.let { cache.get(it) }
+
+  fun extractFromDrawable(
+    cacheKey: String?,
+    drawable: Drawable?,
+  ): BookCoverEdgePalette? {
+    if (cacheKey != null) {
+      cache.get(cacheKey)?.let { return it }
+    }
+    if (drawable == null) return null
+
+    val palette =
+      if (drawable is BitmapDrawable) {
+        val bmp = drawable.bitmap ?: return null
+        extractFromBitmapSafely(bmp)
+      } else {
+        extractFromGenericDrawable(drawable)
+      }
+
+    if (palette != null && cacheKey != null) {
+      cache.put(cacheKey, palette)
+    }
+    return palette
+  }
+
+  private fun extractFromBitmapSafely(bitmap: Bitmap): BookCoverEdgePalette? {
+    if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) return null
+    val isHardware =
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE
+    var tempCopy: Bitmap? = null
+    val readable =
+      if (isHardware) {
+        tempCopy =
+          runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return null
+        tempCopy
+      } else {
+        bitmap
+      }
+    return try {
+      extractFromSoftwareBitmap(readable)
+    } catch (_: Throwable) {
+      null
+    } finally {
+      tempCopy?.let { if (!it.isRecycled) it.recycle() }
+    }
+  }
+
+  private fun extractFromGenericDrawable(drawable: Drawable): BookCoverEdgePalette? {
+    val targetW = 16
+    val targetH = 24
+    val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+    return try {
+      val canvas = AndroidCanvas(bmp)
+      val prevBounds = drawable.copyBounds()
+      drawable.setBounds(0, 0, targetW, targetH)
+      drawable.draw(canvas)
+      drawable.bounds = prevBounds
+      extractFromSoftwareBitmap(bmp)
+    } catch (_: Throwable) {
+      null
+    } finally {
+      if (!bmp.isRecycled) bmp.recycle()
+    }
+  }
+
+  internal fun extractFromSoftwareBitmap(bitmap: Bitmap): BookCoverEdgePalette? {
+    if (bitmap.isRecycled) return null
+    val w = bitmap.width
+    val h = bitmap.height
+    if (w < 4 || h < 4) return null
+
+    val xFractions = floatArrayOf(0.84f, 0.88f, 0.92f, 0.96f)
+    fun sampleBand(yStartFrac: Float, yEndFrac: Float): Color? {
+      var rSum = 0L
+      var gSum = 0L
+      var bSum = 0L
+      var count = 0
+      val steps = 5
+      for (yi in 0 until steps) {
+        val yf = yStartFrac + (yEndFrac - yStartFrac) * (yi / (steps - 1f))
+        val py = (yf * (h - 1)).toInt().coerceIn(0, h - 1)
+        for (xf in xFractions) {
+          val px = (xf * (w - 1)).toInt().coerceIn(0, w - 1)
+          val argb = bitmap.getPixel(px, py)
+          if (AndroidColor.alpha(argb) >= 128) {
+            rSum += AndroidColor.red(argb)
+            gSum += AndroidColor.green(argb)
+            bSum += AndroidColor.blue(argb)
+            count++
+          }
+        }
+      }
+      if (count == 0) return null
+      return Color(
+        red = (rSum.toFloat() / count) / 255f,
+        green = (gSum.toFloat() / count) / 255f,
+        blue = (bSum.toFloat() / count) / 255f,
+        alpha = 1f,
+      )
+    }
+
+    val top = sampleBand(0.06f, 0.30f)
+    val mid = sampleBand(0.35f, 0.65f)
+    val bottom = sampleBand(0.70f, 0.94f)
+    val fallback = mid ?: top ?: bottom ?: return null
+    return harmonizeCoverEdgePalette(
+      top = top ?: fallback,
+      mid = mid ?: fallback,
+      bottom = bottom ?: fallback,
+    )
+  }
+}
 
 internal fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
   if (edge1 <= edge0) return if (x >= edge1) 1f else 0f
@@ -145,6 +306,7 @@ fun BookCoverArtwork(
   contentScale: ContentScale = ContentScale.Crop,
   shape: Shape = BookCoverShape,
   onImageLoadError: (() -> Unit)? = null,
+  onCoverEdgePaletteChanged: ((BookCoverEdgePalette?) -> Unit)? = null,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
@@ -233,6 +395,26 @@ fun BookCoverArtwork(
       (painterState is AsyncImagePainter.State.Empty || painterState is AsyncImagePainter.State.Loading)
   val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isInvalidRemotePlaceholder
   val showTypographicCloth = activeUri == null || (!isPhotoLoading && !hasLoadedPhoto)
+
+  if (onCoverEdgePaletteChanged != null) {
+    val loadedDrawable = (painterState as? AsyncImagePainter.State.Success)?.result?.drawable
+    LaunchedEffect(activeUri, hasLoadedPhoto, loadedDrawable) {
+      if (!hasLoadedPhoto || loadedDrawable == null) {
+        onCoverEdgePaletteChanged(null)
+      } else {
+        val cached = CoverEdgeColorExtractor.getCached(activeUri)
+        if (cached != null) {
+          onCoverEdgePaletteChanged(cached)
+        } else {
+          val extracted =
+            withContext(Dispatchers.Default) {
+              CoverEdgeColorExtractor.extractFromDrawable(activeUri, loadedDrawable)
+            }
+          onCoverEdgePaletteChanged(extracted)
+        }
+      }
+    }
+  }
 
   val wasInitiallyLoaded = remember(activeUri) { hasLoadedPhoto }
   val photoAlpha =

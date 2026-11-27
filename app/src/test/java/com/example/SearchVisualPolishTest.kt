@@ -1,10 +1,17 @@
 package com.example
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
@@ -26,8 +33,11 @@ import androidx.compose.ui.test.up
 import androidx.compose.ui.unit.dp
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
+import com.example.core.designsystem.components.CoverEdgeColorExtractor
+import com.example.core.designsystem.components.harmonizeCoverEdgePalette
 import com.example.core.localization.LocalAppLanguage
 import com.example.core.model.AppLanguage
+import com.example.core.model.AppThemeMode
 import com.example.core.model.CandidateContributor
 import com.example.core.model.ContributorRole
 import com.example.core.model.Genre
@@ -1914,5 +1924,193 @@ class SearchVisualPolishTest {
     assertEquals(0f, reduced.backRotationY, 0.001f)
     assertEquals(0.5f, reduced.frontAlpha, 0.001f)
     assertEquals(0.5f, reduced.backAlpha, 0.001f)
+  }
+
+  @Test
+  fun coverEdgeColorExtractor_extractsCoverDerivedChromaticEdgesAndSoftensPureWhite() {
+    // 1. Multi-tone artistic cover: terracotta top, ochre mid, deep navy bottom along right edge
+    val artBmp = Bitmap.createBitmap(32, 48, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(artBmp)
+    val paint = Paint()
+    paint.color = AndroidColor.rgb(184, 68, 48)
+    canvas.drawRect(0f, 0f, 32f, 16f, paint)
+    paint.color = AndroidColor.rgb(217, 155, 56)
+    canvas.drawRect(0f, 16f, 32f, 32f, paint)
+    paint.color = AndroidColor.rgb(34, 53, 77)
+    canvas.drawRect(0f, 32f, 32f, 48f, paint)
+
+    val extracted = CoverEdgeColorExtractor.extractFromSoftwareBitmap(artBmp)
+    assertTrue("Expected extracted edge palette from colored artwork", extracted != null)
+    val palette = extracted!!
+    assertTrue("Top band should retain warm terracotta red dominance", palette.top.red > palette.top.blue + 0.25f)
+    assertTrue("Mid band should retain ochre warmth", palette.mid.green > palette.mid.blue + 0.15f)
+    assertTrue("Bottom band should retain cool navy blue dominance", palette.bottom.blue > palette.bottom.red + 0.08f)
+
+    val cacheKey = "test://etapa2_edge_palette_art"
+    val drawable = BitmapDrawable(null, artBmp)
+    val cachedFirst = CoverEdgeColorExtractor.extractFromDrawable(cacheKey, drawable)
+    assertEquals(palette, cachedFirst)
+    assertEquals(palette, CoverEdgeColorExtractor.getCached(cacheKey))
+    artBmp.recycle()
+
+    // 2. Stark pure-white cover edge is softened just enough to remain distinct from cream miolo
+    val whitePalette = harmonizeCoverEdgePalette(Color.White, Color.White, Color.White)
+    assertTrue(
+      "Stark white cover edge should soften below pure 1.0 luminance (${whitePalette.mid.luminance()})",
+      whitePalette.mid.luminance() < 0.94f,
+    )
+    assertTrue("Softened white edge must still read light (${whitePalette.mid.luminance()})", whitePalette.mid.luminance() > 0.78f)
+  }
+
+  @Test
+  fun book3dProjection_etapa2BoardPartitionsAndUnifiedGroundShadowContinuousAcross90Deg() {
+    val widthPx = 280f
+    val heightPx = 420f
+    val cameraDistPx = 14f * 3f * 72f
+    val liftMaxPx = 7.5f
+    val cornerRadiusPx = 18f
+    val boardOverhangPx = 6.0f
+
+    // Verify both thin (3.5dp = 10.5px) and thick (9.5dp = 28.5px) books keep visible colored boards AND >=50% pages
+    val thicknesses = listOf(10.5f to (3.9f to 3.3f), 28.5f to (4.65f to 3.9f))
+    val turnAngles = listOf(15f, 35f, 65f, 89.5f, 90.5f, 115f, 145f, 165f)
+    for ((thicknessPx, boardTargets) in thicknesses) {
+      val (frontTarget, backTarget) = boardTargets
+      for (deg in turnAngles) {
+        val p =
+          calculateBook3dProjection(
+            widthPx = widthPx,
+            heightPx = heightPx,
+            thicknessPx = thicknessPx,
+            flipProgress = deg / 180f,
+            pressProgress = 0f,
+            cameraDistPx = cameraDistPx,
+            liftOffsetMaxPx = liftMaxPx,
+            foreCornerRadiusPx = cornerRadiusPx,
+            boardOverhangPx = boardOverhangPx,
+            reduceMotion = false,
+            frontBoardTargetPx = frontTarget,
+            backBoardTargetPx = backTarget,
+          )
+        assertTrue("Expected visible slab at $deg deg for thickness=$thicknessPx", p.isSlabVisible)
+        assertTrue("Front board must be visible across all turn angles at $deg", p.frontBoardWidthPx > 0f)
+        assertTrue("Back board must be visible across all turn angles at $deg", p.backBoardWidthPx > 0f)
+        assertTrue(
+          "Front board should be at least as thick as back board at $deg",
+          p.frontBoardWidthPx >= p.backBoardWidthPx - 0.01f,
+        )
+        val pagesWidth = p.slabWidthPx - p.frontBoardWidthPx - p.backBoardWidthPx
+        assertTrue(
+          "Cream pages must occupy at least 50% of slab at $deg ($pagesWidth / ${p.slabWidthPx})",
+          pagesWidth >= p.slabWidthPx * 0.50f - 0.05f,
+        )
+        assertTrue(
+          "Unified shadow span (${p.shadowSpanPx}) must cover full book footprint including slab (${p.slabWidthPx})",
+          p.shadowSpanPx >= p.slabWidthPx - 0.05f && p.bookRightX > p.bookLeftX,
+        )
+      }
+
+      // Verify zero ground-shadow jump across 90° face handoff (89.5° -> 90.5°)
+      val before90 =
+        calculateBook3dProjection(
+          widthPx = widthPx,
+          heightPx = heightPx,
+          thicknessPx = thicknessPx,
+          flipProgress = 89.5f / 180f,
+          pressProgress = 0f,
+          cameraDistPx = cameraDistPx,
+          liftOffsetMaxPx = liftMaxPx,
+          foreCornerRadiusPx = cornerRadiusPx,
+          boardOverhangPx = boardOverhangPx,
+          reduceMotion = false,
+          frontBoardTargetPx = frontTarget,
+          backBoardTargetPx = backTarget,
+        )
+      val after90 =
+        calculateBook3dProjection(
+          widthPx = widthPx,
+          heightPx = heightPx,
+          thicknessPx = thicknessPx,
+          flipProgress = 90.5f / 180f,
+          pressProgress = 0f,
+          cameraDistPx = cameraDistPx,
+          liftOffsetMaxPx = liftMaxPx,
+          foreCornerRadiusPx = cornerRadiusPx,
+          boardOverhangPx = boardOverhangPx,
+          reduceMotion = false,
+          frontBoardTargetPx = frontTarget,
+          backBoardTargetPx = backTarget,
+        )
+      assertTrue(
+        "Shadow center must remain continuous across 90° (${before90.shadowCenterX} vs ${after90.shadowCenterX})",
+        abs(before90.shadowCenterX - after90.shadowCenterX) < 1.2f,
+      )
+      assertTrue(
+        "Shadow span must remain continuous across 90° (${before90.shadowSpanPx} vs ${after90.shadowSpanPx})",
+        abs(before90.shadowSpanPx - after90.shadowSpanPx) < 1.5f,
+      )
+    }
+  }
+
+  @Test
+  fun edition3dHold_rendersCoherentlyAcrossPaperSepiaAndInkThemes() {
+    val work = sampleWorkGroup(groupId = "w_themes", title = "Vidas Secas", author = "Graciliano Ramos")
+    var themeMode by mutableStateOf(AppThemeMode.PAPER)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(themeMode = themeMode, userReduceMotion = false) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Vidas Secas",
+                hasSearched = true,
+                expandedGroupIds = setOf("w_themes"),
+                response =
+                  HybridSearchResponse(
+                    query = "Vidas Secas",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 1)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = {},
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    for (mode in listOf(AppThemeMode.PAPER, AppThemeMode.SEPIA, AppThemeMode.INK)) {
+      themeMode = mode
+      composeTestRule.waitForIdle()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+      composeTestRule.mainClock.advanceTimeBy(700)
+      composeTestRule.waitForIdle()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face", useUnmergedTree = true).assertIsDisplayed()
+      composeTestRule
+        .onNode(hasText("Rocco") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+        .assertIsDisplayed()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+      composeTestRule.mainClock.advanceTimeBy(400)
+      composeTestRule.waitForIdle()
+      composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    }
   }
 }
