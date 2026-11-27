@@ -32,9 +32,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -111,6 +112,7 @@ fun BookSearchScreen(
   onToggleDerivativeWorks: () -> Unit = {},
   onToggleGroupSecondaryEditions: (String) -> Unit = {},
   onShowMoreLocalEditions: ((String) -> Unit)? = null,
+  onToggleEditionSelection: ((SearchEditionCandidate) -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val horizontalPadding = DipeSpacing.horizontalMargin(widthClass)
@@ -191,9 +193,13 @@ fun BookSearchScreen(
   }
   var localSelectedEditionId by remember(displayResponse?.query) { mutableStateOf<String?>(null) }
   val effectiveSelectedEditionId = uiState.selectedEditionId ?: localSelectedEditionId
-  val handleSelectEdition: (SearchEditionCandidate) -> Unit = { candidate ->
-    localSelectedEditionId = candidate.candidateId
-    onSelectEdition(candidate)
+  val handleToggleEditionSelection: (SearchEditionCandidate) -> Unit = { candidate ->
+    if (onToggleEditionSelection != null) {
+      onToggleEditionSelection(candidate)
+    } else {
+      localSelectedEditionId =
+        if (localSelectedEditionId == candidate.candidateId) null else candidate.candidateId
+    }
   }
 
   val editionColumns =
@@ -488,8 +494,9 @@ fun BookSearchScreen(
                 )
                 Text(
                   text =
-                    stringResource(
-                      R.string.search_results_count_summary,
+                    pluralStringResource(
+                      R.plurals.search_results_count_summary,
+                      displayResponse.workGroups.size,
                       displayResponse.workGroups.size,
                     ),
                   style = searchSansMetadataStyle(),
@@ -520,7 +527,8 @@ fun BookSearchScreen(
               onShowMoreLocalEditions = handleShowMoreLocalEditions,
               onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
               onLoadMoreEditions = onLoadMoreEditions,
-              onSelectEdition = handleSelectEdition,
+              onToggleEdition = handleToggleEditionSelection,
+              onConfirmSelectedEdition = onSelectEdition,
             )
           }
 
@@ -583,7 +591,8 @@ fun BookSearchScreen(
                 onShowMoreLocalEditions = handleShowMoreLocalEditions,
                 onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
                 onLoadMoreEditions = onLoadMoreEditions,
-                onSelectEdition = handleSelectEdition,
+                onToggleEdition = handleToggleEditionSelection,
+                onConfirmSelectedEdition = onSelectEdition,
               )
             }
           } else if (
@@ -668,7 +677,8 @@ fun BookSearchScreen(
                 onShowMoreLocalEditions = handleShowMoreLocalEditions,
                 onToggleSecondaryEditions = onToggleGroupSecondaryEditions,
                 onLoadMoreEditions = onLoadMoreEditions,
-                onSelectEdition = handleSelectEdition,
+                onToggleEdition = handleToggleEditionSelection,
+                onConfirmSelectedEdition = onSelectEdition,
               )
             }
           }
@@ -737,7 +747,7 @@ fun BookSearchScreen(
                       .testTag("search_expand_sources_button"),
                 ) {
                   Icon(
-                    imageVector = Icons.Outlined.ManageSearch,
+                    imageVector = Icons.AutoMirrored.Outlined.ManageSearch,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f),
                     modifier = Modifier.size(17.dp),
@@ -897,7 +907,8 @@ private fun LazyListScope.flattenedWorkGroupItems(
   onShowMoreLocalEditions: (String) -> Unit,
   onToggleSecondaryEditions: (String) -> Unit,
   onLoadMoreEditions: (SearchWorkGroup) -> Unit,
-  onSelectEdition: (SearchEditionCandidate) -> Unit,
+  onToggleEdition: (SearchEditionCandidate) -> Unit,
+  onConfirmSelectedEdition: (SearchEditionCandidate) -> Unit,
 ) {
   val seenGroupIds = HashMap<String, Int>(groups.size)
   groups.forEachIndexed { localIdx, group ->
@@ -923,9 +934,16 @@ private fun LazyListScope.flattenedWorkGroupItems(
       isExpanded &&
         (group.externalWorkKey != null || group.displayAuthors.isNotBlank()) &&
         !isExpansionExhausted
+    val selectedEditionInGroup =
+      if (isExpanded && selectedEditionId != null) {
+        displayedEditions.firstOrNull { it.candidateId == selectedEditionId }
+      } else {
+        null
+      }
     val showActionsFooter =
       isExpanded &&
-        (remainingEditions > 0 ||
+        (selectedEditionInGroup != null ||
+          remainingEditions > 0 ||
           group.secondaryTierEditions.isNotEmpty() ||
           canLoadMoreRemote ||
           displayedEditions.size > editionColumns)
@@ -994,7 +1012,7 @@ private fun LazyListScope.flattenedWorkGroupItems(
             revealedGalleryPartsByGroup[group.groupId] =
               revealedGalleryPartsByGroup[group.groupId].orEmpty() + rowPartKey
           },
-          onSelectEdition = onSelectEdition,
+          onSelectEdition = onToggleEdition,
           modifier = itemMotionModifier.graphicsLayer { alpha = resultsAlphaProvider() },
         )
       }
@@ -1026,11 +1044,13 @@ private fun LazyListScope.flattenedWorkGroupItems(
           canLoadMoreRemoteEditions = canLoadMoreRemote,
           isLoadingMore = isLoadingMore,
           showCollapseAction = displayedEditions.size > editionColumns,
+          selectedEdition = selectedEditionInGroup,
           shouldAnimateEntrance = !reduceMotion && !footerAlreadyRevealed,
           onEntranceFinished = {
             revealedGalleryPartsByGroup[group.groupId] =
               revealedGalleryPartsByGroup[group.groupId].orEmpty() + footerPartKey
           },
+          onConfirmSelectedEdition = onConfirmSelectedEdition,
           onShowMoreLocalEditions = { onShowMoreLocalEditions(group.groupId) },
           onToggleSecondaryEditions = { onToggleSecondaryEditions(group.groupId) },
           onLoadMoreRemoteEditions = { onLoadMoreEditions(group) },

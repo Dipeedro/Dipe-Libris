@@ -357,6 +357,7 @@ class SearchVisualPolishTest {
   }
 
   @Test
+  @Config(qualifiers = "w411dp-h891dp")
   fun closedEditorialCard_showsOnlyTitleAuthorYearGenreAndExpandButton() {
     val group =
       SearchWorkGroup(
@@ -566,7 +567,8 @@ class SearchVisualPolishTest {
       )
 
     var expandedGroupIds by mutableStateOf(emptySet<String>())
-    var selectedEditionId by mutableStateOf<String?>(null)
+    var highlightedEditionId by mutableStateOf<String?>(null)
+    var confirmedEditionId by mutableStateOf<String?>(null)
 
     composeTestRule.setContent {
       CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
@@ -577,7 +579,7 @@ class SearchVisualPolishTest {
                 query = "Duna",
                 hasSearched = true,
                 expandedGroupIds = expandedGroupIds,
-                selectedEditionId = selectedEditionId,
+                selectedEditionId = highlightedEditionId,
                 response =
                   HybridSearchResponse(
                     query = "Duna",
@@ -598,7 +600,11 @@ class SearchVisualPolishTest {
               expandedGroupIds = if (id in expandedGroupIds) expandedGroupIds - id else expandedGroupIds + id
             },
             onLoadMoreEditions = {},
-            onSelectEdition = { selectedEditionId = it.candidateId },
+            onToggleEditionSelection = { candidate ->
+              highlightedEditionId =
+                if (highlightedEditionId == candidate.candidateId) null else candidate.candidateId
+            },
+            onSelectEdition = { confirmedEditionId = it.candidateId },
             onOpenExistingBook = {},
             onDismissDuplicate = {},
             onDuplicateAddCopy = { _, _, _ -> },
@@ -645,48 +651,40 @@ class SearchVisualPolishTest {
       .onNode(hasText("Aleph") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
       .assertIsDisplayed()
     composeTestRule
-      .onNode(hasText("680") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
-      .assertIsDisplayed()
-    composeTestRule
-      .onNode(hasText("2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .onNode(
+        hasText("680 p. · 2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
       .assertIsDisplayed()
     val missingNodes =
       composeTestRule.onAllNodes(
         hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
         useUnmergedTree = true,
       )
-    assertEquals(3, missingNodes.fetchSemanticsNodes().size)
+    assertEquals(2, missingNodes.fetchSemanticsNodes().size)
 
-    // Tapping an edition tile triggers onSelectEdition and surfaces the refined selection indicator
+    // Tapping an edition tile surfaces refined selection indicator & confirm CTA before committing
     composeTestRule.onNodeWithTag("search_edition_select_0_2").performClick()
     composeTestRule.waitForIdle()
-    assertEquals("ed_3", selectedEditionId)
-    composeTestRule
-      .onNode(
-        androidx.compose.ui.test.hasContentDescription("Selected edition") and
-          hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
-        useUnmergedTree = true,
-      )
-      .assertIsDisplayed()
+    assertEquals("ed_3", highlightedEditionId)
+    assertEquals(null, confirmedEditionId)
+    composeTestRule.onNodeWithTag("search_edition_select_0_2_selected_badge", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_confirm_edition_button"))
+    composeTestRule.onNodeWithTag("search_confirm_edition_button").assertIsDisplayed()
 
     // Selecting another edition transfers the selection indicator cleanly
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
     composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
     composeTestRule.waitForIdle()
-    assertEquals("ed_1", selectedEditionId)
-    composeTestRule
-      .onNode(
-        androidx.compose.ui.test.hasContentDescription("Selected edition") and
-          hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
-        useUnmergedTree = true,
-      )
-      .assertIsDisplayed()
-    composeTestRule
-      .onNode(
-        androidx.compose.ui.test.hasContentDescription("Selected edition") and
-          hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
-        useUnmergedTree = true,
-      )
-      .assertDoesNotExist()
+    assertEquals("ed_1", highlightedEditionId)
+    assertEquals(null, confirmedEditionId)
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_selected_badge", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2_selected_badge", useUnmergedTree = true).assertDoesNotExist()
+
+    // Confirm CTA commits onSelectEdition with the highlighted edition
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_confirm_edition_button"))
+    composeTestRule.onNodeWithTag("search_confirm_edition_button").performClick()
+    assertEquals("ed_1", confirmedEditionId)
 
     // Row 1 (tiles 3..5): scroll into view, verify 3-column alignment
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_3"))

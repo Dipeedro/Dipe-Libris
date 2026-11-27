@@ -444,6 +444,11 @@ class BookSearchViewModel(
     const val EDITION_WINDOW_INCREMENT = 8
   }
 
+  fun toggleSelectedEdition(candidate: SearchEditionCandidate) {
+    selectedEditionId.value =
+      if (selectedEditionId.value == candidate.candidateId) null else candidate.candidateId
+  }
+
   fun selectEditionCandidate(
     candidate: SearchEditionCandidate,
     onReadyForReview: () -> Unit,

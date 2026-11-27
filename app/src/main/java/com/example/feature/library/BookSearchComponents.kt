@@ -56,6 +56,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -785,13 +786,16 @@ private fun SearchEditionGalleryTile(
     remember(edition.publisher, missingLabel) {
       edition.publisher?.trim()?.takeIf { it.isNotEmpty() } ?: missingLabel
     }
-  val yearText =
-    remember(edition.publicationYear, missingLabel) {
-      edition.publicationYear?.takeIf { it in 1400..2100 }?.toString() ?: missingLabel
-    }
-  val pagesText =
-    remember(edition.totalPages, missingLabel) {
-      edition.totalPages?.takeIf { it > 0 }?.toString() ?: missingLabel
+  val pagesValue = remember(edition.totalPages) { edition.totalPages?.takeIf { it > 0 } }
+  val yearValue = remember(edition.publicationYear) { edition.publicationYear?.takeIf { it in 1400..2100 } }
+  val secondaryMetaText =
+    remember(pagesValue, yearValue, missingLabel) {
+      when {
+        pagesValue != null && yearValue != null -> "$pagesValue p. · $yearValue"
+        pagesValue != null -> "$pagesValue p."
+        yearValue != null -> yearValue.toString()
+        else -> missingLabel
+      }
     }
   val selectLabel = stringResource(R.string.search_edition_select_action)
   val selectedCd = stringResource(R.string.cd_edition_selected)
@@ -868,7 +872,8 @@ private fun SearchEditionGalleryTile(
             Modifier.size(18.dp)
               .clip(CircleShape)
               .background(MaterialTheme.colorScheme.secondary)
-              .border(1.5.dp, MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape),
+              .border(1.5.dp, MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape)
+              .testTag("${testTag}_selected_badge"),
           contentAlignment = Alignment.Center,
         ) {
           Icon(
@@ -898,37 +903,16 @@ private fun SearchEditionGalleryTile(
         overflow = TextOverflow.Ellipsis,
       )
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
-        Text(
-          text = yearText,
-          style = metaSecondaryStyle,
-          color =
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(
-              alpha = if (yearText == missingLabel) 0.48f else 0.84f,
-            ),
-          maxLines = 1,
-          softWrap = false,
-        )
-        Text(
-          text = "·",
-          style = metaSecondaryStyle,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-        )
-        Text(
-          text = pagesText,
-          style = metaSecondaryStyle,
-          color =
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(
-              alpha = if (pagesText == missingLabel) 0.48f else 0.78f,
-            ),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
+      Text(
+        text = secondaryMetaText,
+        style = metaSecondaryStyle,
+        color =
+          MaterialTheme.colorScheme.onSurfaceVariant.copy(
+            alpha = if (secondaryMetaText == missingLabel) 0.48f else 0.82f,
+          ),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
     }
   }
 }
@@ -942,8 +926,10 @@ internal fun SearchWorkActionsFooterItem(
   canLoadMoreRemoteEditions: Boolean,
   isLoadingMore: Boolean,
   showCollapseAction: Boolean,
+  selectedEdition: SearchEditionCandidate?,
   shouldAnimateEntrance: Boolean,
   onEntranceFinished: () -> Unit,
+  onConfirmSelectedEdition: (SearchEditionCandidate) -> Unit,
   onShowMoreLocalEditions: () -> Unit,
   onToggleSecondaryEditions: () -> Unit,
   onLoadMoreRemoteEditions: () -> Unit,
@@ -987,6 +973,8 @@ internal fun SearchWorkActionsFooterItem(
       lineHeight = 16.sp,
       fontFeatureSettings = "tnum",
     )
+  val hasSecondaryControls =
+    remainingEditions > 0 || canLoadMoreRemoteEditions || secondaryEditionsCount > 0 || showCollapseAction
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1010,15 +998,68 @@ internal fun SearchWorkActionsFooterItem(
             alpha = p
             translationY = (1f - p) * glideOffsetPx
           }
-          .padding(start = 12.dp, end = 6.dp, bottom = 6.dp),
+          .padding(start = 12.dp, end = 6.dp, bottom = if (hasSecondaryControls) 6.dp else 10.dp),
     ) {
-      HairlineDivider(modifier = Modifier.padding(end = 6.dp, bottom = 4.dp))
+      HairlineDivider(modifier = Modifier.padding(end = 6.dp, bottom = if (selectedEdition != null) 10.dp else 4.dp))
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+      AnimatedVisibility(
+        visible = selectedEdition != null,
+        enter =
+          fadeIn(animationSpec = motion.standardTween(150)) +
+            expandVertically(animationSpec = motion.standardTween(160)),
+        exit =
+          fadeOut(animationSpec = motion.standardTween(110)) +
+            shrinkVertically(animationSpec = motion.standardTween(120)),
       ) {
+        selectedEdition?.let { edition ->
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(end = 6.dp, bottom = if (hasSecondaryControls) 8.dp else 0.dp),
+          ) {
+            Button(
+              onClick = { onConfirmSelectedEdition(edition) },
+              shape = CircleShape,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.secondary,
+                  contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+              contentPadding = PaddingValues(horizontal = 18.dp, vertical = 11.dp),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .heightIn(min = 48.dp)
+                  .testTag("search_confirm_edition_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.Check,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = stringResource(R.string.search_edition_select_action),
+                style =
+                  TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.5.sp,
+                    lineHeight = 18.sp,
+                  ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+        }
+      }
+
+      if (hasSecondaryControls) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
         Row(
           modifier = Modifier.weight(1f),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1170,6 +1211,7 @@ internal fun SearchWorkActionsFooterItem(
               modifier = Modifier.size(19.dp),
             )
           }
+        }
         }
       }
     }
