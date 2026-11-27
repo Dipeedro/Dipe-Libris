@@ -41,9 +41,15 @@ import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import com.example.feature.library.BookSearchScreen
 import com.example.feature.library.BookSearchUiState
+import com.example.feature.library.calculateBook3dProjection
 import com.example.feature.library.calculateBookThicknessSpec
 import com.example.feature.library.formatEditorialDisplayTitle
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -1487,18 +1493,19 @@ class SearchVisualPolishTest {
     val missingSpec = calculateBookThicknessSpec(null)
     val zeroSpec = calculateBookThicknessSpec(0)
     val negativeSpec = calculateBookThicknessSpec(-25)
-    assertEquals(8.2f, missingSpec.thicknessDp.value, 0.01f)
+    assertEquals(6.5f, missingSpec.thicknessDp.value, 0.01f)
+    assertEquals(0.5f, missingSpec.normalizedThickness, 0.01f)
     assertEquals(missingSpec.thicknessDp.value, zeroSpec.thicknessDp.value, 0.001f)
     assertEquals(missingSpec.thicknessDp.value, negativeSpec.thicknessDp.value, 0.001f)
 
     val minFloor = calculateBookThicknessSpec(20)
     val floorBoundary = calculateBookThicknessSpec(60)
-    assertEquals(4.5f, minFloor.thicknessDp.value, 0.01f)
+    assertEquals(3.5f, minFloor.thicknessDp.value, 0.01f)
     assertEquals(minFloor.thicknessDp.value, floorBoundary.thicknessDp.value, 0.001f)
 
     val maxCeiling = calculateBookThicknessSpec(1800)
     val ceilingBoundary = calculateBookThicknessSpec(950)
-    assertEquals(14.5f, maxCeiling.thicknessDp.value, 0.01f)
+    assertEquals(9.5f, maxCeiling.thicknessDp.value, 0.01f)
     assertEquals(maxCeiling.thicknessDp.value, ceilingBoundary.thicknessDp.value, 0.001f)
 
     val p80 = calculateBookThicknessSpec(80).thicknessDp.value
@@ -1756,5 +1763,156 @@ class SearchVisualPolishTest {
     composeTestRule.onNodeWithTag("search_work_expand_0").performClick()
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertDoesNotExist()
+  }
+
+  @Test
+  fun book3dProjection_coherentRigidBodyAcrossFullFlipArc() {
+    val widthPx = 280f
+    val heightPx = 420f
+    val thicknessPx = 24f // ~8.5% of width, realistic hardcover thickness
+    val cameraDistPx = 14f * 3f * 72f
+    val liftMaxPx = 7.5f
+    val cornerRadiusPx = 18f
+    val boardOverhangPx = 6.6f
+
+    val angles = listOf(0f, 30f, 60f, 80f, 90f, 100f, 120f, 150f, 180f)
+    val projections =
+      angles.map { deg ->
+        calculateBook3dProjection(
+          widthPx = widthPx,
+          heightPx = heightPx,
+          thicknessPx = thicknessPx,
+          flipProgress = deg / 180f,
+          pressProgress = 0f,
+          cameraDistPx = cameraDistPx,
+          liftOffsetMaxPx = liftMaxPx,
+          foreCornerRadiusPx = cornerRadiusPx,
+          boardOverhangPx = boardOverhangPx,
+          reduceMotion = false,
+        )
+      }
+
+    // Validate finite coordinates and continuous non-negative slab thickness at every angle
+    projections.forEachIndexed { idx, p ->
+      val deg = angles[idx]
+      assertFalse("NaN at $deg", p.slabFrontX.isNaN() || p.slabBackX.isNaN() || p.slabTopY.isNaN())
+      assertTrue("Negative slabWidth at $deg", p.slabWidthPx >= 0f)
+      assertTrue("Slab inverted vertically at $deg", p.slabBottomY > p.slabTopY)
+      assertTrue(
+        "Slab protrudes above cover fore-edge at $deg (${p.slabTopY} vs ${p.projectedEdgeTopY})",
+        p.slabTopY >= p.projectedEdgeTopY - 0.01f,
+      )
+      assertTrue(
+        "Slab protrudes below cover fore-edge at $deg (${p.slabBottomY} vs ${p.projectedEdgeBottomY})",
+        p.slabBottomY <= p.projectedEdgeBottomY + 0.01f,
+      )
+      assertTrue(
+        "Board rim protrudes above cover height at $deg",
+        p.boardOuterTopY >= p.projectedEdgeTopY - 0.01f && p.boardOuterBotY <= p.projectedEdgeBottomY + 0.01f,
+      )
+    }
+
+    // 0° & 180° rest poles: zero slab, zero horizontal offset, flat facing cover
+    val at0 = projections[0]
+    val at180 = projections.last()
+    assertFalse(at0.isSlabVisible)
+    assertEquals(0f, at0.frontRotationY, 0.001f)
+    assertEquals(0f, at0.frontTranslationX, 0.001f)
+    assertEquals(1f, at0.frontAlpha, 0.001f)
+    assertEquals(0f, at0.backAlpha, 0.001f)
+
+    assertFalse(at180.isSlabVisible)
+    assertEquals(0f, at180.backRotationY, 0.001f)
+    assertEquals(0f, at180.backTranslationX, 0.001f)
+    assertEquals(0f, at180.frontAlpha, 0.001f)
+    assertEquals(1f, at180.backAlpha, 0.001f)
+
+    // 0° < θ < 90° (30°, 60°, 80°): Front rotates negatively so fore-edge is closer (> spine),
+    // and slabFrontX aligns exactly with Front's projected right fore-edge
+    for (idx in 1..3) {
+      val deg = angles[idx]
+      val p = projections[idx]
+      val rad = deg * PI / 180.0
+      assertFalse(p.isShowingBack)
+      assertTrue(p.isSlabVisible)
+      assertEquals(-deg, p.frontRotationY, 0.001f)
+      assertTrue("Fore-edge must be closer than spine at $deg", p.foreEdgeScale > 1f && p.spineEdgeScale < 1f)
+      val expectedFrontRightEdge =
+        (widthPx * 0.5f) + (widthPx * 0.5f * p.combinedScale * cos(rad).toFloat()) * p.foreEdgeScale + p.frontTranslationX
+      assertEquals("Front/Slab seam mismatch at $deg", expectedFrontRightEdge, p.slabFrontX, 0.01f)
+      // At oblique angles, slabTopY respects 6dp corner curve clearance inside cover height
+      assertTrue("Insufficient corner clearance at $deg", p.slabTopY - p.projectedEdgeTopY >= boardOverhangPx)
+    }
+
+    // 90° crossover: centered slab == thickness * combinedScale, zero shadow jump, full-height board rims with overhanging boards
+    val at90 = projections[4]
+    assertEquals(0f, at90.absCos, 0.001f)
+    assertTrue(at90.isSlabVisible)
+    assertEquals(widthPx * 0.5f, (at90.slabFrontX + at90.slabBackX) * 0.5f, 0.01f)
+    assertEquals(thicknessPx * at90.combinedScale, at90.slabWidthPx, 0.05f)
+    assertEquals(0f, at90.frontShadowFactor, 0.001f)
+    assertEquals(0f, at90.backShadowFactor, 0.001f)
+    assertEquals(at90.projectedEdgeTopY, at90.boardOuterTopY, 0.01f)
+    assertEquals(at90.projectedEdgeBottomY, at90.boardOuterBotY, 0.01f)
+    assertTrue(at90.slabTopY - at90.projectedEdgeTopY >= boardOverhangPx * 0.9f)
+
+    // 90° < θ < 180° (100°, 120°, 150°): Verso rotates +180-deg so its left fore-edge is closer (> spine),
+    // and slabBackX aligns exactly with Verso's projected left fore-edge
+    for (idx in 5..7) {
+      val deg = angles[idx]
+      val p = projections[idx]
+      val backAngleRad = (180f - deg) * PI / 180.0
+      assertTrue(p.isShowingBack)
+      assertTrue(p.isSlabVisible)
+      assertEquals(180f - deg, p.backRotationY, 0.001f)
+      assertTrue("Fore-edge must remain closer than spine at $deg", p.foreEdgeScale > 1f && p.spineEdgeScale < 1f)
+      val expectedBackLeftEdge =
+        (widthPx * 0.5f) - (widthPx * 0.5f * p.combinedScale * cos(backAngleRad).toFloat()) * p.foreEdgeScale + p.backTranslationX
+      assertEquals("Verso/Slab seam mismatch at $deg", expectedBackLeftEdge, p.slabBackX, 0.01f)
+    }
+
+    // Symmetry check: slab width at 30° == slab width at 150°, 60° == 120°, 80° == 100° (modulo small lift ramp)
+    assertTrue(abs(projections[1].slabWidthPx - thicknessPx * sin(30.0 * PI / 180.0).toFloat() * projections[1].combinedScale) < 0.05f)
+    assertTrue(abs(projections[6].slabWidthPx - thicknessPx * sin(120.0 * PI / 180.0).toFloat() * projections[6].combinedScale) < 0.05f)
+  }
+
+  @Test
+  fun book3dProjection_handlesSquareAspectAndReduceMotionCleanly() {
+    val squareMid =
+      calculateBook3dProjection(
+        widthPx = 300f,
+        heightPx = 300f,
+        thicknessPx = 19.5f,
+        flipProgress = 0.5f,
+        pressProgress = 0f,
+        cameraDistPx = 14f * 3f * 72f,
+        liftOffsetMaxPx = 7.5f,
+        foreCornerRadiusPx = 18f,
+        boardOverhangPx = 6.6f,
+        reduceMotion = false,
+      )
+    assertTrue(squareMid.isSlabVisible)
+    assertEquals(150f, (squareMid.slabFrontX + squareMid.slabBackX) * 0.5f, 0.01f)
+    assertTrue(squareMid.slabTopY > squareMid.projectedEdgeTopY)
+    assertTrue(squareMid.slabBottomY < squareMid.projectedEdgeBottomY)
+
+    val reduced =
+      calculateBook3dProjection(
+        widthPx = 280f,
+        heightPx = 420f,
+        thicknessPx = 24f,
+        flipProgress = 0.5f,
+        pressProgress = 0f,
+        cameraDistPx = 14f * 3f * 72f,
+        liftOffsetMaxPx = 7.5f,
+        foreCornerRadiusPx = 18f,
+        boardOverhangPx = 6.6f,
+        reduceMotion = true,
+      )
+    assertFalse(reduced.isSlabVisible)
+    assertEquals(0f, reduced.frontRotationY, 0.001f)
+    assertEquals(0f, reduced.backRotationY, 0.001f)
+    assertEquals(0.5f, reduced.frontAlpha, 0.001f)
+    assertEquals(0.5f, reduced.backAlpha, 0.001f)
   }
 }
