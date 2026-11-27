@@ -11,14 +11,16 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -66,36 +69,49 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -103,6 +119,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -125,6 +142,9 @@ import com.example.core.model.SearchEditionCandidate
 import com.example.core.model.SearchWorkGroup
 import com.example.core.model.SourceQueryStatus
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private val GENRE_SEPARATOR_REGEX =
   Regex("""\s+(?:e|and|&|-)\s+|[,/;·|—]""", RegexOption.IGNORE_CASE)
@@ -221,10 +241,10 @@ internal fun SearchLocalMatchCard(
   val displayTitle = remember(book.title) { formatEditorialDisplayTitle(book.title) }
 
   EditorialSurfaceCard(
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)),
-    shape = MaterialTheme.shapes.medium,
-    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    border = null,
+    shape = RoundedCornerShape(DipeRadii.surface),
+    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     onClick = onClick,
     modifier = modifier.testTag(testTag),
   ) {
@@ -359,17 +379,9 @@ internal fun SearchWorkHeaderItem(
     )
   val bottomRadius by
     animateDpAsState(
-      targetValue = if (hasExpandedContentBelow) 0.dp else DipeRadii.control,
+      targetValue = if (hasExpandedContentBelow) 0.dp else DipeRadii.surface,
       animationSpec = motion.standardTween(160),
       label = "work_header_bottom_radius",
-    )
-  val expandBadgeBg by
-    animateColorAsState(
-      targetValue =
-        if (isExpanded) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f)
-        else MaterialTheme.colorScheme.surfaceContainerLow,
-      animationSpec = motion.standardTween(160),
-      label = "work_expand_badge_bg",
     )
   val expandChevronTint by
     animateColorAsState(
@@ -382,43 +394,30 @@ internal fun SearchWorkHeaderItem(
 
   val headerShape =
     RoundedCornerShape(
-      topStart = DipeRadii.control,
-      topEnd = DipeRadii.control,
+      topStart = DipeRadii.surface,
+      topEnd = DipeRadii.surface,
       bottomStart = bottomRadius,
       bottomEnd = bottomRadius,
     )
-  val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
   val expandLabel =
     stringResource(if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section)
 
   Surface(
-    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = headerShape,
-    border = if (hasExpandedContentBelow) null else BorderStroke(0.75.dp, borderColor),
+    border = null,
     shadowElevation = 0.dp,
     modifier =
       modifier
         .fillMaxWidth()
         .padding(top = 10.dp)
+        .clip(headerShape)
         .testTag("search_work_card_$groupIndex"),
   ) {
     BoxWithConstraints(
       modifier =
         Modifier.fillMaxWidth()
           .clip(headerShape)
-          .then(
-            if (hasExpandedContentBelow) {
-              Modifier.drawBehind {
-                drawExpandedCardHeaderBorders(
-                  color = borderColor,
-                  strokeWidthPx = 0.75.dp.toPx(),
-                  cornerRadiusPx = DipeRadii.control.toPx(),
-                )
-              }
-            } else {
-              Modifier
-            }
-          )
           .clickable(onClick = onToggleExpand),
     ) {
       val coverSlotWidth =
@@ -429,212 +428,139 @@ internal fun SearchWorkHeaderItem(
         }
       val maxCoverHeight = coverSlotWidth * 1.50f
 
-      Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.Top,
+      ) {
+        Box(
           modifier =
-            Modifier.fillMaxWidth()
-              .height(IntrinsicSize.Min)
-              .padding(horizontal = 14.dp, vertical = 12.dp),
-          horizontalArrangement = Arrangement.spacedBy(14.dp),
-          verticalAlignment = Alignment.Top,
+            Modifier.width(coverSlotWidth)
+              .heightIn(max = maxCoverHeight)
+              .testTag("search_work_cover_$groupIndex"),
+          contentAlignment = Alignment.TopCenter,
         ) {
-          Box(
-            modifier =
-              Modifier.width(coverSlotWidth)
-                .heightIn(max = maxCoverHeight)
-                .testTag("search_work_cover_$groupIndex"),
-            contentAlignment = Alignment.TopCenter,
-          ) {
-            BookCoverArtwork(
-              title = group.canonicalTitle,
-              author = closedAuthorText,
-              isFavorite = false,
-              coverUri = cardCovers.firstOrNull(),
-              fallbackCoverUris = cardCovers.drop(1),
-              compact = false,
-              elevated = true,
-              shadowElevation = 3.dp,
-              widthHintDp = coverSlotWidth,
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.widthIn(max = coverSlotWidth).heightIn(max = maxCoverHeight),
-            )
-          }
+          BookCoverArtwork(
+            title = group.canonicalTitle,
+            author = closedAuthorText,
+            isFavorite = false,
+            coverUri = cardCovers.firstOrNull(),
+            fallbackCoverUris = cardCovers.drop(1),
+            compact = false,
+            elevated = true,
+            shadowElevation = 3.dp,
+            widthHintDp = coverSlotWidth,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.widthIn(max = coverSlotWidth).heightIn(max = maxCoverHeight),
+          )
+        }
 
-          Column(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-          ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+          modifier = Modifier.weight(1f).fillMaxHeight(),
+          verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = displayTitle,
+              style =
+                TextStyle(
+                  fontFamily = displayFontFamily,
+                  fontWeight = FontWeight.Medium,
+                  fontSize = 17.sp,
+                  lineHeight = 22.sp,
+                  letterSpacing = (-0.15).sp,
+                ),
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis,
+            )
+
+            if (closedAuthorText.isNotBlank()) {
+              Spacer(modifier = Modifier.height(3.dp))
               Text(
-                text = displayTitle,
+                text = closedAuthorText,
                 style =
                   TextStyle(
-                    fontFamily = displayFontFamily,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
-                    letterSpacing = (-0.15).sp,
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 13.sp,
+                    lineHeight = 17.5.sp,
                   ),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 3,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
               )
-
-              if (closedAuthorText.isNotBlank()) {
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                  text = closedAuthorText,
-                  style =
-                    TextStyle(
-                      fontFamily = InterFontFamily,
-                      fontWeight = FontWeight.Normal,
-                      fontSize = 13.sp,
-                      lineHeight = 17.5.sp,
-                    ),
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  maxLines = 2,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-
-              if (releaseYear != null || primaryGenreLabel != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  if (releaseYear != null) {
-                    Text(
-                      text = releaseYear.toString(),
-                      style = closedMetaStyle,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                      maxLines = 1,
-                      softWrap = false,
-                    )
-                  }
-                  if (releaseYear != null && primaryGenreLabel != null) {
-                    Text(
-                      text = "·",
-                      style = closedMetaStyle,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                    )
-                  }
-                  if (primaryGenreLabel != null) {
-                    Text(
-                      text = primaryGenreLabel,
-                      style = closedMetaStyle,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                      modifier = Modifier.weight(1f, fill = false),
-                    )
-                  }
-                }
-              }
             }
 
-            Row(
-              modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-              horizontalArrangement = Arrangement.End,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Box(
-                modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .clickable(
-                      role = Role.Button,
-                      onClickLabel = expandLabel,
-                      onClick = onToggleExpand,
-                    )
-                    .testTag("search_work_expand_$groupIndex"),
-                contentAlignment = Alignment.Center,
+            if (releaseYear != null || primaryGenreLabel != null) {
+              Spacer(modifier = Modifier.height(8.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
-                Box(
-                  modifier =
-                    Modifier.size(28.dp)
-                      .clip(CircleShape)
-                      .background(expandBadgeBg),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Icon(
-                    imageVector = Icons.Outlined.ExpandMore,
-                    contentDescription = expandLabel,
-                    tint = expandChevronTint,
-                    modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
+                if (releaseYear != null) {
+                  Text(
+                    text = releaseYear.toString(),
+                    style = closedMetaStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                    maxLines = 1,
+                    softWrap = false,
+                  )
+                }
+                if (releaseYear != null && primaryGenreLabel != null) {
+                  Text(
+                    text = "·",
+                    style = closedMetaStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                  )
+                }
+                if (primaryGenreLabel != null) {
+                  Text(
+                    text = primaryGenreLabel,
+                    style = closedMetaStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                   )
                 }
               }
             }
           }
-        }
 
-        if (hasExpandedContentBelow) {
-          HairlineDivider(
-            modifier = Modifier.fillMaxWidth(),
-          )
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .size(48.dp)
+                  .clip(CircleShape)
+                  .clickable(
+                    role = Role.Button,
+                    onClickLabel = expandLabel,
+                    onClick = onToggleExpand,
+                  )
+                  .testTag("search_work_expand_$groupIndex"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.ExpandMore,
+                contentDescription = expandLabel,
+                tint = expandChevronTint,
+                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = chevronRotation },
+              )
+            }
+          }
         }
       }
     }
-  }
-}
-
-private fun DrawScope.drawExpandedCardHeaderBorders(
-  color: Color,
-  strokeWidthPx: Float,
-  cornerRadiusPx: Float,
-) {
-  val halfStroke = strokeWidthPx * 0.5f
-  val rightX = size.width - halfStroke
-  val r = cornerRadiusPx.coerceAtMost(size.width * 0.5f).coerceAtMost(size.height)
-  val path =
-    Path().apply {
-      moveTo(halfStroke, size.height)
-      lineTo(halfStroke, halfStroke + r)
-      quadraticTo(halfStroke, halfStroke, halfStroke + r, halfStroke)
-      lineTo(rightX - r, halfStroke)
-      quadraticTo(rightX, halfStroke, rightX, halfStroke + r)
-      lineTo(rightX, size.height)
-    }
-  drawPath(path = path, color = color, style = Stroke(width = strokeWidthPx))
-}
-
-private fun DrawScope.drawExpandedCardSegmentBorders(
-  color: Color,
-  strokeWidthPx: Float,
-  roundBottom: Boolean,
-  cornerRadiusPx: Float,
-) {
-  val halfStroke = strokeWidthPx * 0.5f
-  val rightX = size.width - halfStroke
-  if (!roundBottom) {
-    drawLine(
-      color = color,
-      start = Offset(halfStroke, 0f),
-      end = Offset(halfStroke, size.height),
-      strokeWidth = strokeWidthPx,
-    )
-    drawLine(
-      color = color,
-      start = Offset(rightX, 0f),
-      end = Offset(rightX, size.height),
-      strokeWidth = strokeWidthPx,
-    )
-  } else {
-    val bottomY = size.height - halfStroke
-    val r = cornerRadiusPx.coerceAtMost(size.width * 0.5f).coerceAtMost(size.height)
-    val path =
-      Path().apply {
-        moveTo(halfStroke, 0f)
-        lineTo(halfStroke, bottomY - r)
-        quadraticTo(halfStroke, bottomY, halfStroke + r, bottomY)
-        lineTo(rightX - r, bottomY)
-        quadraticTo(rightX, bottomY, rightX, bottomY - r)
-        lineTo(rightX, 0f)
-      }
-    drawPath(path = path, color = color, style = Stroke(width = strokeWidthPx))
   }
 }
 
@@ -678,46 +604,35 @@ internal fun SearchEditionGalleryRowItem(
       RoundedCornerShape(
         topStart = 0.dp,
         topEnd = 0.dp,
-        bottomStart = DipeRadii.control,
-        bottomEnd = DipeRadii.control,
+        bottomStart = DipeRadii.surface,
+        bottomEnd = DipeRadii.surface,
       )
     } else {
       RectangleShape
     }
-  val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = itemShape,
     shadowElevation = 0.dp,
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .graphicsLayer {
-          val p = if (reduceMotion) 1f else revealProgress.value
-          alpha = p
-          translationY = (1f - p) * glidePx
-        },
+    modifier = modifier.fillMaxWidth().clip(itemShape),
   ) {
     Row(
       modifier =
         Modifier.fillMaxWidth()
-          .drawBehind {
-            drawExpandedCardSegmentBorders(
-              color = borderColor,
-              strokeWidthPx = 0.75.dp.toPx(),
-              roundBottom = isLastItemInGroup,
-              cornerRadiusPx = DipeRadii.control.toPx(),
-            )
+          .graphicsLayer {
+            val p = if (reduceMotion) 1f else revealProgress.value
+            alpha = p
+            translationY = (1f - p) * glidePx
           }
           .padding(
-            start = 8.dp,
-            end = 8.dp,
-            top = if (isFirstGalleryRow) 10.dp else 4.dp,
-            bottom = if (isLastItemInGroup) 10.dp else 4.dp,
+            start = 14.dp,
+            end = 14.dp,
+            top = if (isFirstGalleryRow) 4.dp else 6.dp,
+            bottom = if (isLastItemInGroup) 14.dp else 6.dp,
           ),
-      horizontalArrangement = Arrangement.spacedBy(4.dp),
-      verticalAlignment = Alignment.Top,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.Bottom,
     ) {
       for (colIdx in 0 until columnsCount) {
         val edition = editions.getOrNull(colIdx)
@@ -738,6 +653,15 @@ internal fun SearchEditionGalleryRowItem(
   }
 }
 
+private val EditionFrontShape =
+  RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
+private val EditionBackShape =
+  RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 2.dp, bottomEnd = 2.dp)
+private val EditionCoverShadowColor = Color(0xFF211A14)
+private const val HOLD_TO_FLIP_MS = 210L
+private const val FLIP_REVEAL_DURATION_MS = 400
+private const val FLIP_RETURN_MAX_DURATION_MS = 260
+
 @Composable
 private fun SearchEditionGalleryTile(
   edition: SearchEditionCandidate,
@@ -748,124 +672,315 @@ private fun SearchEditionGalleryTile(
 ) {
   val motion = DipeTheme.motion
   val reduceMotion = motion.reduceMotion
-  val interactionSource = remember { MutableInteractionSource() }
-  val isPressed by interactionSource.collectIsPressedAsState()
+  val density = LocalDensity.current
+  val hapticFeedback = LocalHapticFeedback.current
+  val viewConfiguration = LocalViewConfiguration.current
+  val windowInfo = LocalWindowInfo.current
+  val interactionSource = remember(edition.candidateId) { MutableInteractionSource() }
+  val currentOnClick by rememberUpdatedState(onClick)
 
-  val pressScale by
-    animateFloatAsState(
-      targetValue = if (isPressed && !reduceMotion) 0.975f else 1f,
-      animationSpec = motion.standardTween(90),
-      label = "edition_tile_press_scale",
-    )
-  val tileBackground by
-    animateColorAsState(
-      targetValue =
-        when {
-          isSelected -> MaterialTheme.colorScheme.surfaceContainerLowest
-          isPressed -> MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.65f)
-          else -> Color.Transparent
-        },
-      animationSpec = motion.standardTween(150),
-      label = "edition_tile_bg",
-    )
-  val tileBorderColor by
-    animateColorAsState(
-      targetValue =
-        if (isSelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f)
-        else Color.Transparent,
-      animationSpec = motion.standardTween(150),
-      label = "edition_tile_border",
-    )
+  var isPressed by remember(edition.candidateId) { mutableStateOf(false) }
+  var isHoldingFlip by remember(edition.candidateId) { mutableStateOf(false) }
+  var accessibilityInspected by remember(edition.candidateId) { mutableStateOf(false) }
+  var hasFiredHapticForCurrentFlip by remember(edition.candidateId) { mutableStateOf(false) }
+  var measuredCoverSize by remember(edition.candidateId) { mutableStateOf(IntSize.Zero) }
+  val flipProgress = remember(edition.candidateId) { Animatable(0f) }
+
+  DisposableEffect(edition.candidateId) {
+    onDispose {
+      isPressed = false
+      isHoldingFlip = false
+      accessibilityInspected = false
+      hasFiredHapticForCurrentFlip = false
+    }
+  }
+
+  LaunchedEffect(windowInfo.isWindowFocused) {
+    if (!windowInfo.isWindowFocused) {
+      isPressed = false
+      isHoldingFlip = false
+    }
+  }
+
+  val targetFlipped = isHoldingFlip || accessibilityInspected
+  LaunchedEffect(targetFlipped, reduceMotion, edition.candidateId) {
+    if (targetFlipped) {
+      flipProgress.animateTo(
+        targetValue = 1f,
+        animationSpec =
+          tween(
+            durationMillis = if (reduceMotion) 150 else FLIP_REVEAL_DURATION_MS,
+            easing = FastOutSlowInEasing,
+          ),
+      )
+      if (isHoldingFlip && !hasFiredHapticForCurrentFlip && flipProgress.value >= 0.96f) {
+        hasFiredHapticForCurrentFlip = true
+        runCatching { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress) }
+      }
+    } else {
+      hasFiredHapticForCurrentFlip = false
+      if (flipProgress.value > 0f) {
+        val returnMs =
+          if (reduceMotion) {
+            130
+          } else {
+            (FLIP_RETURN_MAX_DURATION_MS * flipProgress.value)
+              .roundToInt()
+              .coerceIn(110, FLIP_RETURN_MAX_DURATION_MS)
+          }
+        flipProgress.animateTo(
+          targetValue = 0f,
+          animationSpec = tween(durationMillis = returnMs, easing = FastOutSlowInEasing),
+        )
+      }
+    }
+  }
 
   val compactEditionCovers =
     remember(edition.candidateId, edition.orderedCoverUrls) {
-      CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 104)
+      CoverRanker.selectForDisplaySize(edition.orderedCoverUrls, maxWidthDp = 120)
     }
-  val missingLabel = stringResource(R.string.search_metadata_missing_placeholder)
   val publisherText =
-    remember(edition.publisher, missingLabel) {
-      edition.publisher?.trim()?.takeIf { it.isNotEmpty() } ?: missingLabel
-    }
+    remember(edition.publisher) { edition.publisher?.trim()?.takeIf { it.isNotEmpty() } }
+  val yearValue =
+    remember(edition.publicationYear) { edition.publicationYear?.takeIf { it in 1400..2100 } }
   val pagesValue = remember(edition.totalPages) { edition.totalPages?.takeIf { it > 0 } }
-  val yearValue = remember(edition.publicationYear) { edition.publicationYear?.takeIf { it in 1400..2100 } }
-  val secondaryMetaText =
-    remember(pagesValue, yearValue, missingLabel) {
-      when {
-        pagesValue != null && yearValue != null -> "$pagesValue p. · $yearValue"
-        pagesValue != null -> "$pagesValue p."
-        yearValue != null -> yearValue.toString()
-        else -> missingLabel
-      }
-    }
+  val pagesText = pagesValue?.let { stringResource(R.string.search_edition_pages_value, it) }
+
   val selectLabel = stringResource(R.string.search_edition_select_action)
   val selectedCd = stringResource(R.string.cd_edition_selected)
+  val inspectDetailsLabel = stringResource(R.string.cd_inspect_edition_details)
+  val hideDetailsLabel = stringResource(R.string.cd_hide_edition_details)
+  val coverCd = stringResource(R.string.cd_book_cover, edition.workTitle)
+  val versoSummaryParts =
+    remember(publisherText, yearValue, pagesText) {
+      listOfNotNull(publisherText, yearValue?.toString(), pagesText)
+    }
+  val versoCd =
+    if (versoSummaryParts.isNotEmpty()) {
+      stringResource(R.string.cd_edition_verso_details, versoSummaryParts.joinToString(", "))
+    } else {
+      stringResource(R.string.cd_edition_verso_no_details)
+    }
 
-  val publisherStyle =
-    TextStyle(
-      fontFamily = InterFontFamily,
-      fontWeight = FontWeight.Medium,
-      fontSize = 11.5.sp,
-      lineHeight = 14.5.sp,
+  val flipFraction = flipProgress.value.coerceIn(0f, 1f)
+  val angle = if (reduceMotion) 0f else flipFraction * 180f
+  val isShowingBack = if (reduceMotion) flipFraction >= 0.5f else angle > 90f
+  val angleRad = (angle * PI / 180.0).toFloat()
+  val edgeTurnFactor = if (reduceMotion) 0f else sin(angleRad).coerceIn(0f, 1f)
+
+  val targetCompressionScale =
+    when {
+      reduceMotion -> 1f
+      isHoldingFlip -> 0.985f
+      isPressed -> 0.968f
+      else -> 1f
+    }
+  val animatedCompressionScale by
+    animateFloatAsState(
+      targetValue = targetCompressionScale,
+      animationSpec = tween(durationMillis = 85, easing = FastOutSlowInEasing),
+      label = "edition_tile_compression_scale",
     )
-  val metaSecondaryStyle =
-    TextStyle(
-      fontFamily = InterFontFamily,
-      fontWeight = FontWeight.Normal,
-      fontSize = 10.5.sp,
-      lineHeight = 14.sp,
-      fontFeatureSettings = "tnum",
+  val turnLiftScale = if (reduceMotion) 1f else 1f + (0.024f * edgeTurnFactor)
+  val combinedScale = animatedCompressionScale * turnLiftScale
+
+  val restShadow = if (isSelected) 4.dp else 2.5.dp
+  val targetShadowElevation =
+    when {
+      isHoldingFlip -> 3.5.dp + (2.5.dp * edgeTurnFactor)
+      isPressed -> 1.5.dp
+      else -> restShadow
+    }
+  val animatedShadowElevation by
+    animateDpAsState(
+      targetValue = targetShadowElevation,
+      animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
+      label = "edition_tile_shadow_elevation",
     )
 
-  val tileShape = RoundedCornerShape(8.dp)
+  val cameraDist = remember(density) { 14f * density.density }
+  val selectedBorderColor by
+    animateColorAsState(
+      targetValue =
+        if (isSelected) MaterialTheme.colorScheme.secondary
+        else Color.Transparent,
+      animationSpec = motion.standardTween(150),
+      label = "edition_selected_ring",
+    )
+  val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.25f
+  val versoBackground =
+    if (isDarkTheme) MaterialTheme.colorScheme.surfaceContainer
+    else MaterialTheme.colorScheme.surfaceContainerLowest
+  val versoBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
 
-  Column(
+  Box(
     modifier =
       modifier
-        .graphicsLayer {
-          scaleX = pressScale
-          scaleY = pressScale
-        }
-        .clip(tileShape)
-        .background(tileBackground, tileShape)
-        .then(
-          if (isSelected) {
-            Modifier.border(1.dp, tileBorderColor, tileShape)
-          } else {
-            Modifier
+        .fillMaxWidth()
+        .aspectRatio(2f / 3f)
+        .minimumInteractiveComponentSize()
+        .semantics {
+          role = Role.Button
+          contentDescription = if (isShowingBack) versoCd else coverCd
+          onClick(label = selectLabel) {
+            if (accessibilityInspected) {
+              accessibilityInspected = false
+            } else {
+              currentOnClick()
+            }
+            true
           }
-        )
-        .clickable(
-          interactionSource = interactionSource,
-          indication = androidx.compose.material3.ripple(),
-          onClickLabel = selectLabel,
-          onClick = onClick,
-        )
-        .padding(6.dp)
-        .testTag(testTag),
-    verticalArrangement = Arrangement.spacedBy(6.dp),
-  ) {
-    Box(
-      modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-      contentAlignment = Alignment.BottomCenter,
-    ) {
-      BookCoverArtwork(
-        title = edition.workTitle,
-        author = edition.primaryAuthorsText,
-        isFavorite = false,
-        coverUri = compactEditionCovers.firstOrNull(),
-        fallbackCoverUris = compactEditionCovers.drop(1),
-        compact = true,
-        elevated = true,
-        shadowElevation = if (isSelected) 4.dp else 2.dp,
-        widthHintDp = 104.dp,
-        contentScale = ContentScale.Fit,
-      )
+          customActions =
+            listOf(
+              CustomAccessibilityAction(
+                label = if (accessibilityInspected) hideDetailsLabel else inspectDetailsLabel,
+              ) {
+                accessibilityInspected = !accessibilityInspected
+                true
+              }
+            )
+        }
+        .pointerInput(edition.candidateId) {
+          val touchSlop = viewConfiguration.touchSlop
+          awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val pointerId = down.id
+            val downPos = down.position
+            val pressInteraction = PressInteraction.Press(downPos)
+            interactionSource.tryEmit(pressInteraction)
+            isPressed = true
 
-      androidx.compose.animation.AnimatedVisibility(
-        visible = isSelected,
+            var phase1Cancelled = false
+            var releasedBeforeHold = false
+            withTimeoutOrNull(HOLD_TO_FLIP_MS) {
+              while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                val change = event.changes.firstOrNull { it.id == pointerId }
+                if (change == null || change.isConsumed) {
+                  phase1Cancelled = true
+                  break
+                }
+                if (!change.pressed) {
+                  releasedBeforeHold = true
+                  break
+                }
+                if ((change.position - downPos).getDistance() > touchSlop) {
+                  phase1Cancelled = true
+                  break
+                }
+              }
+            }
+
+            if (releasedBeforeHold) {
+              isPressed = false
+              interactionSource.tryEmit(PressInteraction.Release(pressInteraction))
+              if (accessibilityInspected) {
+                accessibilityInspected = false
+              } else {
+                currentOnClick()
+              }
+              return@awaitEachGesture
+            }
+
+            if (phase1Cancelled) {
+              isPressed = false
+              interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+              return@awaitEachGesture
+            }
+
+            interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+            accessibilityInspected = false
+            isHoldingFlip = true
+            try {
+              while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                val change = event.changes.firstOrNull { it.id == pointerId }
+                if (change == null || !change.pressed || change.isConsumed) {
+                  break
+                }
+                if ((change.position - downPos).getDistance() > touchSlop * 2f) {
+                  break
+                }
+              }
+            } finally {
+              isHoldingFlip = false
+              isPressed = false
+            }
+          }
+        }
+        .testTag(testTag),
+    contentAlignment = Alignment.BottomCenter,
+  ) {
+    // Front Cover Face (kept mounted during flip to prevent Coil image reload/flicker)
+    Box(
+      modifier =
+        Modifier.graphicsLayer {
+          scaleX = combinedScale
+          scaleY = combinedScale
+          rotationY = angle
+          cameraDistance = cameraDist
+          alpha =
+            when {
+              reduceMotion -> 1f - flipFraction
+              isShowingBack -> 0f
+              else -> 1f
+            }
+        }
+          .shadow(
+            elevation = if (isShowingBack) 0.dp else animatedShadowElevation,
+            shape = EditionFrontShape,
+            clip = false,
+            ambientColor = EditionCoverShadowColor.copy(alpha = 0.18f),
+            spotColor = EditionCoverShadowColor.copy(alpha = 0.28f),
+          ),
+      contentAlignment = Alignment.Center,
+    ) {
+      Box(
+        modifier =
+          Modifier.onSizeChanged { measuredCoverSize = it }
+            .clip(EditionFrontShape)
+            .indication(interactionSource, ripple(bounded = true))
+            .then(
+              if (isSelected) {
+                Modifier.border(1.5.dp, selectedBorderColor, EditionFrontShape)
+              } else {
+                Modifier
+              }
+            ),
+      ) {
+        BookCoverArtwork(
+          title = edition.workTitle,
+          author = edition.primaryAuthorsText,
+          isFavorite = false,
+          coverUri = compactEditionCovers.firstOrNull(),
+          fallbackCoverUris = compactEditionCovers.drop(1),
+          compact = true,
+          elevated = false,
+          widthHintDp = 120.dp,
+          contentScale = ContentScale.Fit,
+          shape = EditionFrontShape,
+        )
+
+        if (edgeTurnFactor > 0.005f) {
+          Box(
+            modifier =
+              Modifier.matchParentSize()
+                .background(
+                  Brush.horizontalGradient(
+                    0.0f to Color.Black.copy(alpha = 0.05f * edgeTurnFactor),
+                    1.0f to Color.Black.copy(alpha = 0.24f * edgeTurnFactor),
+                  )
+                )
+          )
+        }
+      }
+
+      AnimatedVisibility(
+        visible = isSelected && !isShowingBack,
         enter = fadeIn(animationSpec = motion.standardTween(140)),
         exit = fadeOut(animationSpec = motion.standardTween(100)),
-        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+        modifier = Modifier.align(Alignment.TopEnd).padding(5.dp),
       ) {
         Box(
           modifier =
@@ -886,33 +1001,157 @@ private fun SearchEditionGalleryTile(
       }
     }
 
-    Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 1.dp),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      Text(
-        text = publisherText,
-        style = publisherStyle,
-        color =
-          when {
-            publisherText == missingLabel -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f)
-            isSelected -> MaterialTheme.colorScheme.onSurface
-            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
-          },
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
+    // Back Face ("Verso") — mounted only while turned/revealed so resting tiles remain pure covers
+    if (isShowingBack) {
+      val backWidthDp =
+        if (measuredCoverSize.width > 0) with(density) { measuredCoverSize.width.toDp() }
+        else Dp.Unspecified
+      val backHeightDp =
+        if (measuredCoverSize.height > 0 && measuredCoverSize.width > 0) {
+          val minReadablePx = (measuredCoverSize.width * 1.15f).roundToInt()
+          with(density) { maxOf(measuredCoverSize.height, minReadablePx).toDp() }
+        } else {
+          Dp.Unspecified
+        }
+      val backSizeModifier =
+        if (backWidthDp != Dp.Unspecified && backHeightDp != Dp.Unspecified) {
+          Modifier.width(backWidthDp).height(backHeightDp)
+        } else {
+          Modifier.fillMaxSize()
+        }
 
-      Text(
-        text = secondaryMetaText,
-        style = metaSecondaryStyle,
-        color =
-          MaterialTheme.colorScheme.onSurfaceVariant.copy(
-            alpha = if (secondaryMetaText == missingLabel) 0.48f else 0.82f,
-          ),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
+      Surface(
+        color = versoBackground,
+        shape = EditionBackShape,
+        shadowElevation = 0.dp,
+        modifier =
+          backSizeModifier
+            .graphicsLayer {
+              scaleX = combinedScale
+              scaleY = combinedScale
+              rotationY = if (reduceMotion) 0f else angle - 180f
+              cameraDistance = cameraDist
+              alpha = if (reduceMotion) flipFraction else 1f
+            }
+            .shadow(
+              elevation = animatedShadowElevation,
+              shape = EditionBackShape,
+              clip = false,
+              ambientColor = EditionCoverShadowColor.copy(alpha = 0.18f),
+              spotColor = EditionCoverShadowColor.copy(alpha = 0.28f),
+            )
+            .clip(EditionBackShape)
+            .border(0.5.dp, versoBorderColor, EditionBackShape)
+            .testTag("${testTag}_back_face"),
+      ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+          Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+          ) {
+            if (publisherText != null) {
+              Text(
+                text = publisherText,
+                style =
+                  TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.5.sp,
+                    lineHeight = 14.sp,
+                  ),
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+
+            if (publisherText != null && (yearValue != null || pagesText != null)) {
+              Spacer(modifier = Modifier.height(6.dp))
+              Box(
+                modifier =
+                  Modifier.width(18.dp)
+                    .height(0.75.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
+              )
+              Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            if (yearValue != null) {
+              Text(
+                text = yearValue.toString(),
+                style =
+                  TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.5.sp,
+                    lineHeight = 14.5.sp,
+                    fontFeatureSettings = "tnum",
+                  ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+              )
+            }
+
+            if (pagesText != null) {
+              if (yearValue != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+              }
+              Text(
+                text = pagesText,
+                style =
+                  TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    fontFeatureSettings = "tnum",
+                  ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+              )
+            }
+
+            if (publisherText == null && yearValue == null && pagesText == null) {
+              Box(
+                modifier =
+                  Modifier.width(16.dp)
+                    .height(0.75.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+              )
+            }
+          }
+
+          // Subtle spine-crease lighting along right edge of physical back cover
+          Box(
+            modifier =
+              Modifier.fillMaxSize()
+                .background(
+                  Brush.horizontalGradient(
+                    0.90f to Color.Transparent,
+                    0.95f to Color.White.copy(alpha = if (isDarkTheme) 0.04f else 0.16f),
+                    1.0f to Color.Black.copy(alpha = if (isDarkTheme) 0.22f else 0.08f),
+                  )
+                )
+          )
+
+          if (edgeTurnFactor > 0.005f) {
+            Box(
+              modifier =
+                Modifier.fillMaxSize()
+                  .background(
+                    Brush.horizontalGradient(
+                      0.0f to Color.Black.copy(alpha = 0.18f * edgeTurnFactor),
+                      1.0f to Color.Black.copy(alpha = 0.04f * edgeTurnFactor),
+                    )
+                  )
+            )
+          }
+        }
+      }
     }
   }
 }
@@ -961,10 +1200,9 @@ internal fun SearchWorkActionsFooterItem(
     RoundedCornerShape(
       topStart = 0.dp,
       topEnd = 0.dp,
-      bottomStart = DipeRadii.control,
-      bottomEnd = DipeRadii.control,
+      bottomStart = DipeRadii.surface,
+      bottomEnd = DipeRadii.surface,
     )
-  val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
   val actionPillTextStyle =
     TextStyle(
       fontFamily = InterFontFamily,
@@ -980,28 +1218,23 @@ internal fun SearchWorkActionsFooterItem(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = footerShape,
     shadowElevation = 0.dp,
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier.fillMaxWidth().clip(footerShape),
   ) {
     Column(
       modifier =
         Modifier.fillMaxWidth()
-          .drawBehind {
-            drawExpandedCardSegmentBorders(
-              color = borderColor,
-              strokeWidthPx = 0.75.dp.toPx(),
-              roundBottom = true,
-              cornerRadiusPx = DipeRadii.control.toPx(),
-            )
-          }
           .graphicsLayer {
             val p = if (reduceMotion) 1f else revealProgress.value
             alpha = p
             translationY = (1f - p) * glideOffsetPx
           }
-          .padding(start = 12.dp, end = 6.dp, bottom = if (hasSecondaryControls) 6.dp else 10.dp),
+          .padding(
+            start = 14.dp,
+            end = 10.dp,
+            top = 4.dp,
+            bottom = if (hasSecondaryControls) 8.dp else 12.dp,
+          ),
     ) {
-      HairlineDivider(modifier = Modifier.padding(end = 6.dp, bottom = if (selectedEdition != null) 10.dp else 4.dp))
-
       AnimatedVisibility(
         visible = selectedEdition != null,
         enter =
@@ -1015,7 +1248,7 @@ internal fun SearchWorkActionsFooterItem(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .padding(end = 6.dp, bottom = if (hasSecondaryControls) 8.dp else 0.dp),
+                .padding(end = 4.dp, bottom = if (hasSecondaryControls) 8.dp else 0.dp),
           ) {
             Button(
               onClick = { onConfirmSelectedEdition(edition) },
@@ -1060,158 +1293,158 @@ internal fun SearchWorkActionsFooterItem(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-        Row(
-          modifier = Modifier.weight(1f),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          if (remainingEditions > 0) {
-            val showMoreDesc =
-              stringResource(R.string.search_edition_show_more_local, remainingEditions)
-            Surface(
-              onClick = onShowMoreLocalEditions,
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
-              contentColor = MaterialTheme.colorScheme.onSurface,
-              modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .semantics { contentDescription = showMoreDesc }
-                  .testTag("search_edition_show_more_$groupIndex"),
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+          Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            if (remainingEditions > 0) {
+              val showMoreDesc =
+                stringResource(R.string.search_edition_show_more_local, remainingEditions)
+              Surface(
+                onClick = onShowMoreLocalEditions,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .semantics { contentDescription = showMoreDesc }
+                    .testTag("search_edition_show_more_$groupIndex"),
               ) {
-                Icon(
-                  imageVector = Icons.Outlined.Add,
-                  contentDescription = null,
-                  modifier = Modifier.size(15.dp),
-                )
-                Text(
-                  text = stringResource(R.string.search_edition_more_local_short, remainingEditions),
-                  style = actionPillTextStyle,
-                  maxLines = 1,
-                )
-              }
-            }
-          } else if (canLoadMoreRemoteEditions) {
-            val loadMoreDesc = stringResource(R.string.search_edition_load_more)
-            Surface(
-              onClick = onLoadMoreRemoteEditions,
-              enabled = !isLoadingMore,
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
-              contentColor = MaterialTheme.colorScheme.onSurface,
-              modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .semantics { contentDescription = loadMoreDesc }
-                  .testTag("search_edition_load_more_$groupIndex"),
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-              ) {
-                if (isLoadingMore) {
-                  CircularProgressIndicator(
-                    modifier = Modifier.size(13.dp),
-                    strokeWidth = 1.6.dp,
-                    color = MaterialTheme.colorScheme.secondary,
-                  )
-                } else {
+                Row(
+                  modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
                   Icon(
-                    imageVector = Icons.Outlined.Search,
+                    imageVector = Icons.Outlined.Add,
                     contentDescription = null,
                     modifier = Modifier.size(15.dp),
                   )
+                  Text(
+                    text = stringResource(R.string.search_edition_more_local_short, remainingEditions),
+                    style = actionPillTextStyle,
+                    maxLines = 1,
+                  )
                 }
-                Text(
-                  text = stringResource(R.string.search_edition_load_more_short),
-                  style = actionPillTextStyle,
-                  maxLines = 1,
+              }
+            } else if (canLoadMoreRemoteEditions) {
+              val loadMoreDesc = stringResource(R.string.search_edition_load_more)
+              Surface(
+                onClick = onLoadMoreRemoteEditions,
+                enabled = !isLoadingMore,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .semantics { contentDescription = loadMoreDesc }
+                    .testTag("search_edition_load_more_$groupIndex"),
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  if (isLoadingMore) {
+                    CircularProgressIndicator(
+                      modifier = Modifier.size(13.dp),
+                      strokeWidth = 1.6.dp,
+                      color = MaterialTheme.colorScheme.secondary,
+                    )
+                  } else {
+                    Icon(
+                      imageVector = Icons.Outlined.Search,
+                      contentDescription = null,
+                      modifier = Modifier.size(15.dp),
+                    )
+                  }
+                  Text(
+                    text = stringResource(R.string.search_edition_load_more_short),
+                    style = actionPillTextStyle,
+                    maxLines = 1,
+                  )
+                }
+              }
+            }
+
+            if (secondaryEditionsCount > 0) {
+              val secondaryDesc =
+                if (isSecondaryEditionsExpanded) {
+                  stringResource(R.string.search_edition_hide_secondary_langs)
+                } else {
+                  stringResource(
+                    R.string.search_edition_show_secondary_langs,
+                    secondaryEditionsCount,
+                  )
+                }
+              val langBg by
+                animateColorAsState(
+                  targetValue =
+                    if (isSecondaryEditionsExpanded) {
+                      MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.56f)
+                    },
+                  animationSpec = motion.standardTween(150),
+                  label = "secondary_lang_pill_bg",
                 )
+              val langTint by
+                animateColorAsState(
+                  targetValue =
+                    if (isSecondaryEditionsExpanded) {
+                      MaterialTheme.colorScheme.secondary
+                    } else {
+                      MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                  animationSpec = motion.standardTween(150),
+                  label = "secondary_lang_pill_tint",
+                )
+              Surface(
+                onClick = onToggleSecondaryEditions,
+                shape = CircleShape,
+                color = langBg,
+                contentColor = langTint,
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .semantics { contentDescription = secondaryDesc }
+                    .testTag("search_work_secondary_editions_toggle_$groupIndex"),
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.Language,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                  )
+                  Text(
+                    text = secondaryEditionsCount.toString(),
+                    style = actionPillTextStyle,
+                    maxLines = 1,
+                  )
+                }
               }
             }
           }
 
-          if (secondaryEditionsCount > 0) {
-            val secondaryDesc =
-              if (isSecondaryEditionsExpanded) {
-                stringResource(R.string.search_edition_hide_secondary_langs)
-              } else {
-                stringResource(
-                  R.string.search_edition_show_secondary_langs,
-                  secondaryEditionsCount,
-                )
-              }
-            val langBg by
-              animateColorAsState(
-                targetValue =
-                  if (isSecondaryEditionsExpanded) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                  } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f)
-                  },
-                animationSpec = motion.standardTween(150),
-                label = "secondary_lang_pill_bg",
-              )
-            val langTint by
-              animateColorAsState(
-                targetValue =
-                  if (isSecondaryEditionsExpanded) {
-                    MaterialTheme.colorScheme.secondary
-                  } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                  },
-                animationSpec = motion.standardTween(150),
-                label = "secondary_lang_pill_tint",
-              )
-            Surface(
-              onClick = onToggleSecondaryEditions,
-              shape = CircleShape,
-              color = langBg,
-              contentColor = langTint,
+          if (showCollapseAction) {
+            IconButton(
+              onClick = onCollapseGroup,
               modifier =
                 Modifier.minimumInteractiveComponentSize()
-                  .semantics { contentDescription = secondaryDesc }
-                  .testTag("search_work_secondary_editions_toggle_$groupIndex"),
+                  .testTag("search_work_collapse_$groupIndex"),
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.Outlined.Language,
-                  contentDescription = null,
-                  modifier = Modifier.size(15.dp),
-                )
-                Text(
-                  text = secondaryEditionsCount.toString(),
-                  style = actionPillTextStyle,
-                  maxLines = 1,
-                )
-              }
+              Icon(
+                imageVector = Icons.Outlined.ExpandLess,
+                contentDescription = stringResource(R.string.search_work_collapse_action),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(19.dp),
+              )
             }
           }
-        }
-
-        if (showCollapseAction) {
-          IconButton(
-            onClick = onCollapseGroup,
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .testTag("search_work_collapse_$groupIndex"),
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.ExpandLess,
-              contentDescription = stringResource(R.string.search_work_collapse_action),
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(19.dp),
-            )
-          }
-        }
         }
       }
     }
@@ -1242,79 +1475,61 @@ internal fun SearchContextualDrawerHeader(
       animationSpec = motion.standardTween(160),
       label = "contextual_drawer_title_color",
     )
-  val rowBg by
-    animateColorAsState(
-      targetValue =
-        if (isExpanded) MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
-        else Color.Transparent,
-      animationSpec = motion.standardTween(160),
-      label = "contextual_drawer_bg",
-    )
   val actionLabel =
     stringResource(if (isExpanded) R.string.cd_collapse_section else R.string.cd_expand_section)
 
-  Column(modifier = modifier.fillMaxWidth()) {
-    HairlineDivider()
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .padding(top = 4.dp)
-          .clip(RoundedCornerShape(8.dp))
-          .background(rowBg)
-          .minimumInteractiveComponentSize()
-          .clickable(
-            role = Role.Button,
-            onClickLabel = actionLabel,
-            onClick = onToggle,
-          )
-          .padding(horizontal = 6.dp, vertical = 10.dp)
-          .testTag(testTag),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Text(
-        text = title,
-        style =
-          TextStyle(
-            fontFamily = InterFontFamily,
-            fontWeight = FontWeight.Medium,
-            fontSize = 13.5.sp,
-            lineHeight = 18.sp,
-          ),
-        color = titleColor,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f),
-      )
-
-      Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
-      ) {
-        Text(
-          text = count.toString(),
-          style =
-            TextStyle(
-              fontFamily = InterFontFamily,
-              fontWeight = FontWeight.Medium,
-              fontSize = 11.5.sp,
-              lineHeight = 14.sp,
-              fontFeatureSettings = "tnum",
-            ),
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-          modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(DipeRadii.control))
+        .minimumInteractiveComponentSize()
+        .clickable(
+          role = Role.Button,
+          onClickLabel = actionLabel,
+          onClick = onToggle,
         )
-      }
+        .padding(horizontal = 4.dp, vertical = 10.dp)
+        .testTag(testTag),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Text(
+      text = title,
+      style =
+        TextStyle(
+          fontFamily = InterFontFamily,
+          fontWeight = FontWeight.Medium,
+          fontSize = 13.5.sp,
+          lineHeight = 18.sp,
+        ),
+      color = titleColor,
+      maxLines = 2,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.weight(1f),
+    )
 
-      Icon(
-        imageVector = Icons.Outlined.ExpandMore,
-        contentDescription = actionLabel,
-        tint =
-          if (isExpanded) MaterialTheme.colorScheme.secondary
-          else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-        modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
-      )
-    }
+    Text(
+      text = count.toString(),
+      style =
+        TextStyle(
+          fontFamily = InterFontFamily,
+          fontWeight = FontWeight.Medium,
+          fontSize = 12.sp,
+          lineHeight = 14.sp,
+          fontFeatureSettings = "tnum",
+        ),
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+    )
+
+    Icon(
+      imageVector = Icons.Outlined.ExpandMore,
+      contentDescription = actionLabel,
+      tint =
+        if (isExpanded) MaterialTheme.colorScheme.secondary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+      modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = chevronRotation },
+    )
   }
 }
 

@@ -4,18 +4,25 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.down
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.moveBy
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.up
 import androidx.compose.ui.unit.dp
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
@@ -646,22 +653,51 @@ class SearchVisualPolishTest {
     assertTrue(row0Tops.all { kotlin.math.abs((it - row0Tops.first()).value) <= 2f })
     assertTrue(row0Lefts.zipWithNext().all { (a, b) -> b > a })
 
-    // Missing metadata on edition 3 ("ed_3") renders graceful "—" fallback without empty collapse
+    // Resting edition tiles show strictly covers without visible metadata or placeholder dashes
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2_back_face").assertDoesNotExist()
+    composeTestRule
+      .onNode(hasText("Aleph") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule
+      .onNode(hasText("680 p.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule
+      .onNode(hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")), useUnmergedTree = true)
+      .assertDoesNotExist()
+
+    // Holding edition 0_0 reveals verso with publisher, year, and pages without selecting; releasing restores cover
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule
       .onNode(hasText("Aleph") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
       .assertIsDisplayed()
     composeTestRule
-      .onNode(
-        hasText("680 p. · 2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
-        useUnmergedTree = true,
-      )
+      .onNode(hasText("2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
       .assertIsDisplayed()
-    val missingNodes =
-      composeTestRule.onAllNodes(
-        hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")),
-        useUnmergedTree = true,
-      )
-    assertEquals(2, missingNodes.fetchSemanticsNodes().size)
+    composeTestRule
+      .onNode(hasText("680 p.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(400)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    assertEquals(null, highlightedEditionId)
+
+    // Holding edition 0_2 (all fields null) omits missing fields gracefully with ZERO "—" placeholders
+    composeTestRule.onNodeWithTag("search_edition_select_0_2").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2_back_face", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(400)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2_back_face").assertDoesNotExist()
 
     // Tapping an edition tile surfaces refined selection indicator & confirm CTA before committing
     composeTestRule.onNodeWithTag("search_edition_select_0_2").performClick()
@@ -938,6 +974,7 @@ class SearchVisualPolishTest {
 
     composeTestRule.onNodeWithTag("search_work_secondary_editions_toggle_0").performClick()
     composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_secondary_editions_toggle_0"))
     composeTestRule.onNodeWithContentDescription("Hide other languages").assertIsDisplayed()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_2"))
     composeTestRule.waitForIdle()
@@ -1185,5 +1222,262 @@ class SearchVisualPolishTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_work_card_2"))
     composeTestRule.onNodeWithTag("search_work_card_2").assertIsDisplayed()
+  }
+
+  @Test
+  fun edition3dHold_handlesPartialMetadataEarlyReleaseScrollCancellationAndAccessibility() {
+    val editions =
+      listOf(
+        SearchEditionCandidate(
+          candidateId = "ed_full",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = "Record",
+          publicationYear = 2019,
+          totalPages = 592,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        ),
+        SearchEditionCandidate(
+          candidateId = "ed_no_pages",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = "Folha de S.Paulo",
+          publicationYear = 2003,
+          totalPages = null,
+          sources = listOf(MetadataSource.OPEN_LIBRARY),
+        ),
+        SearchEditionCandidate(
+          candidateId = "ed_year_only",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = null,
+          publicationYear = 1986,
+          totalPages = null,
+          sources = listOf(MetadataSource.OPEN_LIBRARY),
+        ),
+        SearchEditionCandidate(
+          candidateId = "ed_extra_1",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = "Bompiani",
+          publicationYear = 1980,
+          totalPages = 512,
+          sources = listOf(MetadataSource.OPEN_LIBRARY),
+        ),
+        SearchEditionCandidate(
+          candidateId = "ed_extra_2",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = "Mariner",
+          publicationYear = 2014,
+          totalPages = 536,
+          sources = listOf(MetadataSource.GOOGLE_BOOKS),
+        ),
+        SearchEditionCandidate(
+          candidateId = "ed_extra_3",
+          workTitle = "O Nome da Rosa",
+          contributors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+          publisher = "Nova Fronteira",
+          publicationYear = 1983,
+          totalPages = 560,
+          sources = listOf(MetadataSource.BRASIL_API),
+        ),
+      )
+    val work =
+      SearchWorkGroup(
+        groupId = "g_rosa",
+        canonicalTitle = "O Nome da Rosa",
+        primaryAuthors = listOf(CandidateContributor("Umberto Eco", ContributorRole.AUTHOR)),
+        editions = editions,
+        sources = listOf(MetadataSource.GOOGLE_BOOKS),
+      )
+    var selectedId by mutableStateOf<String?>(null)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "O Nome da Rosa",
+                hasSearched = true,
+                expandedGroupIds = setOf("g_rosa"),
+                selectedEditionId = selectedId,
+                response =
+                  HybridSearchResponse(
+                    query = "O Nome da Rosa",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 6)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = { candidate ->
+              selectedId = if (selectedId == candidate.candidateId) null else candidate.candidateId
+            },
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_1"))
+
+    // 1. Partial metadata (publisher + year, no pages): omits pages without placeholder dash
+    composeTestRule.onNodeWithTag("search_edition_select_0_1").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_1_back_face", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("Folha de S.Paulo") and hasAnyAncestor(hasTestTag("search_edition_select_0_1")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("2003") and hasAnyAncestor(hasTestTag("search_edition_select_0_1")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("p.", substring = true) and hasAnyAncestor(hasTestTag("search_edition_select_0_1")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule
+      .onNode(hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_1")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_1").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(350)
+    composeTestRule.waitForIdle()
+    assertEquals(null, selectedId)
+
+    // 2. Year-only edition omits missing publisher and pages cleanly
+    composeTestRule.onNodeWithTag("search_edition_select_0_2").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+    composeTestRule
+      .onNode(hasText("1986") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("—") and hasAnyAncestor(hasTestTag("search_edition_select_0_2")), useUnmergedTree = true)
+      .assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_2").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(350)
+    composeTestRule.waitForIdle()
+
+    // 3. Early release mid-flip cancels rotation cleanly back to 0° without triggering selection
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(280) // Past hold start, mid-rotation (~20-35 deg)
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(350)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    assertEquals(null, selectedId)
+
+    // 4. Vertical scroll drag across an edition tile does NOT flip or select
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput {
+      down(center)
+      moveBy(Offset(0f, -140f))
+      up()
+    }
+    composeTestRule.mainClock.advanceTimeBy(400)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    assertEquals(null, selectedId)
+
+    // 5. Accessibility CustomAccessibilityAction toggles verso inspection and dismisses cleanly
+    val nodeSemantics = composeTestRule.onNodeWithTag("search_edition_select_0_0").fetchSemanticsNode()
+    val customActions = nodeSemantics.config[SemanticsActions.CustomActions]
+    assertTrue(customActions.isNotEmpty())
+    val inspectAction = customActions.first()
+    assertTrue(composeTestRule.runOnIdle { inspectAction.action.invoke() })
+    composeTestRule.mainClock.advanceTimeBy(500)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("Record") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    val backDesc = composeTestRule.onNodeWithTag("search_edition_select_0_0").fetchSemanticsNode()
+      .config[SemanticsProperties.ContentDescription]
+      .joinToString()
+    assertTrue(backDesc.contains("Record"))
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()
+    composeTestRule.mainClock.advanceTimeBy(400)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    assertTrue(inspectAction.label.isNotBlank())
+  }
+
+  @Test
+  fun edition3dHold_underReduceMotionUsesCrossfadeCleanlyWithoutSelectionLeak() {
+    val work = sampleWorkGroup(groupId = "w_rm", title = "Dom Casmurro", author = "Machado de Assis")
+    var selectedId by mutableStateOf<String?>(null)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = true) {
+          BookSearchScreen(
+            uiState =
+              BookSearchUiState(
+                query = "Dom Casmurro",
+                hasSearched = true,
+                expandedGroupIds = setOf("w_rm"),
+                selectedEditionId = selectedId,
+                response =
+                  HybridSearchResponse(
+                    query = "Dom Casmurro",
+                    isIsbnQuery = false,
+                    isFromCache = false,
+                    isOffline = false,
+                    workGroups = listOf(work),
+                    sourceStatuses = listOf(SourceQueryStatus(MetadataSource.GOOGLE_BOOKS, ProviderOutcomeState.SUCCESS, 1)),
+                  ),
+              ),
+            widthClass = WindowWidthClass.COMPACT,
+            onQueryChange = {},
+            onSubmitSearch = {},
+            onExpandSecondarySources = {},
+            onOpenScanner = {},
+            onManualCatalog = {},
+            onToggleGroupExpanded = {},
+            onLoadMoreEditions = {},
+            onToggleEditionSelection = { candidate ->
+              selectedId = if (selectedId == candidate.candidateId) null else candidate.candidateId
+            },
+            onSelectEdition = {},
+            onOpenExistingBook = {},
+            onDismissDuplicate = {},
+            onDuplicateAddCopy = { _, _, _ -> },
+            onDuplicateAddEdition = { _, _ -> },
+            onDuplicateSaveSeparately = {},
+            onNavigateBack = {},
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(450)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule
+      .onNode(hasText("Rocco") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")), useUnmergedTree = true)
+      .assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(250)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    assertEquals(null, selectedId)
   }
 }

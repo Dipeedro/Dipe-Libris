@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.down
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -18,6 +19,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.up
 import com.example.core.designsystem.DipeLibrisTheme
 import com.example.core.designsystem.WindowWidthClass
 import com.example.core.localization.LocalAppLanguage
@@ -159,12 +162,38 @@ class LibraryAndSearchRedesignTest {
     composeTestRule.onNodeWithTag("search_query_input").performImeAction()
     assertEquals(1, submittedCount)
 
-    // Results show editorial work card with plural work summary and 3-column edition gallery tile ("288 p. · 2017")
+    // Results show editorial work card with plural work summary and cover-only 3-column edition tile at rest
     composeTestRule.onNodeWithText("1 obra").assertIsDisplayed()
     composeTestRule.onNodeWithTag("book_search_screen").performScrollToNode(hasTestTag("search_edition_select_0_0"))
     composeTestRule.onNodeWithTag("search_edition_select_0_0").assertIsDisplayed()
     composeTestRule.onNodeWithTag("search_confirm_edition_button").assertDoesNotExist()
     composeTestRule.onNodeWithText("9788532530783").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    composeTestRule
+      .onNode(
+        hasText("Editora Rocco Ltda.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertDoesNotExist()
+    composeTestRule
+      .onNode(
+        hasText("288 p.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertDoesNotExist()
+    composeTestRule
+      .onNode(
+        hasText("Harry Potter e o Prisioneiro de Azkaban") and
+          hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        useUnmergedTree = true,
+      )
+      .assertDoesNotExist()
+
+    // Press-and-hold reveals verso details temporarily without selecting, and release restores cover
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { down(center) }
+    composeTestRule.mainClock.advanceTimeBy(700)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule
       .onNode(
         hasText("Editora Rocco Ltda.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
@@ -173,17 +202,21 @@ class LibraryAndSearchRedesignTest {
       .assertIsDisplayed()
     composeTestRule
       .onNode(
-        hasText("288 p. · 2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        hasText("2017") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
         useUnmergedTree = true,
       )
       .assertIsDisplayed()
     composeTestRule
       .onNode(
-        hasText("Harry Potter e o Prisioneiro de Azkaban") and
-          hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
+        hasText("288 p.") and hasAnyAncestor(hasTestTag("search_edition_select_0_0")),
         useUnmergedTree = true,
       )
-      .assertDoesNotExist()
+      .assertIsDisplayed()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0").performTouchInput { up() }
+    composeTestRule.mainClock.advanceTimeBy(400)
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("search_edition_select_0_0_selected_badge").assertDoesNotExist()
 
     // Tapping an edition tile selects it and reveals "Selecionar e revisar"; tapping again deselects it
     composeTestRule.onNodeWithTag("search_edition_select_0_0").performClick()

@@ -559,4 +559,9 @@
     <string name="search_source_detail_loading">Consultando agora</string>
     <string name="cd_source_status_expand">Ver detalhes das fontes consultadas</string>
     <string name="cd_source_status_collapse">Ocultar detalhes das fontes</string>
+    <string name="search_edition_pages_value">%1$d p.</string>
+    <string name="cd_inspect_edition_details">Ver dados da edição</string>
+    <string name="cd_hide_edition_details">Voltar à capa da edição</string>
+    <string name="cd_edition_verso_details">Dados da edição: %1$s</string>
+    <string name="cd_edition_verso_no_details">Verso da capa, sem detalhes bibliográficos</string>
 </resources>

@@ -9,7 +9,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -280,14 +279,6 @@ fun BookSearchScreen(
                 animationSpec = DipeTheme.motion.standardTween(120),
                 label = "search_camera_bg",
               )
-            val cameraBorder by
-              animateColorAsState(
-                targetValue =
-                  if (cameraPressed) MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f)
-                  else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
-                animationSpec = DipeTheme.motion.standardTween(120),
-                label = "search_camera_border",
-              )
             val cameraTint by
               animateColorAsState(
                 targetValue =
@@ -303,7 +294,6 @@ fun BookSearchScreen(
               shape = CircleShape,
               color = cameraBg,
               contentColor = cameraTint,
-              border = BorderStroke(0.75.dp, cameraBorder),
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .size(48.dp)
@@ -689,9 +679,8 @@ fun BookSearchScreen(
               Surface(
                 onClick = onLoadMoreResults,
                 enabled = !uiState.isLoadingMoreResults,
-                shape = MaterialTheme.shapes.medium,
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
                 modifier =
                   Modifier.fillMaxWidth()
                     .padding(top = DipeSpacing.md)
@@ -775,12 +764,10 @@ fun BookSearchScreen(
           if (hasAnyDisplayWorks && !uiState.isSearching) {
             item(key = "search_manual_footer", contentType = "manual_footer") {
               Column(
-                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.lg),
+                modifier = Modifier.fillMaxWidth().padding(top = DipeSpacing.xl),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(DipeSpacing.xs),
               ) {
-                HairlineDivider()
-                Spacer(modifier = Modifier.height(DipeSpacing.xs))
                 Text(
                   text = stringResource(R.string.search_manual_footer_hint),
                   style =

@@ -560,4 +560,9 @@
     <string name="search_source_detail_loading">Checking now</string>
     <string name="cd_source_status_expand">Show consulted source details</string>
     <string name="cd_source_status_collapse">Hide source details</string>
+    <string name="search_edition_pages_value">%1$d p.</string>
+    <string name="cd_inspect_edition_details">Inspect edition details</string>
+    <string name="cd_hide_edition_details">Return to edition cover</string>
+    <string name="cd_edition_verso_details">Edition details: %1$s</string>
+    <string name="cd_edition_verso_no_details">Edition back cover, no bibliographic details</string>
 </resources>
