@@ -77,8 +77,6 @@ import com.example.core.designsystem.LocalDipeTypography
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private val BookCoverShape =
   RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 6.dp, bottomEnd = 6.dp)
@@ -330,6 +328,9 @@ fun BookCoverArtwork(
   shape: Shape = BookCoverShape,
   onImageLoadError: (() -> Unit)? = null,
   onCoverEdgePaletteChanged: ((BookCoverEdgePalette?) -> Unit)? = null,
+  onCoverVisualAnalysisChanged: ((BookCoverVisualAnalysis?) -> Unit)? = null,
+  prioritizeAnalysis: Boolean = false,
+  lazyAnalysisStaggerMs: Long = 0L,
 ) {
   val coverTokens = LocalDipeCoverTokens.current
   val typography = LocalDipeTypography.current
@@ -419,21 +420,52 @@ fun BookCoverArtwork(
   val hasLoadedPhoto = painterState is AsyncImagePainter.State.Success && !isInvalidRemotePlaceholder
   val showTypographicCloth = activeUri == null || (!isPhotoLoading && !hasLoadedPhoto)
 
-  if (onCoverEdgePaletteChanged != null) {
+  if (onCoverVisualAnalysisChanged != null || onCoverEdgePaletteChanged != null) {
     val loadedDrawable = (painterState as? AsyncImagePainter.State.Success)?.result?.drawable
-    LaunchedEffect(activeUri, hasLoadedPhoto, loadedDrawable) {
-      if (!hasLoadedPhoto || loadedDrawable == null) {
-        onCoverEdgePaletteChanged(null)
-      } else {
-        val cached = CoverEdgeColorExtractor.getCached(activeUri)
-        if (cached != null) {
-          onCoverEdgePaletteChanged(cached)
-        } else {
-          val extracted =
-            withContext(Dispatchers.Default) {
-              CoverEdgeColorExtractor.extractFromDrawable(activeUri, loadedDrawable)
-            }
-          onCoverEdgePaletteChanged(extracted)
+    val typographicAnalysis =
+      remember(palette, title, author) {
+        BookCoverAnalyzer.analyzeTypographicCover(
+          paletteEntry = palette,
+          title = title,
+          author = author,
+        )
+      }
+
+    LaunchedEffect(
+      activeUri,
+      hasLoadedPhoto,
+      showTypographicCloth,
+      loadedDrawable,
+      typographicAnalysis,
+      prioritizeAnalysis,
+      lazyAnalysisStaggerMs,
+    ) {
+      when {
+        showTypographicCloth -> {
+          onCoverEdgePaletteChanged?.invoke(null)
+          onCoverVisualAnalysisChanged?.invoke(typographicAnalysis)
+        }
+        hasLoadedPhoto && loadedDrawable != null -> {
+          val signature = BookCoverAnalyzer.signatureForDrawable(loadedDrawable)
+          val cached = BookCoverAnalyzer.getCached(activeUri, signature)
+          if (cached != null) {
+            onCoverEdgePaletteChanged?.invoke(cached.palette.edgePalette)
+            onCoverVisualAnalysisChanged?.invoke(cached)
+          } else {
+            val analysis =
+              BookCoverAnalyzer.analyzeDrawableBounded(
+                cacheKey = activeUri,
+                drawable = loadedDrawable,
+                prioritize = prioritizeAnalysis,
+                lazyStaggerMs = if (prioritizeAnalysis) 0L else lazyAnalysisStaggerMs,
+              )
+            onCoverEdgePaletteChanged?.invoke(analysis?.palette?.edgePalette)
+            onCoverVisualAnalysisChanged?.invoke(analysis ?: typographicAnalysis)
+          }
+        }
+        else -> {
+          onCoverEdgePaletteChanged?.invoke(null)
+          onCoverVisualAnalysisChanged?.invoke(typographicAnalysis)
         }
       }
     }
