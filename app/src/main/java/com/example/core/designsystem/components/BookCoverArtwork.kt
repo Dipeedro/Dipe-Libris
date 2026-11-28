@@ -193,32 +193,55 @@ internal object CoverEdgeColorExtractor {
     val h = bitmap.height
     if (w < 4 || h < 4) return null
 
-    val xFractions = floatArrayOf(0.84f, 0.88f, 0.92f, 0.96f)
+    val innerFractions = floatArrayOf(0.80f, 0.85f, 0.89f)
+    val rimFraction = 0.95f
     fun sampleBand(yStartFrac: Float, yEndFrac: Float): Color? {
-      var rSum = 0L
-      var gSum = 0L
-      var bSum = 0L
-      var count = 0
+      var rInner = 0L
+      var gInner = 0L
+      var bInner = 0L
+      var countInner = 0
+      var rRim = 0L
+      var gRim = 0L
+      var bRim = 0L
+      var countRim = 0
       val steps = 5
       for (yi in 0 until steps) {
         val yf = yStartFrac + (yEndFrac - yStartFrac) * (yi / (steps - 1f))
         val py = (yf * (h - 1)).toInt().coerceIn(0, h - 1)
-        for (xf in xFractions) {
+        for (xf in innerFractions) {
           val px = (xf * (w - 1)).toInt().coerceIn(0, w - 1)
           val argb = bitmap.getPixel(px, py)
           if (AndroidColor.alpha(argb) >= 128) {
-            rSum += AndroidColor.red(argb)
-            gSum += AndroidColor.green(argb)
-            bSum += AndroidColor.blue(argb)
-            count++
+            rInner += AndroidColor.red(argb)
+            gInner += AndroidColor.green(argb)
+            bInner += AndroidColor.blue(argb)
+            countInner++
           }
         }
+        val pxRim = (rimFraction * (w - 1)).toInt().coerceIn(0, w - 1)
+        val argbRim = bitmap.getPixel(pxRim, py)
+        if (AndroidColor.alpha(argbRim) >= 128) {
+          rRim += AndroidColor.red(argbRim)
+          gRim += AndroidColor.green(argbRim)
+          bRim += AndroidColor.blue(argbRim)
+          countRim++
+        }
       }
-      if (count == 0) return null
+      if (countInner == 0 && countRim == 0) return null
+      val innerAvgBrightness =
+        if (countInner > 0) (rInner + gInner + bInner) / (3f * countInner) else 255f
+      val rimAvgBrightness =
+        if (countRim > 0) (rRim + gRim + bRim) / (3f * countRim) else 255f
+      val ignoreWhiteScanMargin = countInner > 0 && countRim > 0 && rimAvgBrightness > 236f && innerAvgBrightness < 210f
+      val rTotal = if (ignoreWhiteScanMargin) rInner else rInner + rRim
+      val gTotal = if (ignoreWhiteScanMargin) gInner else gInner + gRim
+      val bTotal = if (ignoreWhiteScanMargin) bInner else bInner + bRim
+      val totalCount = if (ignoreWhiteScanMargin) countInner else countInner + countRim
+      if (totalCount == 0) return null
       return Color(
-        red = (rSum.toFloat() / count) / 255f,
-        green = (gSum.toFloat() / count) / 255f,
-        blue = (bSum.toFloat() / count) / 255f,
+        red = (rTotal.toFloat() / totalCount) / 255f,
+        green = (gTotal.toFloat() / totalCount) / 255f,
+        blue = (bTotal.toFloat() / totalCount) / 255f,
         alpha = 1f,
       )
     }

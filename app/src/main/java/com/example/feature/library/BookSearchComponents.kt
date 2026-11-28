@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -668,16 +669,20 @@ internal data class BookThicknessSpec(
   val normalizedThickness: Float,
 )
 
-private const val THICKNESS_MIN_DP = 3.5f
-private const val THICKNESS_MAX_DP = 9.5f
-private const val THICKNESS_DEFAULT_DP = 6.5f
+private const val THICKNESS_MIN_DP = 11.5f
+private const val THICKNESS_MAX_DP = 24.5f
+private const val THICKNESS_DEFAULT_DP = 17.5f
 private const val THICKNESS_MIN_PAGES = 60f
 private const val THICKNESS_MAX_PAGES = 950f
+private const val THICKNESS_MIN_WIDTH_RATIO = 0.135f
+private const val THICKNESS_MAX_WIDTH_RATIO = 0.235f
+private const val THICKNESS_BOUND_MIN_DP = 10.5f
+private const val THICKNESS_BOUND_MAX_DP = 26.0f
 
 /**
- * Centralized progressive, non-linear physical book thickness mapping from edition page count.
- * Enforces cohesive visual bounds (3.5..9.5 dp) and uses a neutral mid-weight fallback (6.5 dp)
- * when page count is missing or non-positive.
+ * Centralized stylized miniature book thickness mapping from edition page count.
+ * Delivers an expressive, chunky hardcover silhouette bounded cohesively (11.5..24.5 dp baseline)
+ * with a mid-weight stylized fallback (17.5 dp) when page count is missing or non-positive.
  */
 internal fun calculateBookThicknessSpec(totalPages: Int?): BookThicknessSpec {
   if (totalPages == null || totalPages <= 0) {
@@ -698,6 +703,27 @@ internal fun calculateBookThicknessSpec(totalPages: Int?): BookThicknessSpec {
     thicknessDp = thicknessDp.dp,
     normalizedThickness = normalized,
   )
+}
+
+/**
+ * Computes stylized 3D book depth proportional to actual rendered cover width, while keeping
+ * bounded minimum/maximum limits across compact phone grids and wider tablet layouts.
+ */
+internal fun calculateEffectiveBookThicknessPx(
+  coverWidthPx: Float,
+  fallbackThicknessPx: Float,
+  normalizedThickness: Float,
+  minThicknessPx: Float,
+  maxThicknessPx: Float,
+): Float {
+  val safeMin = minThicknessPx.coerceAtLeast(1f)
+  val safeMax = maxThicknessPx.coerceAtLeast(safeMin)
+  if (coverWidthPx <= 0f) {
+    return fallbackThicknessPx.coerceIn(safeMin, safeMax)
+  }
+  val norm = normalizedThickness.coerceIn(0f, 1f)
+  val ratio = THICKNESS_MIN_WIDTH_RATIO + (THICKNESS_MAX_WIDTH_RATIO - THICKNESS_MIN_WIDTH_RATIO) * norm
+  return (coverWidthPx * ratio).coerceIn(safeMin, safeMax)
 }
 
 internal data class Book3dProjection(
@@ -734,16 +760,21 @@ internal data class Book3dProjection(
   val bookRightX: Float,
   val shadowCenterX: Float,
   val shadowSpanPx: Float,
+  val shellCornerRxEffective: Float,
+  val shellCornerRy: Float,
+  val scaledOverhangPx: Float,
+  val frontProjectedWidthPx: Float,
+  val backProjectedWidthPx: Float,
 )
 
 /**
  * Computes a single unified rigid-body 3D book projection shared identically across the Front
- * cover, the Fore-Edge Page-Block Canvas, and the Back cover ("Verso").
+ * cover, the Swept Rounded Cover Shell + Recessed Paper-Block Canvas, and the Back cover ("Verso").
  *
  * Coordinate & rotation convention matches Android RenderNode / Compose Matrix.rotateY:
  * - Negative rotationY swings the right fore-edge (+X) toward the camera (-Z, larger scale).
  * - Front cover turns 0° -> -180° around Y; Verso turns +180° -> 0° around Y.
- * - Fore-edge page slab spans [slabFrontX, slabBackX] continuously across 0°..180° so
+ * - Fore-edge volume spans [slabFrontX, slabBackX] continuously across 0°..180° so
  *   Front right edge == slabFrontX (0°..90°) and Verso left edge == slabBackX (90°..180°).
  */
 internal fun calculateBook3dProjection(
@@ -757,8 +788,8 @@ internal fun calculateBook3dProjection(
   foreCornerRadiusPx: Float,
   boardOverhangPx: Float,
   reduceMotion: Boolean,
-  frontBoardTargetPx: Float = thicknessPx * 0.22f,
-  backBoardTargetPx: Float = thicknessPx * 0.18f,
+  frontBoardTargetPx: Float = thicknessPx * 0.21f,
+  backBoardTargetPx: Float = thicknessPx * 0.17f,
 ): Book3dProjection {
   val f = flipProgress.coerceIn(0f, 1f)
   val hw = (widthPx * 0.5f).coerceAtLeast(0f)
@@ -802,6 +833,11 @@ internal fun calculateBook3dProjection(
       bookRightX = widthPx,
       shadowCenterX = cx,
       shadowSpanPx = widthPx,
+      shellCornerRxEffective = foreCornerRadiusPx,
+      shellCornerRy = foreCornerRadiusPx,
+      scaledOverhangPx = 0f,
+      frontProjectedWidthPx = widthPx,
+      backProjectedWidthPx = widthPx,
     )
   }
 
@@ -813,8 +849,8 @@ internal fun calculateBook3dProjection(
   val absCos = abs(cosA)
   val edgeTurn = sinA
 
-  val pressScale = 1f - (0.028f * pressProgress.coerceIn(0f, 1f))
-  val turnLiftScale = 1f + (0.024f * edgeTurn) + (0.010f * smoothstep01(0.05f, 0.90f, f))
+  val pressScale = 1f - (0.024f * pressProgress.coerceIn(0f, 1f))
+  val turnLiftScale = 1f + (0.015f * edgeTurn) + (0.006f * smoothstep01(0.05f, 0.90f, f))
   val combinedScale = pressScale * turnLiftScale
   val liftY = -liftOffsetMaxPx * edgeTurn
 
@@ -835,13 +871,16 @@ internal fun calculateBook3dProjection(
   val slabBackX = seamCenterX + backTranslationX
   val slabWidthPx = (slabBackX - slabFrontX).coerceAtLeast(0f)
 
+  val frontSpineX = cx - (hw * combinedScale * cosA) * spineEdgeScale + frontTranslationX
+  val backSpineX = cx - (hw * combinedScale * cosA) * spineEdgeScale + backTranslationX
+  val frontProjectedWidthPx = if (!isBack) (slabFrontX - frontSpineX).coerceAtLeast(0f) else 0f
+  val backProjectedWidthPx = if (isBack) (backSpineX - slabBackX).coerceAtLeast(0f) else 0f
+
   // Continuous rigid-body horizontal footprint across 0°..180° for unified contact shadow
   val (bookLeftX, bookRightX) =
     if (!isBack) {
-      val frontSpineX = cx - (hw * combinedScale * cosA) * spineEdgeScale + frontTranslationX
       minOf(frontSpineX, slabFrontX) to maxOf(slabBackX, frontSpineX)
     } else {
-      val backSpineX = cx - (hw * combinedScale * cosA) * spineEdgeScale + backTranslationX
       minOf(slabFrontX, backSpineX) to maxOf(backSpineX, slabBackX)
     }
   val shadowSpanPx = (bookRightX - bookLeftX).coerceAtLeast(0f)
@@ -852,20 +891,23 @@ internal fun calculateBook3dProjection(
   val edgeBotY = cy + liftY + edgeHalfHeight
 
   val scaledCornerR = foreCornerRadiusPx * combinedScale * foreEdgeScale
-  val scaledOverhang = boardOverhangPx * combinedScale * foreEdgeScale
-  val cornerWeight = smoothstep01(0.08f, 0.72f, absCos)
-  val pageInset =
-    (scaledOverhang + (scaledCornerR * 0.85f - scaledOverhang).coerceAtLeast(0f) * cornerWeight)
-      .coerceIn(0f, edgeHalfHeight * 0.28f)
-  val boardOuterInset = (scaledCornerR * 0.88f * cornerWeight).coerceIn(0f, edgeHalfHeight * 0.25f)
+  val scaledOverhang = (boardOverhangPx * combinedScale * foreEdgeScale).coerceIn(0f, edgeHalfHeight * 0.20f)
 
-  val slabTopY = edgeTopY + pageInset
-  val slabBotY = edgeBotY - pageInset
-  val boardOuterTopY = edgeTopY + boardOuterInset
-  val boardOuterBotY = edgeBotY - boardOuterInset
+  // Swept rounded-corner profile: matches Front/Back 6dp rounded corners at oblique angles and eases into soft hardcover corners near 90°
+  val near90Blend = smoothstep01(0.0f, 0.38f, absCos)
+  val capsuleCornerR = minOf(scaledCornerR * 0.44f, (slabWidthPx * 0.24f).coerceAtLeast(0f))
+  val shellCornerRy = (capsuleCornerR + (scaledCornerR - capsuleCornerR) * near90Blend).coerceIn(0f, edgeHalfHeight * 0.25f)
+  val shellCornerRxEffective = maxOf(scaledCornerR * absCos, capsuleCornerR * (1f - near90Blend))
+
+  // Pages sit consistently recessed inside the overhanging top/bottom cover shell (zero vertical pop near 90°)
+  val slabTopY = edgeTopY + scaledOverhang
+  val slabBotY = edgeBotY - scaledOverhang
   val slabCornerRadiusPx =
-    minOf(scaledCornerR * 0.30f, slabWidthPx * 0.36f, ((slabBotY - slabTopY) * 0.08f).coerceAtLeast(0f))
-      .coerceAtLeast(0f)
+    minOf(
+      (shellCornerRy - scaledOverhang).coerceAtLeast(0.8f),
+      (slabWidthPx * 0.30f).coerceAtLeast(0f),
+      ((slabBotY - slabTopY) * 0.08f).coerceAtLeast(0f),
+    ).coerceAtLeast(0f)
 
   val isSlabVisible =
     widthPx > 0f &&
@@ -875,13 +917,13 @@ internal fun calculateBook3dProjection(
       slabWidthPx > 0.35f &&
       (slabBotY - slabTopY) > 1f
 
-  // Allocate front cover board (slightly thicker), back cover board, and >=51% recessed paper miolo
+  // Reserve prominent outer front shell, cohesive rear shell, and >=52% visible warm paper block
   val frontBoardWidthPx =
     if (!isSlabVisible) 0f
     else minOf(frontBoardTargetPx.coerceAtLeast(0f) * combinedScale, slabWidthPx * 0.27f)
   val backBoardWidthPx =
     if (!isSlabVisible) 0f
-    else minOf(backBoardTargetPx.coerceAtLeast(0f) * combinedScale, slabWidthPx * 0.22f)
+    else minOf(backBoardTargetPx.coerceAtLeast(0f) * combinedScale, slabWidthPx * 0.21f)
 
   return Book3dProjection(
     angleDeg = angleDeg,
@@ -906,8 +948,8 @@ internal fun calculateBook3dProjection(
     slabBottomY = slabBotY,
     projectedEdgeTopY = edgeTopY,
     projectedEdgeBottomY = edgeBotY,
-    boardOuterTopY = boardOuterTopY,
-    boardOuterBotY = boardOuterBotY,
+    boardOuterTopY = edgeTopY,
+    boardOuterBotY = edgeBotY,
     slabCornerRadiusPx = slabCornerRadiusPx,
     foreEdgeScale = foreEdgeScale,
     spineEdgeScale = spineEdgeScale,
@@ -917,6 +959,11 @@ internal fun calculateBook3dProjection(
     bookRightX = bookRightX,
     shadowCenterX = shadowCenterX,
     shadowSpanPx = shadowSpanPx,
+    shellCornerRxEffective = shellCornerRxEffective,
+    shellCornerRy = shellCornerRy,
+    scaledOverhangPx = scaledOverhang,
+    frontProjectedWidthPx = frontProjectedWidthPx,
+    backProjectedWidthPx = backProjectedWidthPx,
   )
 }
 
@@ -1018,15 +1065,18 @@ private fun SearchEditionGalleryTile(
     }
   val thicknessSpec =
     remember(edition.totalPages) { calculateBookThicknessSpec(edition.totalPages) }
-  val minThicknessPx = remember(density) { with(density) { THICKNESS_MIN_DP.dp.toPx() } }
-  val baseThicknessPx = remember(thicknessSpec, density) { with(density) { thicknessSpec.thicknessDp.toPx() } }
+  val minThicknessPx = remember(density) { with(density) { THICKNESS_BOUND_MIN_DP.dp.toPx() } }
+  val maxThicknessPx = remember(density) { with(density) { THICKNESS_BOUND_MAX_DP.dp.toPx() } }
+  val fallbackThicknessPx = remember(thicknessSpec, density) { with(density) { thicknessSpec.thicknessDp.toPx() } }
   val effectiveThicknessPx =
-    remember(baseThicknessPx, minThicknessPx, measuredCoverSize.width) {
-      if (measuredCoverSize.width > 0) {
-        baseThicknessPx.coerceAtMost(maxOf(minThicknessPx, measuredCoverSize.width * 0.115f))
-      } else {
-        baseThicknessPx
-      }
+    remember(measuredCoverSize.width, fallbackThicknessPx, thicknessSpec.normalizedThickness, minThicknessPx, maxThicknessPx) {
+      calculateEffectiveBookThicknessPx(
+        coverWidthPx = measuredCoverSize.width.toFloat(),
+        fallbackThicknessPx = fallbackThicknessPx,
+        normalizedThickness = thicknessSpec.normalizedThickness,
+        minThicknessPx = minThicknessPx,
+        maxThicknessPx = maxThicknessPx,
+      )
     }
   val coverPalette =
     remember(edition.workTitle, edition.primaryAuthorsText, coverTokens) {
@@ -1076,7 +1126,7 @@ private fun SearchEditionGalleryTile(
       label = "edition_tile_press_progress",
     )
 
-  val cameraDist = remember(density) { 14f * density.density }
+  val cameraDist = remember(density) { 12f * density.density }
   val cameraDistPx = remember(cameraDist) { cameraDist * 72f }
   val selectedBorderColor by
     animateColorAsState(
@@ -1091,14 +1141,14 @@ private fun SearchEditionGalleryTile(
     if (isDarkTheme) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceContainerLowest
   val pageEdgeToneLight =
-    if (isDarkTheme) Color(0xFFD9D1C2)
-    else lerp(coverTokens.pageEdgeLight, Color(0xFFF6F2EA), 0.55f)
+    if (isDarkTheme) Color(0xFFDED6C6)
+    else Color(0xFFF6F1E6)
   val pageEdgeToneMid =
-    if (isDarkTheme) Color(0xFFC8BFAE)
-    else lerp(coverTokens.pageEdgeLight, coverTokens.pageEdgeShadow, 0.38f)
+    if (isDarkTheme) Color(0xFFCBC1B0)
+    else Color(0xFFEBE2D1)
   val pageEdgeToneShadow =
     if (isDarkTheme) Color(0xFFAEA391)
-    else coverTokens.pageEdgeShadow
+    else Color(0xFFD6CBB7)
 
   var coverEdgePalette by remember(edition.candidateId) { mutableStateOf<BookCoverEdgePalette?>(null) }
   val resolvedEdgePalette =
@@ -1106,13 +1156,13 @@ private fun SearchEditionGalleryTile(
       val base =
         coverEdgePalette
           ?: BookCoverEdgePalette(
-            top = lerp(coverPalette.clothColor, Color.White, 0.06f),
+            top = lerp(coverPalette.clothColor, Color.White, 0.08f),
             mid = coverPalette.clothColor,
-            bottom = lerp(coverPalette.clothColor, Color.Black, 0.08f),
+            bottom = lerp(coverPalette.clothColor, Color.Black, 0.10f),
           )
       if (isDarkTheme) {
         fun liftIfTooDark(c: Color): Color =
-          if (c.luminance() < 0.07f) lerp(c, Color(0xFF4A433A), 0.34f) else c
+          if (c.luminance() < 0.08f) lerp(c, Color(0xFF564E44), 0.36f) else c
         BookCoverEdgePalette(
           top = liftIfTooDark(base.top),
           mid = liftIfTooDark(base.mid),
@@ -1125,41 +1175,43 @@ private fun SearchEditionGalleryTile(
   val frontBoardBrush =
     remember(resolvedEdgePalette) {
       Brush.verticalGradient(
-        0.0f to lerp(resolvedEdgePalette.top, Color.White, 0.08f),
+        0.0f to lerp(resolvedEdgePalette.top, Color.White, 0.09f),
         0.48f to resolvedEdgePalette.mid,
-        1.0f to lerp(resolvedEdgePalette.bottom, Color.Black, 0.10f),
+        1.0f to lerp(resolvedEdgePalette.bottom, Color.Black, 0.11f),
       )
     }
   val backBoardTone =
     remember(versoBackground, resolvedEdgePalette, isDarkTheme) {
-      if (isDarkTheme) lerp(versoBackground, Color(0xFF564F46), 0.30f)
-      else lerp(versoBackground, resolvedEdgePalette.mid, 0.14f)
+      if (isDarkTheme) lerp(versoBackground, resolvedEdgePalette.mid, 0.22f)
+      else lerp(versoBackground, resolvedEdgePalette.mid, 0.18f)
     }
   val versoFrameColor =
     remember(versoBackground, resolvedEdgePalette, isDarkTheme) {
-      if (isDarkTheme) Color(0xFF4A443C).copy(alpha = 0.72f)
-      else lerp(versoBackground, resolvedEdgePalette.mid, 0.20f).copy(alpha = 0.70f)
+      if (isDarkTheme) lerp(Color(0xFF4F483F), resolvedEdgePalette.mid, 0.20f).copy(alpha = 0.78f)
+      else lerp(versoBackground, resolvedEdgePalette.mid, 0.24f).copy(alpha = 0.74f)
     }
 
-  val baseRestShadowDp = if (isSelected) 2.8f else 2.0f
-  val liftOffsetMaxPx = remember(density) { with(density) { 2.5.dp.toPx() } }
+  val liftOffsetMaxPx = remember(density) { with(density) { 1.6.dp.toPx() } }
   val foreCornerRadiusPx = remember(density) { with(density) { 6.dp.toPx() } }
-  val boardOverhangPx = remember(density) { with(density) { 2.0.dp.toPx() } }
+  val boardOverhangPx = remember(density) { with(density) { 2.2.dp.toPx() } }
   val frontBoardTargetPx =
     remember(density, thicknessSpec) {
-      with(density) { (1.30f + 0.25f * thicknessSpec.normalizedThickness).dp.toPx() }
+      with(density) { (2.4f + 1.2f * thicknessSpec.normalizedThickness).dp.toPx() }
     }
   val backBoardTargetPx =
     remember(density, thicknessSpec) {
-      with(density) { (1.10f + 0.20f * thicknessSpec.normalizedThickness).dp.toPx() }
+      with(density) { (2.0f + 1.0f * thicknessSpec.normalizedThickness).dp.toPx() }
     }
+  val shellLipHighlightStroke = remember(density) { Stroke(width = with(density) { 0.55.dp.toPx() }) }
+  val frontShellPath = remember { Path() }
+  val backShellPath = remember { Path() }
   val slabPath = remember { Path() }
   val spineCreaseBrush =
     remember(isDarkTheme) {
       Brush.horizontalGradient(
         0.91f to Color.Transparent,
         0.955f to Color.White.copy(alpha = if (isDarkTheme) 0.04f else 0.12f),
-        1.0f to Color.Black.copy(alpha = if (isDarkTheme) 0.18f else 0.055f),
+        1.0f to Color.Black.copy(alpha = if (isDarkTheme) 0.16f else 0.055f),
       )
     }
 
@@ -1281,22 +1333,44 @@ private fun SearchEditionGalleryTile(
         .testTag(testTag),
     contentAlignment = Alignment.BottomCenter,
   ) {
-    // Unified ground contact shadow + 3D Volume (colored front cover board, cream pages, back board)
-    if (!reduceMotion && measuredCoverSize.width > 0 && measuredCoverSize.height > 0) {
+    // Single Unified Shadow + Swept 3D Cover Shell & Recessed Pages Volume (zero stacked RenderNode 3D shadows)
+    if (measuredCoverSize.width > 0 && measuredCoverSize.height > 0) {
       val slabWidthDp = with(density) { measuredCoverSize.width.toDp() }
       val slabHeightDp = with(density) { measuredCoverSize.height.toDp() }
       Canvas(modifier = Modifier.width(slabWidthDp).height(slabHeightDp)) {
         val p = projectionProvider()
 
-        // Single soft ground contact shadow shared across the whole turning 3D book (stays within row spacing)
-        if (p.edgeTurn > 0.01f && size.width > 2f) {
-          val shadowWidth = (p.shadowSpanPx + 6.dp.toPx() * p.edgeTurn).coerceAtLeast(10.dp.toPx())
-          val outerH = (4.2.dp.toPx() + 1.0.dp.toPx() * p.edgeTurn)
-          val innerW = (shadowWidth * 0.72f).coerceAtLeast(6.dp.toPx())
-          val innerH = outerH * 0.56f
-          val baseShadowY = size.height + 0.6.dp.toPx()
-          val haloAlpha = (if (isDarkTheme) 0.14f else 0.075f) * p.edgeTurn
-          val coreAlpha = (if (isDarkTheme) 0.16f else 0.095f) * p.edgeTurn
+        // 1. Single unified soft shadow: smooth handoff between flat rest card shadow and turning ground contact oval
+        val turnWeight = if (reduceMotion) 0f else smoothstep01(0.01f, 0.28f, p.edgeTurn)
+        val restWeight = 1f - turnWeight
+        if (restWeight > 0.01f && size.width > 2f) {
+          val restExpand = (if (isSelected) 1.5f else 1.0f).dp.toPx()
+          val restOffsetY = 1.6.dp.toPx()
+          val restCorner = CornerRadius(6.dp.toPx())
+          val restAlpha = ((if (isDarkTheme) 0.14f else 0.065f) * restWeight)
+          drawRoundRect(
+            color = EditionCoverShadowColor.copy(alpha = restAlpha * 0.55f),
+            topLeft = Offset(-restExpand, restOffsetY - restExpand * 0.4f),
+            size = Size(size.width + restExpand * 2f, size.height + restExpand),
+            cornerRadius = restCorner,
+          )
+          drawRoundRect(
+            color = EditionCoverShadowColor.copy(alpha = restAlpha),
+            topLeft = Offset(-restExpand * 0.35f, restOffsetY * 0.65f),
+            size = Size(size.width + restExpand * 0.7f, size.height + restExpand * 0.35f),
+            cornerRadius = restCorner,
+          )
+        }
+
+        if (!reduceMotion && p.edgeTurn > 0.01f && size.width > 2f) {
+          // Ground contact shadow stays comfortably within the 6dp row padding so sibling rows never clip it
+          val shadowWidth = (p.shadowSpanPx + 4.dp.toPx() * p.edgeTurn).coerceAtLeast(14.dp.toPx())
+          val outerH = 4.6.dp.toPx()
+          val innerW = (shadowWidth * 0.72f).coerceAtLeast(8.dp.toPx())
+          val innerH = 2.5.dp.toPx()
+          val baseShadowY = size.height + 2.1.dp.toPx()
+          val haloAlpha = (if (isDarkTheme) 0.14f else 0.065f) * p.edgeTurn
+          val coreAlpha = (if (isDarkTheme) 0.17f else 0.088f) * p.edgeTurn
 
           drawOval(
             color = EditionCoverShadowColor.copy(alpha = haloAlpha),
@@ -1310,63 +1384,70 @@ private fun SearchEditionGalleryTile(
           )
         }
 
-        if (p.isSlabVisible) {
+        if (!reduceMotion && p.isSlabVisible) {
+          val topOuterY = p.projectedEdgeTopY
+          val botOuterY = p.projectedEdgeBottomY
+          val topPageY = p.slabTopY
+          val botPageY = p.slabBottomY
+          val pageH = (botPageY - topPageY).coerceAtLeast(0f)
           val frontBoardW = p.frontBoardWidthPx
           val backBoardW = p.backBoardWidthPx
-          val topY = p.slabTopY
-          val botY = p.slabBottomY
-          val innerH = (botY - topY).coerceAtLeast(0f)
           val paperStartX = p.slabFrontX + frontBoardW
           val paperEndX = (p.slabBackX - backBoardW).coerceAtLeast(paperStartX)
           val paperSpan = (paperEndX - paperStartX).coerceAtLeast(0f)
+          val shellRadius = CornerRadius(p.shellCornerRxEffective, p.shellCornerRy)
+          val pageCornerRx = minOf(p.shellCornerRxEffective * 0.68f, (paperSpan * 0.42f).coerceAtLeast(0.8f)).coerceAtLeast(0.6f)
+          val pageCornerRy = p.slabCornerRadiusPx.coerceAtLeast(0.8f)
+          val pageRadius = CornerRadius(pageCornerRx, pageCornerRy)
+          val paperBase = lerp(pageEdgeToneLight, pageEdgeToneMid, 0.36f)
 
-          // 1. Recessed off-white book pages (miolo) cleanly bounded between front and back cover boards
-          if (paperSpan > 0.2f && innerH > 0.5f) {
-            val paperLeft = paperStartX - 0.55f
-            val paperRight = paperEndX + 0.55f
+          fun drawPagesBlock(roundLeftSide: Boolean, roundRightSide: Boolean) {
+            if (paperSpan <= 0.25f || pageH <= 0.5f) return
             slabPath.rewind()
             slabPath.addRoundRect(
               RoundRect(
-                left = paperLeft,
-                top = topY,
-                right = paperRight,
-                bottom = botY,
-                cornerRadius = CornerRadius(p.slabCornerRadiusPx, p.slabCornerRadiusPx),
+                left = paperStartX - 1.2f,
+                top = topPageY,
+                right = paperEndX + 1.2f,
+                bottom = botPageY,
+                topLeftCornerRadius = if (roundLeftSide) pageRadius else CornerRadius.Zero,
+                bottomLeftCornerRadius = if (roundLeftSide) pageRadius else CornerRadius.Zero,
+                topRightCornerRadius = if (roundRightSide) pageRadius else CornerRadius.Zero,
+                bottomRightCornerRadius = if (roundRightSide) pageRadius else CornerRadius.Zero,
               )
             )
-            val paperBase = lerp(pageEdgeToneLight, pageEdgeToneMid, 0.35f)
             drawPath(path = slabPath, color = paperBase)
 
-            val safeTop = topY + p.slabCornerRadiusPx
-            val safeH = (innerH - p.slabCornerRadiusPx * 2f).coerceAtLeast(0f)
+            val safeTop = topPageY + pageCornerRy
+            val safeH = (pageH - pageCornerRy * 2f).coerceAtLeast(0f)
             if (paperSpan > 1.0f && safeH > 0.5f) {
-              val highlightW = (paperSpan * 0.36f).coerceAtLeast(0.5f)
-              val shadowW = (paperSpan * 0.28f).coerceAtLeast(0.5f)
+              val highlightW = (paperSpan * 0.38f).coerceAtLeast(0.6f)
+              val shadowW = (paperSpan * 0.28f).coerceAtLeast(0.6f)
               drawRect(
-                color = pageEdgeToneLight.copy(alpha = 0.65f * p.edgeTurn),
+                color = pageEdgeToneLight.copy(alpha = 0.70f * p.edgeTurn),
                 topLeft = Offset(paperStartX, safeTop),
                 size = Size(highlightW, safeH),
               )
               drawRect(
-                color = pageEdgeToneShadow.copy(alpha = 0.42f * p.edgeTurn),
+                color = pageEdgeToneShadow.copy(alpha = 0.45f * p.edgeTurn),
                 topLeft = Offset((paperEndX - shadowW).coerceAtLeast(paperStartX), safeTop),
                 size = Size(shadowW, safeH),
               )
             }
 
-            // Delicate stacked-paper texture hairlines inside miolo (0.35dp @ 0.08..0.10 alpha)
-            val grainMinPx = 2.0.dp.toPx()
+            // Subtle stacked-page texture hairlines (restrained, crisp, never noisy)
+            val grainMinPx = 2.4.dp.toPx()
             if (paperSpan > grainMinPx) {
               val grainAlpha =
-                (0.095f * p.edgeTurn * smoothstep01(grainMinPx, grainMinPx * 2.1f, paperSpan))
-                  .coerceIn(0f, 0.10f)
-              if (grainAlpha > 0.01f) {
+                (0.088f * p.edgeTurn * smoothstep01(grainMinPx, grainMinPx * 2.0f, paperSpan))
+                  .coerceIn(0f, 0.095f)
+              if (grainAlpha > 0.01f && safeH > 2.dp.toPx()) {
                 val lineColor = pageEdgeToneShadow.copy(alpha = grainAlpha)
                 val lineStroke = 0.35.dp.toPx()
-                val lineTop = topY + 2.dp.toPx()
-                val lineBot = botY - 2.dp.toPx()
+                val lineTop = safeTop + 1.dp.toPx()
+                val lineBot = (botPageY - pageCornerRy) - 1.dp.toPx()
                 if (lineBot > lineTop) {
-                  val count = if (paperSpan > 4.2.dp.toPx()) 4 else 2
+                  val count = if (paperSpan > 6.dp.toPx()) 4 else if (paperSpan > 3.5.dp.toPx()) 3 else 2
                   for (i in 1..count) {
                     val t = i.toFloat() / (count + 1).toFloat()
                     val lx = paperStartX + paperSpan * t
@@ -1381,99 +1462,164 @@ private fun SearchEditionGalleryTile(
               }
             }
 
-            // Soft recessed overhang shadow tucked immediately beneath top & bottom cover boards
-            val overhangShadowH = 0.95.dp.toPx().coerceAtMost(innerH * 0.075f)
-            if (overhangShadowH > 0.25f) {
-              val overhangShade = Color.Black.copy(alpha = (if (isDarkTheme) 0.20f else 0.11f) * p.edgeTurn)
-              drawRect(
-                color = overhangShade,
-                topLeft = Offset(paperStartX, topY),
-                size = Size(paperSpan, overhangShadowH),
-              )
-              drawRect(
-                color = overhangShade,
-                topLeft = Offset(paperStartX, botY - overhangShadowH),
-                size = Size(paperSpan, overhangShadowH),
-              )
+            // Overhang shadow nestled right under the protruding top & bottom hardcover shells
+            val overhangShadowH = 1.15.dp.toPx().coerceAtMost(pageH * 0.08f)
+            if (overhangShadowH > 0.3f) {
+              val overhangShade = Color.Black.copy(alpha = (if (isDarkTheme) 0.22f else 0.11f) * p.edgeTurn)
+              val insetX = pageCornerRx * 0.65f
+              val spanInner = (paperSpan - insetX).coerceAtLeast(0f)
+              val startInner = if (roundLeftSide) paperStartX + insetX else paperStartX
+              if (spanInner > 0.5f) {
+                drawRect(
+                  color = overhangShade,
+                  topLeft = Offset(startInner, topPageY),
+                  size = Size(spanInner, overhangShadowH),
+                )
+                drawRect(
+                  color = overhangShade,
+                  topLeft = Offset(startInner, botPageY - overhangShadowH),
+                  size = Size(spanInner, overhangShadowH),
+                )
+              }
             }
           }
 
-          // 2. Colored front cover edge & integrated back cover board across the entire rotation arc
-          val boardH = (p.boardOuterBotY - p.boardOuterTopY).coerceAtLeast(0f)
-          val aaUnderlap = 0.48f * smoothstep01(0.08f, 0.35f, p.absCos)
-          val frontLeft = p.slabFrontX - (if (!p.isShowingBack) aaUnderlap else 0f)
-          val frontBoardAlpha = smoothstep01(0.25f, 0.85f, frontBoardW)
-          val backBoardAlpha = smoothstep01(0.25f, 0.85f, backBoardW)
+          if (!p.isShowingBack) {
+            // 2A. Far-side Back Cover Shell wrapping cleanly behind pages with matching outer corners
+            if (backBoardW > 0.25f) {
+              val backAnchorLeft = maxOf(p.bookLeftX + 0.5f, p.slabBackX - p.shellCornerRxEffective - backBoardW - 2f)
+              backShellPath.rewind()
+              backShellPath.addRoundRect(
+                RoundRect(
+                  left = backAnchorLeft,
+                  top = topOuterY,
+                  right = p.slabBackX,
+                  bottom = botOuterY,
+                  topRightCornerRadius = shellRadius,
+                  bottomRightCornerRadius = shellRadius,
+                )
+              )
+              drawPath(path = backShellPath, color = backBoardTone)
+            }
 
-          if (boardH > 1f && frontBoardW > 0.2f && frontBoardAlpha > 0.02f) {
-            val rimRadius = CornerRadius(minOf(frontBoardW * 0.45f, 0.9.dp.toPx()))
-            drawRoundRect(
-              brush = frontBoardBrush,
-              topLeft = Offset(frontLeft, p.boardOuterTopY),
-              size = Size(frontBoardW + (p.slabFrontX - frontLeft), boardH),
-              cornerRadius = rimRadius,
-              alpha = frontBoardAlpha,
-            )
-            // Subtle outer edge bevel highlight + inner crease separating front board from cream pages
-            drawLine(
-              color = Color.White.copy(alpha = 0.14f * p.edgeTurn * frontBoardAlpha),
-              start = Offset(p.slabFrontX + 0.35f, p.boardOuterTopY + 1.dp.toPx()),
-              end = Offset(p.slabFrontX + 0.35f, p.boardOuterBotY - 1.dp.toPx()),
-              strokeWidth = 0.4.dp.toPx(),
-            )
-            drawLine(
-              color = Color.Black.copy(alpha = (if (isDarkTheme) 0.24f else 0.14f) * p.edgeTurn * frontBoardAlpha),
-              start = Offset(paperStartX, topY),
-              end = Offset(paperStartX, botY),
-              strokeWidth = 0.5.dp.toPx(),
-            )
-          }
+            // 2B. Warm paper block recessed inside overhanging cover shells
+            drawPagesBlock(roundLeftSide = false, roundRightSide = true)
 
-          if (boardH > 1f && backBoardW > 0.2f && backBoardAlpha > 0.02f) {
-            val backRightExtend = if (p.isShowingBack) aaUnderlap else 0f
-            val backLeft = (p.slabBackX - backBoardW).coerceAtLeast(p.slabFrontX)
-            val rimRadius = CornerRadius(minOf(backBoardW * 0.45f, 0.9.dp.toPx()))
-            drawRoundRect(
-              color = backBoardTone.copy(alpha = backBoardAlpha),
-              topLeft = Offset(backLeft, p.boardOuterTopY),
-              size = Size(backBoardW + backRightExtend, boardH),
-              cornerRadius = rimRadius,
-            )
-            // Inner crease separating cream pages from back cover board
-            drawLine(
-              color = Color.Black.copy(alpha = (if (isDarkTheme) 0.22f else 0.11f) * p.edgeTurn * backBoardAlpha),
-              start = Offset(paperEndX, topY),
-              end = Offset(paperEndX, botY),
-              strokeWidth = 0.5.dp.toPx(),
-            )
+            // 2C. Inner crease where pages tuck behind back cover shell
+            if (backBoardW > 0.25f && pageH > 2f) {
+              drawLine(
+                color = Color.Black.copy(alpha = (if (isDarkTheme) 0.24f else 0.11f) * p.edgeTurn),
+                start = Offset(paperEndX, topPageY + pageCornerRy * 0.5f),
+                end = Offset(paperEndX, botPageY - pageCornerRy * 0.5f),
+                strokeWidth = 0.5.dp.toPx(),
+              )
+            }
+
+            // 2D. Prominent Colored Front Cover Shell sweeping seamlessly behind Front's right rounded edge
+            if (frontBoardW > 0.25f) {
+              val tuckPx = minOf(p.shellCornerRxEffective + 1.5f, (p.frontProjectedWidthPx * 0.78f).coerceAtLeast(0f))
+              frontShellPath.rewind()
+              frontShellPath.addRoundRect(
+                RoundRect(
+                  left = p.slabFrontX - tuckPx,
+                  top = topOuterY,
+                  right = p.slabFrontX + frontBoardW,
+                  bottom = botOuterY,
+                  topRightCornerRadius = shellRadius,
+                  bottomRightCornerRadius = shellRadius,
+                )
+              )
+              drawPath(path = frontShellPath, brush = frontBoardBrush)
+              drawPath(
+                path = frontShellPath,
+                color = Color.White.copy(alpha = (if (isDarkTheme) 0.12f else 0.18f) * p.edgeTurn),
+                style = shellLipHighlightStroke,
+              )
+              if (pageH > 2f) {
+                drawLine(
+                  color = Color.Black.copy(alpha = (if (isDarkTheme) 0.28f else 0.15f) * p.edgeTurn),
+                  start = Offset(paperStartX, topOuterY + p.shellCornerRy * 0.35f),
+                  end = Offset(paperStartX, botOuterY - p.shellCornerRy * 0.35f),
+                  strokeWidth = 0.55.dp.toPx(),
+                )
+              }
+            }
+          } else {
+            // Mirror geometry past 90°: Front cover shell on far left, recessed pages in center, Back cover shell meeting Verso
+            if (frontBoardW > 0.25f) {
+              val frontAnchorRight = minOf(p.bookRightX - 0.5f, p.slabFrontX + p.shellCornerRxEffective + frontBoardW + 2f)
+              frontShellPath.rewind()
+              frontShellPath.addRoundRect(
+                RoundRect(
+                  left = p.slabFrontX,
+                  top = topOuterY,
+                  right = frontAnchorRight,
+                  bottom = botOuterY,
+                  topLeftCornerRadius = shellRadius,
+                  bottomLeftCornerRadius = shellRadius,
+                )
+              )
+              drawPath(path = frontShellPath, brush = frontBoardBrush)
+              drawPath(
+                path = frontShellPath,
+                color = Color.White.copy(alpha = (if (isDarkTheme) 0.12f else 0.18f) * p.edgeTurn),
+                style = shellLipHighlightStroke,
+              )
+            }
+
+            drawPagesBlock(roundLeftSide = true, roundRightSide = false)
+
+            if (frontBoardW > 0.25f && pageH > 2f) {
+              drawLine(
+                color = Color.Black.copy(alpha = (if (isDarkTheme) 0.28f else 0.15f) * p.edgeTurn),
+                start = Offset(paperStartX, topPageY + pageCornerRy * 0.5f),
+                end = Offset(paperStartX, botPageY - pageCornerRy * 0.5f),
+                strokeWidth = 0.55.dp.toPx(),
+              )
+            }
+
+            if (backBoardW > 0.25f) {
+              val tuckPx = minOf(p.shellCornerRxEffective + 1.5f, (p.backProjectedWidthPx * 0.78f).coerceAtLeast(0f))
+              backShellPath.rewind()
+              backShellPath.addRoundRect(
+                RoundRect(
+                  left = p.slabBackX - backBoardW,
+                  top = topOuterY,
+                  right = p.slabBackX + tuckPx,
+                  bottom = botOuterY,
+                  topLeftCornerRadius = shellRadius,
+                  bottomLeftCornerRadius = shellRadius,
+                )
+              )
+              drawPath(path = backShellPath, color = backBoardTone)
+              if (pageH > 2f) {
+                drawLine(
+                  color = Color.Black.copy(alpha = (if (isDarkTheme) 0.24f else 0.12f) * p.edgeTurn),
+                  start = Offset(paperEndX, topOuterY + p.shellCornerRy * 0.35f),
+                  end = Offset(paperEndX, botOuterY - p.shellCornerRy * 0.35f),
+                  strokeWidth = 0.5.dp.toPx(),
+                )
+              }
+            }
           }
         }
       }
     }
 
-    // Front Cover Face (kept mounted during flip; preserves authentic cover artwork without darkening splits)
+    // Front Cover Face (kept mounted during flip; shadowElevation = 0f avoids HWUI RenderNode 3D dark artifacts)
     Box(
       modifier =
         Modifier.graphicsLayer {
           val p = projectionProvider()
-          val rawShadowDp =
-            if (p.isShowingBack) 0f
-            else {
-              (baseRestShadowDp + 1.1f * p.edgeTurn - 0.5f * pressProgress).coerceAtLeast(1.2f)
-            }
-          val shadowDp = rawShadowDp * p.frontShadowFactor
-
           scaleX = p.combinedScale
           scaleY = p.combinedScale
           rotationY = p.frontRotationY
           cameraDistance = cameraDist
           translationX = p.frontTranslationX
           translationY = p.liftY
-          shadowElevation = with(density) { shadowDp.dp.toPx() }
+          shadowElevation = 0f
           shape = EditionFrontShape
           clip = false
-          ambientShadowColor = EditionCoverShadowColor.copy(alpha = (0.14f + 0.06f * p.edgeTurn) * p.frontShadowFactor)
-          spotShadowColor = EditionCoverShadowColor.copy(alpha = (0.20f + 0.08f * p.edgeTurn) * p.frontShadowFactor)
           alpha = p.frontAlpha
         },
       contentAlignment = Alignment.Center,
@@ -1555,21 +1701,15 @@ private fun SearchEditionGalleryTile(
           backSizeModifier
             .graphicsLayer {
               val p = projectionProvider()
-              val settledShadowDp =
-                if (reduceMotion) 2.2f
-                else (2.2f + 1.0f * p.edgeTurn) * p.backShadowFactor
-
               scaleX = p.combinedScale
               scaleY = p.combinedScale
               rotationY = p.backRotationY
               cameraDistance = cameraDist
               translationX = p.backTranslationX
               translationY = p.liftY
-              shadowElevation = with(density) { settledShadowDp.dp.toPx() }
+              shadowElevation = 0f
               shape = EditionBackShape
               clip = true
-              ambientShadowColor = EditionCoverShadowColor.copy(alpha = (0.14f + 0.06f * p.edgeTurn) * p.backShadowFactor)
-              spotShadowColor = EditionCoverShadowColor.copy(alpha = (0.20f + 0.08f * p.edgeTurn) * p.backShadowFactor)
               alpha = p.backAlpha
             }
             .testTag("${testTag}_back_face"),

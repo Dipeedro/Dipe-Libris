@@ -53,6 +53,7 @@ import com.example.feature.library.BookSearchScreen
 import com.example.feature.library.BookSearchUiState
 import com.example.feature.library.calculateBook3dProjection
 import com.example.feature.library.calculateBookThicknessSpec
+import com.example.feature.library.calculateEffectiveBookThicknessPx
 import com.example.feature.library.formatEditorialDisplayTitle
 import kotlin.math.PI
 import kotlin.math.abs
@@ -1503,19 +1504,19 @@ class SearchVisualPolishTest {
     val missingSpec = calculateBookThicknessSpec(null)
     val zeroSpec = calculateBookThicknessSpec(0)
     val negativeSpec = calculateBookThicknessSpec(-25)
-    assertEquals(6.5f, missingSpec.thicknessDp.value, 0.01f)
-    assertEquals(0.5f, missingSpec.normalizedThickness, 0.01f)
+    assertEquals(17.5f, missingSpec.thicknessDp.value, 0.01f)
+    assertEquals((17.5f - 11.5f) / (24.5f - 11.5f), missingSpec.normalizedThickness, 0.01f)
     assertEquals(missingSpec.thicknessDp.value, zeroSpec.thicknessDp.value, 0.001f)
     assertEquals(missingSpec.thicknessDp.value, negativeSpec.thicknessDp.value, 0.001f)
 
     val minFloor = calculateBookThicknessSpec(20)
     val floorBoundary = calculateBookThicknessSpec(60)
-    assertEquals(3.5f, minFloor.thicknessDp.value, 0.01f)
+    assertEquals(11.5f, minFloor.thicknessDp.value, 0.01f)
     assertEquals(minFloor.thicknessDp.value, floorBoundary.thicknessDp.value, 0.001f)
 
     val maxCeiling = calculateBookThicknessSpec(1800)
     val ceilingBoundary = calculateBookThicknessSpec(950)
-    assertEquals(9.5f, maxCeiling.thicknessDp.value, 0.01f)
+    assertEquals(24.5f, maxCeiling.thicknessDp.value, 0.01f)
     assertEquals(maxCeiling.thicknessDp.value, ceilingBoundary.thicknessDp.value, 0.001f)
 
     val p80 = calculateBookThicknessSpec(80).thicknessDp.value
@@ -1528,6 +1529,18 @@ class SearchVisualPolishTest {
     val lowDelta = calculateBookThicknessSpec(280).thicknessDp.value - p80
     val highDelta = p900 - calculateBookThicknessSpec(700).thicknessDp.value
     assertTrue(lowDelta > highDelta)
+
+    // Proportional cover-width scaling stays expressive on small covers and clamped on large covers
+    val minPx = 31.5f // 10.5dp @ 3x
+    val maxPx = 78.0f // 26.0dp @ 3x
+    val smallGridMid = calculateEffectiveBookThicknessPx(240f, 52.5f, missingSpec.normalizedThickness, minPx, maxPx)
+    val standardGridMid = calculateEffectiveBookThicknessPx(320f, 52.5f, missingSpec.normalizedThickness, minPx, maxPx)
+    val tabletGridMax = calculateEffectiveBookThicknessPx(500f, 73.5f, 1f, minPx, maxPx)
+    val tinyGridFloor = calculateEffectiveBookThicknessPx(150f, 34.5f, 0f, minPx, maxPx)
+    assertTrue("Medium grid should scale proportionally thicker than small grid", standardGridMid > smallGridMid)
+    assertTrue("Stylized default depth should be >= 16% of cover width on standard 3-col grid", standardGridMid >= 320f * 0.16f)
+    assertEquals(maxPx, tabletGridMax, 0.01f)
+    assertEquals(minPx, tinyGridFloor, 0.01f)
   }
 
   @Test
@@ -1960,20 +1973,38 @@ class SearchVisualPolishTest {
       whitePalette.mid.luminance() < 0.94f,
     )
     assertTrue("Softened white edge must still read light (${whitePalette.mid.luminance()})", whitePalette.mid.luminance() > 0.78f)
+    // 3. White scan border on the rightmost 5% does not wash out genuine deep-blue cover artwork
+    val marginBmp = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+    val deepBlue = AndroidColor.rgb(24, 58, 122)
+    for (y in 0 until 60) {
+      for (x in 0 until 37) {
+        marginBmp.setPixel(x, y, deepBlue)
+      }
+      for (x in 37 until 40) {
+        marginBmp.setPixel(x, y, AndroidColor.WHITE)
+      }
+    }
+    val marginExtracted = CoverEdgeColorExtractor.extractFromSoftwareBitmap(marginBmp)
+    marginBmp.recycle()
+    assertTrue("Expected edge palette from cover with thin scan margin", marginExtracted != null)
+    assertTrue(
+      "Thin white scan margin must not wash out blue cover edge (${marginExtracted!!.mid})",
+      marginExtracted.mid.blue > marginExtracted.mid.red + 0.25f && marginExtracted.mid.luminance() < 0.35f,
+    )
   }
 
   @Test
   fun book3dProjection_etapa2BoardPartitionsAndUnifiedGroundShadowContinuousAcross90Deg() {
-    val widthPx = 280f
-    val heightPx = 420f
-    val cameraDistPx = 14f * 3f * 72f
-    val liftMaxPx = 7.5f
+    val widthPx = 300f // ~100dp @ 3x
+    val heightPx = 450f
+    val cameraDistPx = 12f * 3f * 72f
+    val liftMaxPx = 4.8f
     val cornerRadiusPx = 18f
-    val boardOverhangPx = 6.0f
+    val boardOverhangPx = 6.6f
 
-    // Verify both thin (3.5dp = 10.5px) and thick (9.5dp = 28.5px) books keep visible colored boards AND >=50% pages
-    val thicknesses = listOf(10.5f to (3.9f to 3.3f), 28.5f to (4.65f to 3.9f))
-    val turnAngles = listOf(15f, 35f, 65f, 89.5f, 90.5f, 115f, 145f, 165f)
+    // Verify both thin (~13.5% = 40.5px) and thick (~23.5% = 70.5px) chunky books across full angle checklist
+    val thicknesses = listOf(40.5f to (7.2f to 6.0f), 70.5f to (10.8f to 9.0f))
+    val turnAngles = listOf(20f, 30f, 45f, 60f, 75f, 89.5f, 90f, 90.5f, 105f, 120f, 150f)
     for ((thicknessPx, boardTargets) in thicknesses) {
       val (frontTarget, backTarget) = boardTargets
       for (deg in turnAngles) {
@@ -2008,9 +2039,45 @@ class SearchVisualPolishTest {
           "Unified shadow span (${p.shadowSpanPx}) must cover full book footprint including slab (${p.slabWidthPx})",
           p.shadowSpanPx >= p.slabWidthPx - 0.05f && p.bookRightX > p.bookLeftX,
         )
+        assertEquals("Outer shell top must align continuously with cover top at $deg", p.projectedEdgeTopY, p.boardOuterTopY, 0.01f)
+        assertEquals("Outer shell bottom must align continuously with cover bottom at $deg", p.projectedEdgeBottomY, p.boardOuterBotY, 0.01f)
+        assertTrue("Shell corners must stay softly rounded even at $deg", p.shellCornerRy > 1f && p.shellCornerRxEffective >= 0.8f)
       }
 
-      // Verify zero ground-shadow jump across 90° face handoff (89.5° -> 90.5°)
+      // Chunky visibility check at 30° and 90°: visible thickness >= 20px (~6.7dp @ 3x) at 30°
+      val at30 =
+        calculateBook3dProjection(
+          widthPx = widthPx,
+          heightPx = heightPx,
+          thicknessPx = thicknessPx,
+          flipProgress = 30f / 180f,
+          pressProgress = 0f,
+          cameraDistPx = cameraDistPx,
+          liftOffsetMaxPx = liftMaxPx,
+          foreCornerRadiusPx = cornerRadiusPx,
+          boardOverhangPx = boardOverhangPx,
+          reduceMotion = false,
+          frontBoardTargetPx = frontTarget,
+          backBoardTargetPx = backTarget,
+        )
+      assertTrue("Chunky book depth must already be unmistakable at 30° (${at30.slabWidthPx}px)", at30.slabWidthPx >= 20f)
+
+      // Verify zero ground-shadow & height jump across 75° -> 90° -> 105°
+      val at75 =
+        calculateBook3dProjection(
+          widthPx = widthPx,
+          heightPx = heightPx,
+          thicknessPx = thicknessPx,
+          flipProgress = 75f / 180f,
+          pressProgress = 0f,
+          cameraDistPx = cameraDistPx,
+          liftOffsetMaxPx = liftMaxPx,
+          foreCornerRadiusPx = cornerRadiusPx,
+          boardOverhangPx = boardOverhangPx,
+          reduceMotion = false,
+          frontBoardTargetPx = frontTarget,
+          backBoardTargetPx = backTarget,
+        )
       val before90 =
         calculateBook3dProjection(
           widthPx = widthPx,
@@ -2048,6 +2115,10 @@ class SearchVisualPolishTest {
       assertTrue(
         "Shadow span must remain continuous across 90° (${before90.shadowSpanPx} vs ${after90.shadowSpanPx})",
         abs(before90.shadowSpanPx - after90.shadowSpanPx) < 1.5f,
+      )
+      assertTrue(
+        "Page block height must stay smooth (no vertical pop) between 75° and 90°",
+        abs((at75.slabBottomY - at75.slabTopY) - (before90.slabBottomY - before90.slabTopY)) < 4.5f,
       )
     }
   }
