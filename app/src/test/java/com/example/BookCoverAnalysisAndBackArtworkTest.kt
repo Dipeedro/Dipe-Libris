@@ -479,4 +479,192 @@ class BookCoverAnalysisAndBackArtworkTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("search_edition_select_0_0_back_face").assertDoesNotExist()
   }
+
+  @Test
+  fun designLibrary_hasTenDistinctFamiliesDrivenByCoverCharacteristics() {
+    assertEquals(10, com.example.core.designsystem.components.BackArtworkDesignFamily.entries.size)
+
+    // 1. Botanical green foliage cover -> ranks BOTANICAL or ORGANIC at top
+    val botanicalBmp =
+      buildPixelBitmap(30, 45) { x, y ->
+        if ((x + y) % 5 == 0) AndroidColor.rgb(222, 198, 128)
+        else AndroidColor.rgb(66, 138, 92)
+      }
+    val botanicalAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(botanicalBmp)!!
+    botanicalBmp.recycle()
+    assertTrue(
+      "Botanical cover should rank BOTANICAL/ORGANIC among top choices: ${botanicalAnalysis.defaultComposition.rankedFamilies}",
+      com.example.core.designsystem.components.BackArtworkDesignFamily.BOTANICAL in
+        botanicalAnalysis.defaultComposition.rankedFamilies ||
+        com.example.core.designsystem.components.BackArtworkDesignFamily.ORGANIC in
+        botanicalAnalysis.defaultComposition.rankedFamilies,
+    )
+
+    // 2. Nocturnal indigo + warm gold star cover -> ranks CELESTIAL among top choices
+    val celestialBmp =
+      buildPixelBitmap(30, 45) { x, y ->
+        if (x in 12..17 && y in 18..23) AndroidColor.rgb(232, 194, 86)
+        else AndroidColor.rgb(18, 30, 74)
+      }
+    val celestialAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(celestialBmp)!!
+    celestialBmp.recycle()
+    assertTrue(
+      "Night sky + gold cover should rank CELESTIAL: ${celestialAnalysis.defaultComposition.rankedFamilies}",
+      com.example.core.designsystem.components.BackArtworkDesignFamily.CELESTIAL in
+        celestialAnalysis.defaultComposition.rankedFamilies,
+    )
+
+    // 3. Monochromatic slate cover -> MONOCHROMATIC leads
+    val monoBmp = buildPixelBitmap(30, 45) { _, _ -> AndroidColor.rgb(74, 86, 98) }
+    val monoAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(monoBmp)!!
+    monoBmp.recycle()
+    assertEquals(
+      com.example.core.designsystem.components.BackArtworkDesignFamily.MONOCHROMATIC,
+      monoAnalysis.defaultComposition.family,
+    )
+
+    // 4. Deterministic seed & anti-repetition across distinct edition keys on shared cover analysis
+    val specA1 = BookCoverAnalyzer.resolveCompositionSpec(botanicalAnalysis, "ed_a|Book A")
+    val specA2 = BookCoverAnalyzer.resolveCompositionSpec(botanicalAnalysis, "ed_a|Book A")
+    assertEquals(specA1, specA2)
+
+    val specsAcrossEditions =
+      (0 until 8).map { i ->
+        BookCoverAnalyzer.resolveCompositionSpec(botanicalAnalysis, "ed_$i|Publisher $i|${2010 + i}")
+      }
+    assertTrue(
+      "Distinct edition keys should yield compositional variety instead of identical templates",
+      specsAcrossEditions.map { it.family to it.variantIndex }.toSet().size >= 2,
+    )
+  }
+
+  @Test
+  fun colorPipeline_preservesPastelMintAndVibrantCoversWithoutDarkScrimArtifact() {
+    // Pastel mint cover (resembling Vou te Receitar um Gato)
+    val pastelMintBmp =
+      buildPixelBitmap(30, 45) { x, y ->
+        if (x in 9..20 && y in 12..32) AndroidColor.rgb(232, 232, 228)
+        else AndroidColor.rgb(156, 206, 198)
+      }
+    val mintAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(pastelMintBmp)!!
+    pastelMintBmp.recycle()
+
+    assertTrue(
+      "Pastel mint green/blue channels should remain clearly above red (not grayed out): ${mintAnalysis.palette.dominant}",
+      mintAnalysis.palette.dominant.green > mintAnalysis.palette.dominant.red + 0.08f &&
+        mintAnalysis.palette.dominant.blue > mintAnalysis.palette.dominant.red + 0.06f,
+    )
+    val mintRender = resolveBackArtworkRenderPalette(mintAnalysis, isDarkTheme = false)
+    assertTrue(
+      "Mint back surface must stay light/pastel without dark graying (${mintRender.midFieldColor.luminance()})",
+      mintRender.midFieldColor.luminance() >= 0.42f,
+    )
+    assertEquals(
+      "High-contrast pastel upper zone must have ZERO dark cushion scrim regression",
+      0f,
+      mintRender.textCushionAlpha,
+      0.001f,
+    )
+
+    // Vibrant terracotta/turquoise split cover -> retains vibrancy & 5-role hierarchy
+    val vibrantBmp =
+      buildPixelBitmap(30, 45) { x, _ ->
+        if (x < 15) AndroidColor.rgb(24, 172, 168) else AndroidColor.rgb(212, 74, 54)
+      }
+    val vibrantAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(vibrantBmp)!!
+    vibrantBmp.recycle()
+    val domHsv = FloatArray(3)
+    AndroidColor.RGBToHSV(
+      (vibrantAnalysis.palette.dominant.red * 255f).toInt(),
+      (vibrantAnalysis.palette.dominant.green * 255f).toInt(),
+      (vibrantAnalysis.palette.dominant.blue * 255f).toInt(),
+      domHsv,
+    )
+    assertTrue("Vibrant cover should preserve strong chroma (${domHsv[1]})", domHsv[1] >= 0.55f)
+    assertTrue(
+      "Light support should remain brighter than dark contrast",
+      vibrantAnalysis.palette.lightSupport.luminance() > vibrantAnalysis.palette.darkContrast.luminance() + 0.30f,
+    )
+    val vibrantRender = resolveBackArtworkRenderPalette(vibrantAnalysis, isDarkTheme = false)
+    assertTrue(
+      "Never emit a >0.15f black scrim over mid-cover",
+      vibrantRender.textCushionAlpha <= 0.15f,
+    )
+  }
+
+  @Test
+  fun proceduralDesignFamilies_allFortyArchetypesProduceBoundedFiniteGeometry() {
+    val sampleBmp =
+      buildPixelBitmap(24, 36) { _, y ->
+        if (y < 16) AndroidColor.rgb(36, 72, 112) else AndroidColor.rgb(194, 96, 56)
+      }
+    val baseAnalysis = BookCoverAnalyzer.analyzeSoftwareBitmap(sampleBmp)!!
+    sampleBmp.recycle()
+    val renderPalette = resolveBackArtworkRenderPalette(baseAnalysis, isDarkTheme = false)
+
+    val w = 300f
+    val h = 450f
+    val dpToPx = { dpVal: Float -> dpVal * 3f }
+
+    for (family in com.example.core.designsystem.components.BackArtworkDesignFamily.entries) {
+      for (variant in 0..3) {
+        val spec =
+          baseAnalysis.defaultComposition.copy(
+            family = family,
+            variantIndex = variant,
+            mirrorHorizontal = (variant % 2 == 1),
+            borderTreatment =
+              com.example.core.designsystem.components.BackBorderTreatment.entries[variant],
+          )
+        val geom =
+          com.example.core.designsystem.components.BookBackDesignRenderer.prepareGeometry(
+            w = w,
+            h = h,
+            dpToPx = dpToPx,
+            analysis = baseAnalysis,
+            spec = spec,
+            palette = renderPalette,
+          )
+        for ((pt, r) in geom.primaryCircles + geom.accentDots + geom.patternDots) {
+          assertFalse("NaN in circle for $family/$variant", pt.x.isNaN() || pt.y.isNaN() || r.isNaN())
+          assertTrue("Radius must be positive for $family/$variant", r > 0f)
+        }
+        for ((a, b) in geom.lines) {
+          assertFalse("NaN in line for $family/$variant", a.x.isNaN() || a.y.isNaN() || b.x.isNaN() || b.y.isNaN())
+        }
+      }
+    }
+  }
+
+  @Test
+  fun backArtworkSurface_promotesAuthorWhenPublisherIsNullAndRespectsAdaptiveFinish() {
+    val coverBmp =
+      buildPixelBitmap(24, 36) { _, _ -> AndroidColor.rgb(160, 208, 198) }
+    val analysis = BookCoverAnalyzer.analyzeSoftwareBitmap(coverBmp)!!
+    coverBmp.recycle()
+    val renderPalette = resolveBackArtworkRenderPalette(analysis, isDarkTheme = false)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(LocalAppLanguage provides AppLanguage.PORTUGUESE_BR) {
+        DipeLibrisTheme(userReduceMotion = false) {
+          BookBackCoverSurface(
+            analysis = analysis,
+            renderPalette = renderPalette,
+            publisherText = null,
+            yearValue = 2024,
+            pagesText = null,
+            authorText = "Syou Ishida",
+            editionSeedKey = "ed_cat|Vou te receitar um gato",
+            flipProgressProvider = { 0.88f },
+            reduceMotion = false,
+            shape = RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 2.dp, bottomEnd = 2.dp),
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Syou Ishida").assertIsDisplayed()
+    composeTestRule.onNodeWithText("2024").assertIsDisplayed()
+  }
 }

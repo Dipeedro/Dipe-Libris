@@ -1093,6 +1093,14 @@ private fun SearchEditionGalleryTile(
 
   val publisherText =
     remember(edition.publisher) { edition.publisher?.trim()?.takeIf { it.isNotEmpty() } }
+  val authorText =
+    remember(edition.primaryAuthorsText) {
+      edition.primaryAuthorsText.trim().takeIf { it.isNotEmpty() }
+    }
+  val editionSeedKey =
+    remember(edition.candidateId, edition.workTitle) {
+      "${edition.candidateId}|${edition.workTitle}"
+    }
   val yearValue =
     remember(edition.publicationYear) { edition.publicationYear?.takeIf { it in 1400..2100 } }
   val pagesValue = remember(edition.totalPages) { edition.totalPages?.takeIf { it > 0 } }
@@ -1667,6 +1675,8 @@ private fun SearchEditionGalleryTile(
         flipProgressProvider = { flipProgress.value },
         reduceMotion = reduceMotion,
         shape = EditionBackShape,
+        authorText = authorText,
+        editionSeedKey = editionSeedKey,
         modifier =
           backSizeModifier
             .graphicsLayer {
